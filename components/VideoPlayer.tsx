@@ -1,7 +1,7 @@
 
 
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
-import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ParticleEffect, MusicAction, OverlayConfig } from '../types';
+import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ParticleEffect, MusicAction, OverlayConfig, VideoTransition } from '../types';
 import { Play, Pause, SkipBack, SkipForward, Circle } from 'lucide-react';
 import { getAudioContext } from '../services/audioUtils';
 import { triggerBrowserDownload } from '../services/fileSystem';
@@ -18,6 +18,7 @@ interface VideoPlayerProps {
   showSubtitles: boolean;
   subtitleStyle: SubtitleStyle;
   activeFilter?: VideoFilter;
+  globalTransition?: VideoTransition;
   userTier: UserTier;
   onPlaybackComplete?: () => void;
   channelLogo?: OverlayConfig;
@@ -53,6 +54,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   showSubtitles,
   subtitleStyle,
   activeFilter = VideoFilter.NONE,
+  globalTransition = VideoTransition.NONE,
   userTier,
   onPlaybackComplete,
   channelLogo,
@@ -77,9 +79,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const currentMusicUrlRef = useRef<string | null>(null);
   const musicBufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map()); // Cache loaded tracks
   
-  // Data Refs
-  const musicBufferRef = useRef<AudioBuffer | null>(null);
-  
   // Dynamic Scale for 4K export
   const [renderScale, setRenderScale] = useState(1);
 
@@ -92,6 +91,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const showSubtitlesRef = useRef(showSubtitles); 
   const subtitleStyleRef = useRef(subtitleStyle);
   const activeFilterRef = useRef(activeFilter);
+  const globalTransitionRef = useRef(globalTransition);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const noisePatternRef = useRef<HTMLCanvasElement | null>(null); // Cache for noise
   const particlesRef = useRef<Particle[]>([]); // Particle System State
@@ -624,7 +624,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       showSubtitlesRef.current = showSubtitles;
       subtitleStyleRef.current = subtitleStyle;
       activeFilterRef.current = activeFilter;
-  }, [showSubtitles, subtitleStyle, activeFilter]);
+      globalTransitionRef.current = globalTransition;
+  }, [showSubtitles, subtitleStyle, activeFilter, globalTransition]);
 
   useImperativeHandle(ref, () => ({
     startRecording: (highQuality: boolean = false) => {
@@ -693,55 +694,41 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     }
   }));
 
-  const draw = (timestamp: number) => {
-    if (!startTimeRef.current) startTimeRef.current = timestamp;
-    const elapsed = (timestamp - startTimeRef.current) / 1000; 
-
-    const canvas = canvasRef.current;
-    const scenesList = scenesRef.current;
-    const currentScene = scenesList[currentSceneIndex];
-    const ctx = canvas?.getContext('2d', { alpha: false }); 
-    const moveParams = moveParamsRef.current[currentSceneIndex] || {x:0.5, y:0.5, scale: 1.15, direction: 1};
-    const currentFilter = activeFilterRef.current;
-    const s = renderScale;
-
-    if (canvas && ctx && currentScene) {
-      ctx.save(); // Save state before applying global filters
-
-      // --- 1. APPLY VIDEO FILTERS (POST-PROCESSING) ---
-      let filterString = 'none';
-      if (currentFilter === VideoFilter.NOIR) filterString = 'grayscale(100%) contrast(110%)';
-      if (currentFilter === VideoFilter.VINTAGE) filterString = 'sepia(60%) contrast(90%) brightness(90%)';
-      if (currentFilter === VideoFilter.DREAMY) filterString = 'blur(0.5px) brightness(110%) saturate(120%)';
-      if (currentFilter === VideoFilter.VHS) filterString = 'contrast(120%) saturate(130%)';
-      if (currentFilter === VideoFilter.CYBERPUNK) filterString = 'contrast(110%) saturate(150%) hue-rotate(-10deg)';
+  const drawSceneContent = (ctx: CanvasRenderingContext2D, scene: Scene, canvasW: number, canvasH: number, elapsed: number, sceneDuration: number, hue: number, s: number, index: number) => {
+      // 2. BACKGROUND
+      const sceneHue = (index * 137.5) % 360;
+      ctx.fillStyle = `hsl(${sceneHue}, 20%, 10%)`;
+      ctx.fillRect(0, 0, canvasW, canvasH);
       
-      ctx.filter = filterString;
+      const moveParams = moveParamsRef.current[index] || {x:0.5, y:0.5, scale: 1.15, direction: 1};
 
-      // --- 2. BACKGROUND ---
-      const hue = (currentSceneIndex * 137.5) % 360;
-      ctx.fillStyle = `hsl(${hue}, 20%, 10%)`;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // --- 3. RENDER MEDIA ---
-      if (currentScene.mediaType === 'video' && videoRef.current && currentScene.videoUrl) {
+      // 3. RENDER MEDIA
+      if (scene.mediaType === 'video' && videoRef.current && scene.videoUrl) {
+          // Note: Video transition support is complex as we only have one video element.
+          // For transitions between videos, we would need two video elements.
+          // For now, if mediaType is video, we just draw it. If transitioning FROM video, it works (video stays in buffer).
+          // If transitioning TO video, it might jump.
           try {
               const vid = videoRef.current;
+              // Check if source matches (only if active scene)
+              if (index === currentSceneIndex && vid.src !== scene.videoUrl) {
+                  // We can't switch src mid-draw without lag. 
+                  // Assuming load happens in useEffect.
+              }
+              
               if (vid.readyState >= 2) { 
-                  const scale = Math.max(canvas.width / vid.videoWidth, canvas.height / vid.videoHeight);
+                  const scale = Math.max(canvasW / vid.videoWidth, canvasH / vid.videoHeight);
                   const w = vid.videoWidth * scale;
                   const h = vid.videoHeight * scale;
-                  const x = (canvas.width - w) / 2;
-                  const y = (canvas.height - h) / 2;
+                  const x = (canvasW - w) / 2;
+                  const y = (canvasH - h) / 2;
                   ctx.drawImage(vid, x, y, w, h);
               }
           } catch (e) {}
       } else {
-          const cachedImg = imageCacheRef.current.get(currentScene.id);
+          const cachedImg = imageCacheRef.current.get(scene.id);
           if (cachedImg && cachedImg.complete && cachedImg.naturalWidth > 0) {
-                let duration = currentScene.durationEstimate || 5;
-                if (currentScene.audioBuffer) duration = currentScene.audioBuffer.duration;
-                const progress = Math.min(elapsed / duration, 1);
+                const progress = Math.min(elapsed / sceneDuration, 1);
                 
                 let zoom;
                 if (moveParams.direction > 0) {
@@ -750,32 +737,146 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                    zoom = moveParams.scale - (progress * (moveParams.scale - 1.0));
                 }
                 
-                const scaleFactor = Math.max(canvas.width / cachedImg.width, canvas.height / cachedImg.height);
+                const scaleFactor = Math.max(canvasW / cachedImg.width, canvasH / cachedImg.height);
                 const drawnWidth = cachedImg.width * scaleFactor * zoom;
                 const drawnHeight = cachedImg.height * scaleFactor * zoom;
                 
-                const maxOffsetX = drawnWidth - canvas.width;
-                const maxOffsetY = drawnHeight - canvas.height;
+                const maxOffsetX = drawnWidth - canvasW;
+                const maxOffsetY = drawnHeight - canvasH;
                 
                 const originX = moveParams.x * maxOffsetX;
                 const originY = moveParams.y * maxOffsetY;
                 
-                const x = (canvas.width - drawnWidth) / 2 - (originX - maxOffsetX/2) * progress;
-                const y = (canvas.height - drawnHeight) / 2 - (originY - maxOffsetY/2) * progress;
+                const x = (canvasW - drawnWidth) / 2 - (originX - maxOffsetX/2) * progress;
+                const y = (canvasH - drawnHeight) / 2 - (originY - maxOffsetY/2) * progress;
 
                 ctx.drawImage(cachedImg, x, y, drawnWidth, drawnHeight);
           } else {
             // Placeholder
-            const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-            gradient.addColorStop(0, `hsl(${hue}, 40%, 20%)`);
-            gradient.addColorStop(1, `hsl(${(hue + 40) % 360}, 30%, 10%)`);
+            const gradient = ctx.createLinearGradient(0, 0, canvasW, canvasH);
+            gradient.addColorStop(0, `hsl(${sceneHue}, 40%, 20%)`);
+            gradient.addColorStop(1, `hsl(${(sceneHue + 40) % 360}, 30%, 10%)`);
             ctx.fillStyle = gradient;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillRect(0, 0, canvasW, canvasH);
           }
       }
+  };
+
+  const draw = (timestamp: number) => {
+    if (!startTimeRef.current) startTimeRef.current = timestamp;
+    const elapsed = (timestamp - startTimeRef.current) / 1000; 
+
+    const canvas = canvasRef.current;
+    const scenesList = scenesRef.current;
+    const currentScene = scenesList[currentSceneIndex];
+    const nextScene = scenesList[currentSceneIndex + 1];
+    const ctx = canvas?.getContext('2d', { alpha: false }); 
+    const currentFilter = activeFilterRef.current;
+    const s = renderScale;
+    const globalTrans = globalTransitionRef.current;
+
+    if (canvas && ctx && currentScene) {
       
-      ctx.filter = 'none'; // Reset filter for overlays
-      ctx.restore(); // Restore to avoid stacking filters incorrectly
+      // Determine Duration
+      let sceneDuration = currentScene.durationEstimate || 5;
+      if (currentScene.audioBuffer) sceneDuration = currentScene.audioBuffer.duration + 0.2;
+
+      // --- TRANSITION LOGIC ---
+      // Determine if we should start transitioning
+      const TRANSITION_DURATION = 1.0; // Fixed duration for simplicity
+      const timeRemaining = sceneDuration - elapsed;
+      const isTransitioning = nextScene && timeRemaining < TRANSITION_DURATION;
+
+      ctx.save(); 
+
+      // 1. APPLY GLOBAL FILTERS
+      let filterString = 'none';
+      if (currentFilter === VideoFilter.NOIR) filterString = 'grayscale(100%) contrast(110%)';
+      if (currentFilter === VideoFilter.VINTAGE) filterString = 'sepia(60%) contrast(90%) brightness(90%)';
+      if (currentFilter === VideoFilter.DREAMY) filterString = 'blur(0.5px) brightness(110%) saturate(120%)';
+      if (currentFilter === VideoFilter.VHS) filterString = 'contrast(120%) saturate(130%)';
+      if (currentFilter === VideoFilter.CYBERPUNK) filterString = 'contrast(110%) saturate(150%) hue-rotate(-10deg)';
+      ctx.filter = filterString;
+
+      if (!isTransitioning) {
+          // DRAW NORMAL SCENE
+          drawSceneContent(ctx, currentScene, canvas.width, canvas.height, elapsed, sceneDuration, (currentSceneIndex * 137) % 360, s, currentSceneIndex);
+      } else {
+          // DRAW TRANSITION
+          // t goes from 0 (start of transition) to 1 (end of scene)
+          const t = 1 - (timeRemaining / TRANSITION_DURATION);
+          
+          // Resolve Transition Type
+          let transitionType = currentScene.transition || globalTrans;
+          if (transitionType === VideoTransition.AUTO) {
+               // Deterministic random based on index
+               const types = [VideoTransition.FADE, VideoTransition.SLIDE, VideoTransition.WIPE, VideoTransition.ZOOM];
+               transitionType = types[currentSceneIndex % types.length];
+          }
+
+          // 1. Draw Current Scene (Bottom Layer)
+          // Note: if FADE, we keep current scene at full opacity and draw next on top with opacity t
+          if (transitionType !== VideoTransition.WIPE) {
+              drawSceneContent(ctx, currentScene, canvas.width, canvas.height, elapsed, sceneDuration, (currentSceneIndex * 137) % 360, s, currentSceneIndex);
+          } else {
+              // For Wipe, we draw both fully but clipped
+              drawSceneContent(ctx, currentScene, canvas.width, canvas.height, elapsed, sceneDuration, (currentSceneIndex * 137) % 360, s, currentSceneIndex);
+          }
+
+          // 2. Draw Next Scene (Top Layer) with Effect
+          // We simulate the next scene starting at elapsed=0
+          ctx.save();
+          
+          if (transitionType === VideoTransition.FADE) {
+              ctx.globalAlpha = t;
+              drawSceneContent(ctx, nextScene, canvas.width, canvas.height, 0, 999, ((currentSceneIndex+1) * 137) % 360, s, currentSceneIndex + 1);
+          } 
+          else if (transitionType === VideoTransition.SLIDE) {
+              // Slide from Right
+              const offset = canvas.width * (1 - t);
+              ctx.translate(offset, 0);
+              drawSceneContent(ctx, nextScene, canvas.width, canvas.height, 0, 999, ((currentSceneIndex+1) * 137) % 360, s, currentSceneIndex + 1);
+          }
+          else if (transitionType === VideoTransition.ZOOM) {
+              // Zoom In from center
+              ctx.translate(canvas.width/2, canvas.height/2);
+              const scale = t; // 0 to 1
+              ctx.scale(scale, scale);
+              ctx.translate(-canvas.width/2, -canvas.height/2);
+              ctx.globalAlpha = t;
+              drawSceneContent(ctx, nextScene, canvas.width, canvas.height, 0, 999, ((currentSceneIndex+1) * 137) % 360, s, currentSceneIndex + 1);
+          }
+          else if (transitionType === VideoTransition.WIPE) {
+               // Circle Wipe
+               ctx.beginPath();
+               const maxRadius = Math.sqrt(Math.pow(canvas.width, 2) + Math.pow(canvas.height, 2));
+               ctx.arc(canvas.width/2, canvas.height/2, maxRadius * t, 0, Math.PI * 2);
+               ctx.clip();
+               drawSceneContent(ctx, nextScene, canvas.width, canvas.height, 0, 999, ((currentSceneIndex+1) * 137) % 360, s, currentSceneIndex + 1);
+          }
+          else if (transitionType === VideoTransition.GLITCH) {
+              // Draw next scene occasionally
+              if (Math.random() < t) {
+                  const xOff = (Math.random() - 0.5) * 50 * s;
+                  const yOff = (Math.random() - 0.5) * 50 * s;
+                  ctx.translate(xOff, yOff);
+                  ctx.globalCompositeOperation = 'lighten';
+                  // RGB Split simulation
+                  ctx.fillStyle = 'red';
+                  ctx.fillRect(0,0,canvas.width, canvas.height);
+                  drawSceneContent(ctx, nextScene, canvas.width, canvas.height, 0, 999, ((currentSceneIndex+1) * 137) % 360, s, currentSceneIndex + 1);
+              }
+          }
+          else {
+              // NONE (Cut) - Only switch at end
+              // Do nothing here, wait for handleNextScene
+          }
+
+          ctx.restore();
+      }
+      
+      ctx.filter = 'none'; 
+      ctx.restore(); 
 
       // --- 4. PARTICLE EFFECTS (VFX) ---
       if (currentScene.particleEffect && currentScene.particleEffect !== ParticleEffect.NONE) {
@@ -895,9 +996,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         const totalTextHeight = lines.length * lineHeight;
         const startY = canvas.height - bottomMargin - totalTextHeight;
         
-        let sceneDuration = currentScene.durationEstimate || 5;
-        if (currentScene.audioBuffer) sceneDuration = currentScene.audioBuffer.duration + 0.2; 
-        
+        // Using sceneDuration directly
         const totalWords = words.length;
         const currentWordIndex = Math.min(totalWords - 1, Math.floor((elapsed / sceneDuration) * totalWords));
         
@@ -1095,13 +1194,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           ctx.restore();
       }
 
-      // Scene transition logic
-      let sceneLimit = currentScene.durationEstimate || 5;
-      if (currentScene.audioBuffer) {
-          sceneLimit = currentScene.audioBuffer.duration + 0.2;
-      }
-
-      if (elapsed >= sceneLimit) {
+      if (elapsed >= sceneDuration) {
          handleNextScene();
       } else if (isPlaying) {
         rafRef.current = requestAnimationFrame(draw);

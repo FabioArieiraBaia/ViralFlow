@@ -1,3 +1,4 @@
+
 import { Language } from "../types";
 
 type Translations = {
@@ -110,7 +111,25 @@ export const translations: Translations = {
         uploadLogo: "Upload Logo (Canal)",
         sceneOverlay: "Overlay / Imagem Extra",
         dragToMove: "Arraste para mover, Scroll para redimensionar",
-        resetPos: "Resetar Posição"
+        resetPos: "Resetar Posição",
+        transitions: "Transições (VFX)",
+        transitionType: "Tipo de Transição",
+        globalTrans: "Transição Global",
+        sceneTrans: "Transição desta Cena",
+        autoTrans: "🤖 IA Auto",
+        // Tour Strings
+        tourWelcome: "Bem-vindo ao ViralFlow! Vamos fazer um tour rápido?",
+        tourStep1: "Aqui você define o tema do seu vídeo. Seja criativo!",
+        tourStep2: "Configure suas chaves de API aqui. É essencial para gerar o conteúdo.",
+        tourStep3: "Escolha o estilo visual, ritmo e formato do seu vídeo.",
+        tourStep4: "Clique aqui para começar a mágica e gerar o vídeo.",
+        tourStep5: "Aqui você assiste, edita cenas e exporta o resultado final.",
+        next: "Próximo",
+        prev: "Anterior",
+        finish: "Concluir",
+        skip: "Pular Tutorial",
+        dontShowAgain: "Não mostrar novamente",
+        tutorial: "Tutorial"
     },
     en: {
         welcomeTitle: "Welcome to ViralFlow AI",
@@ -215,7 +234,25 @@ export const translations: Translations = {
         uploadLogo: "Upload Logo (Channel)",
         sceneOverlay: "Overlay / Extra Image",
         dragToMove: "Drag to move, Scroll to resize",
-        resetPos: "Reset Position"
+        resetPos: "Reset Position",
+        transitions: "Transitions (VFX)",
+        transitionType: "Transition Type",
+        globalTrans: "Global Transition",
+        sceneTrans: "Scene Transition",
+        autoTrans: "🤖 AI Auto",
+        // Tour
+        tourWelcome: "Welcome to ViralFlow! Want a quick tour?",
+        tourStep1: "Define your video topic here. Be creative!",
+        tourStep2: "Configure your API keys here. Essential for content generation.",
+        tourStep3: "Choose visual style, pacing, and format.",
+        tourStep4: "Click here to start the magic and generate the video.",
+        tourStep5: "Watch, edit scenes, and export your final result here.",
+        next: "Next",
+        prev: "Previous",
+        finish: "Finish",
+        skip: "Skip Tour",
+        dontShowAgain: "Don't show again",
+        tutorial: "Tutorial"
     },
     es: {
         welcomeTitle: "Bienvenido a ViralFlow AI",
@@ -320,6 +357,24 @@ export const translations: Translations = {
         uploadLogo: "Subir Logo (Canal)",
         sceneOverlay: "Overlay / Imagen Extra",
         dragToMove: "Arrastra para mover, Scroll para redimensionar",
-        resetPos: "Reiniciar Posición"
+        resetPos: "Reiniciar Posición",
+        transitions: "Transiciones (VFX)",
+        transitionType: "Tipo de Transición",
+        globalTrans: "Transición Global",
+        sceneTrans: "Transición de Escena",
+        autoTrans: "🤖 IA Auto",
+        // Tour
+        tourWelcome: "¡Bienvenido a ViralFlow! ¿Quieres un tour rápido?",
+        tourStep1: "Define el tema de tu video aquí. ¡Sé creativo!",
+        tourStep2: "Configura tus claves API aquí. Esencial para generar contenido.",
+        tourStep3: "Elige el estilo visual, ritmo y formato.",
+        tourStep4: "Haz clic aquí para iniciar la magia y generar el video.",
+        tourStep5: "Mira, edita escenas y exporta tu resultado final aquí.",
+        next: "Siguiente",
+        prev: "Anterior",
+        finish: "Terminar",
+        skip: "Saltar Tour",
+        dontShowAgain: "No mostrar de nuevo",
+        tutorial: "Tutorial"
     }
 };

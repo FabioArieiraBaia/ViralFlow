@@ -53,6 +53,16 @@ export enum VideoFilter {
   DREAMY = 'Sonho (Glow Suave)'
 }
 
+export enum VideoTransition {
+  NONE = 'Corte Seco (Cut)',
+  FADE = 'Fade / Dissolver',
+  SLIDE = 'Deslizar (Slide)',
+  WIPE = 'Limpar (Wipe)',
+  ZOOM = 'Zoom In/Out',
+  GLITCH = 'Glitch Digital',
+  AUTO = '🤖 IA Auto (Aleatório)'
+}
+
 export enum ParticleEffect {
   NONE = 'Nenhum',
   SNOW = 'Neve',
@@ -123,6 +133,7 @@ export interface Scene {
   particleEffect?: ParticleEffect;
   musicConfig?: SceneMusicConfig;
   overlay?: OverlayConfig; // PRO Feature: Per-scene image overlay
+  transition?: VideoTransition; // PRO Feature: Specific transition to next scene
 
   isGeneratingImage: boolean;
   isGeneratingAudio: boolean;
@@ -151,6 +162,9 @@ export interface ProjectState {
   
   // Branding (Global)
   channelLogo?: OverlayConfig;
+
+  // Transitions (Global)
+  globalTransition: VideoTransition;
 
   // Subtitles
   showSubtitles: boolean;
