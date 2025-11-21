@@ -239,6 +239,7 @@ const EditSceneModal: React.FC<{
     const [isRegenerating, setIsRegenerating] = useState(false);
     const [isRegeneratingAudio, setIsRegeneratingAudio] = useState(false);
     const [selectedProvider, setSelectedProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Music config state helper
     const [musicAction, setMusicAction] = useState<MusicAction>(localScene.musicConfig?.action || MusicAction.CONTINUE);
@@ -413,16 +414,20 @@ const EditSceneModal: React.FC<{
                                 ) : (
                                     <img src={localScene.imageUrl} className="w-full h-full object-cover" />
                                 )}
-                                
-                                {!isRegenerating && (
-                                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <label className="cursor-pointer flex flex-col items-center gap-2 text-white hover:text-indigo-400 transition-colors">
-                                            <Upload className="w-8 h-8" />
-                                            <span className="text-xs font-medium">{t[lang].manualUpload}</span>
-                                            <input type="file" className="hidden" accept="image/*,video/*" onChange={handleFileChange} />
-                                        </label>
-                                    </div>
-                                )}
+                            </div>
+
+                            {/* Upload Control - Outside the image now */}
+                            <div className="flex items-center justify-between p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                                <div className="text-xs text-zinc-600 dark:text-zinc-300">
+                                    Deseja usar uma mídia própria?
+                                </div>
+                                <button 
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="px-3 py-1.5 bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-md text-xs font-bold text-zinc-800 dark:text-white hover:bg-zinc-50 dark:hover:bg-zinc-600 flex items-center gap-2 transition-colors"
+                                >
+                                    <Upload className="w-3 h-3" /> 📂 {t[lang].manualUpload}
+                                </button>
+                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*" onChange={handleFileChange} />
                             </div>
                             
                             {/* PRO: SCENE OVERLAY */}
@@ -434,28 +439,35 @@ const EditSceneModal: React.FC<{
                                     {userTier === UserTier.FREE && <Lock className="w-3 h-3 text-zinc-500" />}
                                 </div>
                                 {userTier === UserTier.PRO ? (
-                                    <div className="flex items-center gap-4">
-                                        {localScene.overlay ? (
-                                            <div className="flex items-center gap-3 flex-1">
-                                                 <img src={localScene.overlay.url} className="w-10 h-10 object-contain bg-black/20 rounded" />
-                                                 <div className="flex-1 text-xs text-zinc-500">
-                                                     {t[lang].dragToMove}
-                                                 </div>
-                                                 <button onClick={() => setLocalScene(prev => ({...prev, overlay: undefined}))} className="text-red-500 hover:bg-red-100 p-1 rounded"><X className="w-4 h-4"/></button>
-                                            </div>
-                                        ) : (
-                                            <label className="flex-1 cursor-pointer border border-dashed border-amber-500/30 rounded-lg p-3 text-center hover:bg-amber-500/10 transition-colors">
-                                                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Upload PNG (Overlay)</span>
-                                                <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleOverlayUpload} />
-                                            </label>
-                                        )}
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-4">
+                                            {localScene.overlay ? (
+                                                <div className="flex items-center gap-3 flex-1">
+                                                    <img src={localScene.overlay.url} className="w-10 h-10 object-contain bg-black/20 rounded" />
+                                                    <div className="flex-1 text-xs text-zinc-500">
+                                                        {t[lang].dragToMove}
+                                                    </div>
+                                                    <button onClick={() => setLocalScene(prev => ({...prev, overlay: undefined}))} className="text-red-500 hover:bg-red-100 p-1 rounded"><X className="w-4 h-4"/></button>
+                                                </div>
+                                            ) : (
+                                                <label className="flex-1 cursor-pointer border border-dashed border-amber-500/30 rounded-lg p-3 text-center hover:bg-amber-500/10 transition-colors">
+                                                    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Upload PNG (Overlay)</span>
+                                                    <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleOverlayUpload} />
+                                                </label>
+                                            )}
+                                            {localScene.overlay && (
+                                                <button 
+                                                    onClick={() => setLocalScene(prev => ({...prev, overlay: prev.overlay ? { ...prev.overlay, x: 0.5, y: 0.5, scale: 1.0 } : undefined}))}
+                                                    className="text-xs text-zinc-500 underline"
+                                                >
+                                                    {t[lang].resetPos}
+                                                </button>
+                                            )}
+                                        </div>
                                         {localScene.overlay && (
-                                            <button 
-                                                onClick={() => setLocalScene(prev => ({...prev, overlay: prev.overlay ? { ...prev.overlay, x: 0.5, y: 0.5, scale: 1.0 } : undefined}))}
-                                                className="text-xs text-zinc-500 underline"
-                                            >
-                                                {t[lang].resetPos}
-                                            </button>
+                                            <p className="text-[10px] text-amber-600/70 italic flex items-center gap-1">
+                                                <Info className="w-3 h-3" /> Dica: No player, use o <b>scroll</b> do mouse sobre a imagem para redimensionar.
+                                            </p>
                                         )}
                                     </div>
                                 ) : (
@@ -595,7 +607,7 @@ const EditSceneModal: React.FC<{
                                                 <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">{t[lang].musicVolume} ({Math.round(musicVolume * 100)}%)</label>
                                                 <input 
                                                     type="range" 
-                                                    min="0" max="1" step="0.05"
+                                                    min="0" max="1" step="0.05" 
                                                     value={musicVolume}
                                                     onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
                                                     className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
@@ -1376,31 +1388,32 @@ const App: React.FC = () => {
                             </div>
                             
                             {userTier === UserTier.PRO ? (
-                                <div className="flex items-center gap-3">
-                                    <div className="flex-1">
-                                        {channelLogo ? (
-                                            <div className="flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                                                <img src={channelLogo.url} className="w-8 h-8 object-contain bg-black/20 rounded" />
-                                                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium flex-1 truncate">Logo Ativa</span>
-                                                <button onClick={() => setChannelLogo(undefined)} className="p-1 hover:bg-amber-500/20 rounded text-amber-600"><X className="w-3 h-3" /></button>
-                                            </div>
-                                        ) : (
-                                            <button 
-                                                onClick={() => logoInputRef.current?.click()}
-                                                className="w-full flex items-center justify-center gap-2 p-2 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                                            >
-                                                <Upload className="w-3 h-3 text-zinc-500" />
-                                                <span className="text-xs text-zinc-500 font-medium">{translations[lang].uploadLogo}</span>
-                                            </button>
-                                        )}
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="flex-1">
+                                            {channelLogo ? (
+                                                <div className="flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                                                    <img src={channelLogo.url} className="w-8 h-8 object-contain bg-black/20 rounded" />
+                                                    <span className="text-xs text-amber-600 dark:text-amber-400 font-medium flex-1 truncate">Logo Ativa</span>
+                                                    <button onClick={() => setChannelLogo(undefined)} className="p-1 hover:bg-amber-500/20 rounded text-amber-600"><X className="w-3 h-3" /></button>
+                                                </div>
+                                            ) : (
+                                                <button 
+                                                    onClick={() => logoInputRef.current?.click()}
+                                                    className="w-full flex items-center justify-center gap-2 p-2 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                                >
+                                                    <Upload className="w-3 h-3 text-zinc-500" />
+                                                    <span className="text-xs text-zinc-500 font-medium">{translations[lang].uploadLogo}</span>
+                                                </button>
+                                            )}
+                                        </div>
+                                        <input type="file" ref={logoInputRef} onChange={handleLogoUpload} accept="image/png,image/jpeg" className="hidden" />
                                     </div>
                                     {channelLogo && (
-                                        <div className="text-[10px] text-zinc-400 flex flex-col items-center">
-                                            <MousePointer2 className="w-3 h-3 mb-0.5" />
-                                            <span>{translations[lang].dragToMove}</span>
-                                        </div>
+                                        <p className="text-[10px] text-zinc-400 flex items-center gap-1 italic">
+                                            <Info className="w-3 h-3" /> {translations[lang].dragToMove}
+                                        </p>
                                     )}
-                                    <input type="file" ref={logoInputRef} onChange={handleLogoUpload} accept="image/png,image/jpeg" className="hidden" />
                                 </div>
                             ) : (
                                 <div className="text-xs text-zinc-500 italic">{translations[lang].onlyPro}</div>

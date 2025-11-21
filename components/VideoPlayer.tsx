@@ -1,5 +1,3 @@
-
-
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ParticleEffect, MusicAction, OverlayConfig, VideoTransition } from '../types';
 import { Play, Pause, SkipBack, SkipForward, Circle } from 'lucide-react';
@@ -218,6 +216,27 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   };
 
   // --- INTERACTION HANDLERS (DRAG & DROP & RESIZE) ---
+  
+  // Helper to calculate actual drawn size of overlay for accurate hit testing
+  const getOverlayRect = (config: OverlayConfig, img: HTMLImageElement, canvasW: number, canvasH: number) => {
+      const baseSize = canvasW * 0.2; // 20% of width as base, MUST match drawOverlay
+      const aspect = img.width / img.height;
+      
+      let drawW, drawH;
+      if (aspect > 1) {
+          drawW = baseSize * config.scale;
+          drawH = (baseSize / aspect) * config.scale;
+      } else {
+          drawH = baseSize * config.scale;
+          drawW = (baseSize * aspect) * config.scale;
+      }
+      
+      const x = config.x * canvasW;
+      const y = config.y * canvasH;
+      
+      return { x, y, w: drawW, h: drawH };
+  };
+
   const getMousePos = (e: React.MouseEvent | React.TouchEvent) => {
       const canvas = canvasRef.current;
       if (!canvas) return { x: 0, y: 0 };
@@ -241,17 +260,10 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       };
   };
 
-  const isHit = (pos: {x: number, y: number}, config: OverlayConfig, canvasW: number, canvasH: number, imgW: number, imgH: number) => {
-      const objW = (imgW / 4) * config.scale; // Assuming base scale factor relative to canvas
-      const objH = (imgH / 4) * config.scale;
-      // Using 150px base size for consistency logic if no image
-      const finalW = objW || 150 * renderScale * config.scale;
-      const finalH = objH || 150 * renderScale * config.scale;
-
-      const objX = config.x * canvasW;
-      const objY = config.y * canvasH;
-      
-      return pos.x >= objX && pos.x <= objX + finalW && pos.y >= objY && pos.y <= objY + finalH;
+  const isHit = (pos: {x: number, y: number}, config: OverlayConfig, canvasW: number, canvasH: number, img: HTMLImageElement) => {
+      const rect = getOverlayRect(config, img, canvasW, canvasH);
+      // Add some padding for easier selection
+      return pos.x >= rect.x - 10 && pos.x <= rect.x + rect.w + 10 && pos.y >= rect.y - 10 && pos.y <= rect.y + rect.h + 10;
   };
 
   const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
@@ -261,12 +273,9 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       
       // Check Logo Hit
       if (channelLogoRef.current) {
-         // Simplified hit detection logic - assumes approximate square for simplicity if image not fully loaded in logic scope
-         // But we render it, so we should know dimensions. 
-         // For robust hit test, we need the image dimensions.
          const img = overlayImageCacheRef.current.get(channelLogoRef.current.url);
          if (img) {
-             if (isHit(pos, channelLogoRef.current, canvas.width, canvas.height, img.width, img.height)) {
+             if (isHit(pos, channelLogoRef.current, canvas.width, canvas.height, img)) {
                  isDraggingRef.current = 'logo';
                  dragStartRef.current = pos;
                  initialObjPosRef.current = { x: channelLogoRef.current.x, y: channelLogoRef.current.y };
@@ -280,7 +289,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       if (currentScene?.overlay) {
           const img = overlayImageCacheRef.current.get(currentScene.overlay.url);
           if (img) {
-               if (isHit(pos, currentScene.overlay, canvas.width, canvas.height, img.width, img.height)) {
+               if (isHit(pos, currentScene.overlay, canvas.width, canvas.height, img)) {
                    isDraggingRef.current = 'scene_overlay';
                    dragStartRef.current = pos;
                    initialObjPosRef.current = { x: currentScene.overlay.x, y: currentScene.overlay.y };
@@ -331,7 +340,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       // Check Logo
       if (channelLogoRef.current) {
            const img = overlayImageCacheRef.current.get(channelLogoRef.current.url);
-           if (img && isHit(pos, channelLogoRef.current, canvas.width, canvas.height, img.width, img.height)) {
+           if (img && isHit(pos, channelLogoRef.current, canvas.width, canvas.height, img)) {
                target = 'logo';
                currentConfig = channelLogoRef.current;
            }
@@ -339,16 +348,20 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       
       // Check Scene Overlay (priority if overlapping? Let's say scene overlay is on top usually)
       const currentScene = scenesRef.current[currentSceneIndex];
-      if (currentScene?.overlay) {
+      if (!target && currentScene?.overlay) {
            const img = overlayImageCacheRef.current.get(currentScene.overlay.url);
-           if (img && isHit(pos, currentScene.overlay, canvas.width, canvas.height, img.width, img.height)) {
+           if (img && isHit(pos, currentScene.overlay, canvas.width, canvas.height, img)) {
                target = 'scene_overlay';
                currentConfig = currentScene.overlay;
            }
       }
 
       if (target && currentConfig) {
-          e.preventDefault();
+          // Important: Prevent scrolling the page when resizing an element
+          e.stopPropagation(); 
+          // e.preventDefault() works in React 17+ if passive is handled, 
+          // but in standard events we check via logic. React synthetic event:
+          
           const scaleDelta = e.deltaY * -0.001;
           const newScale = Math.max(0.1, Math.min(5.0, currentConfig.scale + scaleDelta));
           const newConfig = { ...currentConfig, scale: newScale };
@@ -1133,27 +1146,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       const drawOverlay = (config: OverlayConfig, isGlobal: boolean = false) => {
          const img = overlayImageCacheRef.current.get(config.url);
          if (img && img.complete && img.naturalWidth > 0) {
-             // Calculate size preserving aspect ratio, based on scale
-             // Base size: 20% of width for scale 1.0
-             const baseSize = canvas.width * 0.2; 
-             const aspect = img.width / img.height;
-             
-             let drawW, drawH;
-             if (aspect > 1) {
-                 drawW = baseSize * config.scale;
-                 drawH = (baseSize / aspect) * config.scale;
-             } else {
-                 drawH = baseSize * config.scale;
-                 drawW = (baseSize * aspect) * config.scale;
-             }
+             // Use helper to get accurate rect matching hit test
+             const rect = getOverlayRect(config, img, canvas.width, canvas.height);
 
-             const x = config.x * canvas.width;
-             const y = config.y * canvas.height;
-             
              ctx.save();
              ctx.shadowColor = 'rgba(0,0,0,0.5)';
              ctx.shadowBlur = 5 * s;
-             ctx.drawImage(img, x, y, drawW, drawH);
+             ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
 
              // Selection border if dragging
              if (!isPlaying && !isRecording) {
@@ -1164,7 +1163,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                      ctx.strokeStyle = '#00ff00';
                      ctx.lineWidth = 2 * s;
                      ctx.setLineDash([5 * s, 5 * s]);
-                     ctx.strokeRect(x, y, drawW, drawH);
+                     ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
                  }
              }
              ctx.restore();
