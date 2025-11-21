@@ -1,10 +1,10 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { VideoStyle, VideoDuration, Scene, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, Soundtrack, UserTier } from './types';
+import { VideoStyle, VideoDuration, Scene, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, Soundtrack, UserTier, VideoFilter, ParticleEffect, MusicAction, SceneMusicConfig } from './types';
 import { generateVideoScript, generateSpeech, generateSceneImage, generateThumbnails, generateMetadata, getApiKeyCount, saveManualKeys, getManualKeys, savePexelsKey, getPexelsKey } from './services/geminiService';
 import { getProjectDir, openProjectFolder, triggerBrowserDownload } from './services/fileSystem';
 import VideoPlayer, { VideoPlayerRef } from './components/VideoPlayer';
-import { Wand2, Video, Download, Loader2, Layers, Film, PlayCircle, Zap, Monitor, Music, Smartphone, Image as ImageIcon, Hash, Clock, Youtube, Captions, Type, Mic, Settings, AlertCircle, CheckCircle2, Save, Palette, StopCircle, RotateCcw, Volume2, Lock, Crown, Key, Copy, ShieldCheck, Edit2, RefreshCcw, X, Upload, FileImage, FileVideo, ZapIcon, Music2, Info } from 'lucide-react';
+import { Wand2, Video, Download, Loader2, Layers, Film, PlayCircle, Zap, Monitor, Music, Smartphone, Image as ImageIcon, Hash, Clock, Youtube, Captions, Type, Mic, Settings, AlertCircle, CheckCircle2, Save, Palette, StopCircle, RotateCcw, Volume2, Lock, Crown, Key, Copy, ShieldCheck, Edit2, RefreshCcw, X, Upload, FileImage, FileVideo, ZapIcon, Music2, Info, Sparkles, MoveRight } from 'lucide-react';
 
 // --- CONFIGURAÇÃO DE VENDAS ---
 const GUMROAD_PRODUCT_PERMALINK: string = 'viralflow'; 
@@ -271,10 +271,31 @@ const EditSceneModal: React.FC<{
     onRegenerateAudio: (scene: Scene) => Promise<any>
 }> = ({ scene, onClose, onSave, onRegenerateAsset, onRegenerateAudio }) => {
     const [localScene, setLocalScene] = useState<Scene>({...scene});
-    const [activeTab, setActiveTab] = useState<'text'|'visual'>('text');
+    const [activeTab, setActiveTab] = useState<'text'|'visual'|'audio'>('text');
     const [isRegenerating, setIsRegenerating] = useState(false);
     const [isRegeneratingAudio, setIsRegeneratingAudio] = useState(false);
     const [selectedProvider, setSelectedProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
+
+    // Music config state helper
+    const [musicAction, setMusicAction] = useState<MusicAction>(localScene.musicConfig?.action || MusicAction.CONTINUE);
+    const [musicTrackId, setMusicTrackId] = useState<string>(localScene.musicConfig?.trackId || 'none');
+    const [musicVolume, setMusicVolume] = useState<number>(localScene.musicConfig?.volume ?? 0.2);
+
+    useEffect(() => {
+        // Sync music state back to localScene
+        const config: SceneMusicConfig = {
+            action: musicAction,
+            trackId: musicTrackId,
+            volume: musicVolume,
+            customUrl: localScene.musicConfig?.customUrl
+        };
+        
+        // If user chose a specific track, auto-set customUrl if it's in library
+        const libTrack = STOCK_LIBRARY.find(t => t.id === musicTrackId);
+        if (libTrack) config.customUrl = libTrack.url;
+
+        setLocalScene(prev => ({ ...prev, musicConfig: config }));
+    }, [musicAction, musicTrackId, musicVolume]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -343,8 +364,9 @@ const EditSceneModal: React.FC<{
                 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
                     <div className="flex gap-2 mb-4 bg-zinc-950 p-1 rounded-lg w-fit">
-                        <button onClick={() => setActiveTab('text')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'text' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'}`}>Roteiro & Áudio</button>
-                        <button onClick={() => setActiveTab('visual')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'visual' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'}`}>Visual</button>
+                        <button onClick={() => setActiveTab('text')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'text' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'}`}>Roteiro</button>
+                        <button onClick={() => setActiveTab('visual')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'visual' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'}`}>Visual & VFX</button>
+                        <button onClick={() => setActiveTab('audio')} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTab === 'audio' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'}`}>Áudio & Música</button>
                     </div>
 
                     {activeTab === 'text' && (
@@ -366,16 +388,13 @@ const EditSceneModal: React.FC<{
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white text-sm focus:ring-1 focus:ring-indigo-500 outline-none resize-none leading-relaxed"
                                 />
                             </div>
-
-                            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 flex items-center justify-between">
+                             <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 flex items-center justify-between">
                                 <div className="flex flex-col">
-                                    <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Áudio da Cena</span>
+                                    <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Voz (TTS)</span>
                                     {localScene.audioError ? (
-                                         <span className="text-red-500 text-xs font-bold flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3"/> Erro na Geração Anterior</span>
-                                    ) : localScene.audioUrl ? (
-                                         <span className="text-emerald-500 text-xs font-bold flex items-center gap-1 mt-1"><CheckCircle2 className="w-3 h-3"/> Áudio Disponível</span>
+                                         <span className="text-red-500 text-xs font-bold flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3"/> Erro na Geração</span>
                                     ) : (
-                                         <span className="text-zinc-500 text-xs mt-1">Sem áudio</span>
+                                         <span className="text-emerald-500 text-xs font-bold flex items-center gap-1 mt-1"><CheckCircle2 className="w-3 h-3"/> Áudio Sincronizado</span>
                                     )}
                                 </div>
                                 <button 
@@ -384,7 +403,7 @@ const EditSceneModal: React.FC<{
                                     className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50 transition-colors ${localScene.audioError ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-zinc-800 hover:bg-zinc-700 text-white'}`}
                                 >
                                     {isRegeneratingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}
-                                    {localScene.audioError ? 'Tentar Novamente' : 'Regenerar Áudio'}
+                                    {localScene.audioError ? 'Tentar Novamente' : 'Regenerar Voz'}
                                 </button>
                             </div>
                         </div>
@@ -416,20 +435,25 @@ const EditSceneModal: React.FC<{
                                 )}
                             </div>
                             
-                            {/* PROMPT INPUT */}
-                            <div>
-                                <label className="block text-xs font-medium text-zinc-400 mb-1">Prompt Visual (Para Regeneração)</label>
-                                <textarea 
-                                    value={localScene.visualPrompt}
-                                    onChange={(e) => setLocalScene({...localScene, visualPrompt: e.target.value})}
-                                    rows={2}
-                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white text-sm focus:ring-1 focus:ring-indigo-500 outline-none resize-none"
-                                />
-                            </div>
+                            {/* VFX Selector */}
+                             <div className="space-y-2">
+                                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2"><Sparkles className="w-3 h-3"/> Efeitos de Partículas (VFX)</label>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {Object.entries(ParticleEffect).map(([key, val]) => (
+                                        <button
+                                            key={key}
+                                            onClick={() => setLocalScene(prev => ({...prev, particleEffect: val as ParticleEffect}))}
+                                            className={`text-xs p-2 rounded-lg border transition-all ${localScene.particleEffect === val ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-600'}`}
+                                        >
+                                            {val}
+                                        </button>
+                                    ))}
+                                </div>
+                             </div>
 
                             {/* GENERATION CONTROLS */}
                             <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-3">
-                                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Gerar Nova Imagem/Vídeo</label>
+                                <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Regenerar Mídia</label>
                                 <div className="flex gap-2">
                                     <select 
                                         value={selectedProvider}
@@ -449,9 +473,74 @@ const EditSceneModal: React.FC<{
                                         Gerar
                                     </button>
                                 </div>
-                                <p className="text-[10px] text-zinc-500">
-                                    Escolha o provedor específico para regenerar apenas esta cena.
-                                </p>
+                                
+                                <textarea 
+                                    value={localScene.visualPrompt}
+                                    onChange={(e) => setLocalScene({...localScene, visualPrompt: e.target.value})}
+                                    rows={2}
+                                    placeholder="Prompt visual..."
+                                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-zinc-300 text-xs focus:ring-1 focus:ring-indigo-500 outline-none resize-none"
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'audio' && (
+                        <div className="space-y-6">
+                            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4 space-y-4">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Music2 className="w-5 h-5 text-indigo-400" />
+                                    <h4 className="font-bold text-white">Trilha Sonora da Cena</h4>
+                                </div>
+                                
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-zinc-400 mb-2">Comportamento</label>
+                                        <div className="flex flex-col gap-2">
+                                            {[MusicAction.CONTINUE, MusicAction.START_NEW, MusicAction.STOP].map(action => (
+                                                <label key={action} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${musicAction === action ? 'bg-indigo-900/30 border-indigo-500' : 'bg-zinc-900 border-zinc-800 hover:border-zinc-700'}`}>
+                                                    <input 
+                                                        type="radio" 
+                                                        name="musicAction" 
+                                                        checked={musicAction === action} 
+                                                        onChange={() => setMusicAction(action)}
+                                                        className="text-indigo-500 focus:ring-indigo-500"
+                                                    />
+                                                    <span className={`text-sm ${musicAction === action ? 'text-white font-medium' : 'text-zinc-400'}`}>{action}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {musicAction === MusicAction.START_NEW && (
+                                        <div className="animate-in fade-in slide-in-from-top-2 space-y-4 pt-2 border-t border-zinc-800">
+                                            <div>
+                                                <label className="block text-xs font-medium text-zinc-400 mb-1">Escolher Faixa</label>
+                                                <select
+                                                    value={musicTrackId}
+                                                    onChange={(e) => setMusicTrackId(e.target.value)}
+                                                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-indigo-500"
+                                                >
+                                                    <option value="none">Selecione uma música...</option>
+                                                    {STOCK_LIBRARY.map(track => (
+                                                        <option key={track.id} value={track.id}>{track.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                            
+                                            <div>
+                                                <label className="block text-xs font-medium text-zinc-400 mb-1">Volume da Música ({Math.round(musicVolume * 100)}%)</label>
+                                                <input 
+                                                    type="range" 
+                                                    min="0" max="1" step="0.05"
+                                                    value={musicVolume}
+                                                    onChange={(e) => setMusicVolume(parseFloat(e.target.value))}
+                                                    className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -480,7 +569,8 @@ const App: React.FC = () => {
   const [imageProvider, setImageProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
   const [thumbProvider, setThumbProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
   const [showSubtitles, setShowSubtitles] = useState(true);
-  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(SubtitleStyle.MODERN);
+  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(SubtitleStyle.KARAOKE); // Default to Karaoke for virality
+  const [activeFilter, setActiveFilter] = useState<VideoFilter>(VideoFilter.NONE);
   
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [metadata, setMetadata] = useState<VideoMetadata | null>(null);
@@ -503,7 +593,7 @@ const App: React.FC = () => {
   const [editingScene, setEditingScene] = useState<Scene | null>(null);
   const [userTier, setUserTier] = useState<UserTier>(UserTier.FREE);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-  const [showWelcomeModal, setShowWelcomeModal] = useState(true); // Default to true for startup
+  const [showWelcomeModal, setShowWelcomeModal] = useState(true);
   const [userKey, setUserKey] = useState('');
   
   // Admin
@@ -520,10 +610,6 @@ const App: React.FC = () => {
              setUserKey(savedKey);
           }
       }
-      
-      // Optional: Check if welcome modal was seen to suppress it (commented out to show on every load as requested, or just set state)
-      // const seen = sessionStorage.getItem('viralflow_welcome_seen');
-      // if (seen) setShowWelcomeModal(false);
   }, []);
 
   const handleUpgrade = async (key: string): Promise<boolean> => {
@@ -541,7 +627,6 @@ const App: React.FC = () => {
       sessionStorage.setItem('viralflow_welcome_seen', 'true');
   };
 
-  // Separate function to handle asset regeneration from Modal
   const handleSceneAssetRegeneration = async (scene: Scene, provider: ImageProvider): Promise<any> => {
       const index = scenes.findIndex(s => s.id === scene.id);
       const idx = index >= 0 ? index : 0;
@@ -614,7 +699,7 @@ const App: React.FC = () => {
         imageUrl: '', // Placeholder
         isGeneratingImage: true,
         isGeneratingAudio: true,
-        audioError: false // Default
+        audioError: false
       }));
 
       if (voice === 'Auto') {
@@ -630,7 +715,6 @@ const App: React.FC = () => {
       setBgMusicUrl(defaultMusic.url);
 
       // 2. Parallel Generation Loop
-      
       for (let i = 0; i < newScenes.length; i++) {
         if (cancelRef.current) throw new Error("Cancelled");
         
@@ -638,9 +722,6 @@ const App: React.FC = () => {
         
         const scene = newScenes[i];
         
-        // Run Audio and Image generation in parallel
-        // IMPORTANT: If Audio fails, we catch it here and return success: false, 
-        // but we DO NOT throw logic error to stop the loop.
         const audioPromise = generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', i, topic, () => cancelRef.current)
             .then(audio => ({ ...audio, success: true }))
             .catch(e => {
@@ -648,7 +729,6 @@ const App: React.FC = () => {
                 return { url: '', buffer: undefined, success: false };
             });
 
-        // Safe Image Generation Call
         const imagePromise = generateSceneImage(scene.visualPrompt, format, i, topic, imageProvider, style, () => cancelRef.current)
             .then(img => ({ ...img, success: true }))
             .catch(e => {
@@ -658,15 +738,14 @@ const App: React.FC = () => {
 
         const [audioResult, imageResult] = await Promise.all([audioPromise, imagePromise]);
 
-        // Update State Safely
         setScenes(prev => {
             const updated = [...prev];
             updated[i] = {
                 ...updated[i],
                 audioUrl: audioResult.success ? audioResult.url : undefined,
                 audioBuffer: audioResult.success ? audioResult.buffer : undefined,
-                audioError: !audioResult.success, // MARK AS FAILED IF FALSE
-                imageUrl: imageResult.success ? imageResult.imageUrl : "https://placehold.co/1280x720/333/FFF.png?text=Error+Generating+Image", // Fallback for UI
+                audioError: !audioResult.success,
+                imageUrl: imageResult.success ? imageResult.imageUrl : "https://placehold.co/1280x720/333/FFF.png?text=Error+Generating+Image", 
                 videoUrl: imageResult.videoUrl,
                 mediaType: imageResult.mediaType,
                 isGeneratingAudio: false,
@@ -678,7 +757,6 @@ const App: React.FC = () => {
       
       setProgress('✅ Renderização Completa! Gerando Capas e Metadados...');
       
-      // Generate Metadata in background
       generateMetadata(topic, JSON.stringify(rawScript), () => cancelRef.current).then(setMetadata).catch(console.error);
       generateThumbnails(topic, style, thumbProvider, () => cancelRef.current).then(setThumbnails).catch(console.error);
       
@@ -757,7 +835,6 @@ const App: React.FC = () => {
       }
   };
 
-  // Helper to find current selected ID in dropdown
   const currentMusicId = STOCK_LIBRARY.find(t => t.url === bgMusicUrl)?.id || (bgMusicUrl ? 'custom' : 'none');
 
   return (
@@ -1045,6 +1122,7 @@ const App: React.FC = () => {
                             bgMusicVolume={bgMusicVolume}
                             showSubtitles={showSubtitles}
                             subtitleStyle={subtitleStyle}
+                            activeFilter={activeFilter}
                             userTier={userTier}
                             onPlaybackComplete={() => setIsPlaying(false)}
                         />
@@ -1057,18 +1135,33 @@ const App: React.FC = () => {
                             >
                                 <div className="w-3 h-3 rounded-full bg-white"></div> REC / Exportar
                             </button>
-                            <div className="flex items-center gap-2 bg-zinc-900 rounded-lg px-3">
+                            
+                            {/* Subtitle Style Selector */}
+                            <div className="flex items-center gap-2 bg-zinc-900 rounded-lg px-3 border border-zinc-800">
                                 <Captions className="w-4 h-4 text-zinc-400" />
                                 <select 
                                     value={subtitleStyle} 
                                     onChange={(e) => setSubtitleStyle(e.target.value as SubtitleStyle)}
-                                    className="bg-transparent text-xs text-white outline-none flex-1 py-3"
+                                    className="bg-transparent text-xs text-white outline-none flex-1 py-3 cursor-pointer"
                                 >
                                     {Object.values(SubtitleStyle).map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
                             </div>
-                            <div className="col-span-2 flex items-center justify-center gap-2">
-                                <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-white">
+
+                            {/* Video Filter Selector */}
+                            <div className="flex items-center gap-2 bg-zinc-900 rounded-lg px-3 border border-zinc-800 col-span-2">
+                                <Sparkles className="w-4 h-4 text-zinc-400" />
+                                <select 
+                                    value={activeFilter} 
+                                    onChange={(e) => setActiveFilter(e.target.value as VideoFilter)}
+                                    className="bg-transparent text-xs text-white outline-none flex-1 py-3 cursor-pointer"
+                                >
+                                    {Object.values(VideoFilter).map(s => <option key={s} value={s}>Filtro: {s}</option>)}
+                                </select>
+                            </div>
+
+                            <div className="col-span-2 flex items-center justify-center gap-2 mt-1">
+                                <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-400 hover:text-white select-none">
                                     <input 
                                         type="checkbox" 
                                         checked={showSubtitles} 
@@ -1098,7 +1191,7 @@ const App: React.FC = () => {
                                     onChange={(e) => handleMusicSelection(e.target.value)}
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-3 pr-8 py-2 text-xs text-white appearance-none focus:ring-1 focus:ring-indigo-500 outline-none"
                                 >
-                                    <option value="none">🔇 Sem Música</option>
+                                    <option value="none">🔇 Sem Música (Global)</option>
                                     {STOCK_LIBRARY.map(track => (
                                         <option key={track.id} value={track.id}>🎵 {track.label}</option>
                                     ))}
@@ -1179,13 +1272,23 @@ const App: React.FC = () => {
                                         </div>
                                     </div>
                                     <p className="text-xs text-zinc-300 line-clamp-2 leading-relaxed">"{scene.text}"</p>
-                                    <div className="mt-2 flex items-center gap-2">
+                                    
+                                    {/* META INFO */}
+                                    <div className="mt-2 flex flex-wrap items-center gap-3">
                                         {scene.isGeneratingAudio ? (
                                              <span className="text-[10px] text-zinc-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> Gerando Áudio...</span>
                                         ) : scene.audioError ? (
                                             <span className="text-[10px] text-red-500 flex items-center gap-1 font-bold"><AlertCircle className="w-3 h-3"/> Falha no Áudio</span>
                                         ) : (
                                             <span className="text-[10px] text-emerald-500 flex items-center gap-1"><Volume2 className="w-3 h-3"/> Áudio Pronto</span>
+                                        )}
+
+                                        {scene.particleEffect && scene.particleEffect !== ParticleEffect.NONE && (
+                                            <span className="text-[10px] text-blue-400 flex items-center gap-1 bg-blue-400/10 px-1.5 py-0.5 rounded"><Sparkles className="w-3 h-3"/> {scene.particleEffect}</span>
+                                        )}
+                                        
+                                        {scene.musicConfig && scene.musicConfig.action === MusicAction.START_NEW && (
+                                             <span className="text-[10px] text-amber-400 flex items-center gap-1 bg-amber-400/10 px-1.5 py-0.5 rounded"><Music2 className="w-3 h-3"/> Nova Faixa</span>
                                         )}
                                     </div>
                                 </div>

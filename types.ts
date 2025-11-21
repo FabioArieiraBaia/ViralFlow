@@ -34,7 +34,34 @@ export enum SubtitleStyle {
   MODERN = 'Moderno (Caixa Escura)',
   CLASSIC = 'Clássico (Borda Preta)',
   NEON = 'Neon (Brilho Colorido)',
-  NONE = 'Desativado' // Helper for logic, though mainly controlled by toggle
+  KARAOKE = 'Karaoke (Highlight Dinâmico)',
+  GLITCH = 'Glitch (Cyberpunk)',
+  COMIC = 'Comic (Quadrinhos)',
+  NONE = 'Desativado' 
+}
+
+export enum VideoFilter {
+  NONE = 'Normal',
+  VHS = 'VHS Retro (Anos 90)',
+  VINTAGE = 'Filme Antigo (1950)',
+  CYBERPUNK = 'Cyberpunk (Neon/Azul)',
+  NOIR = 'Noir (Preto e Branco)',
+  DREAMY = 'Sonho (Glow Suave)'
+}
+
+export enum ParticleEffect {
+  NONE = 'Nenhum',
+  SNOW = 'Neve',
+  RAIN = 'Chuva',
+  EMBERS = 'Brasas (Fogo)',
+  CONFETTI = 'Confete',
+  DUST = 'Poeira Flutuante'
+}
+
+export enum MusicAction {
+  CONTINUE = 'Continuar Anterior',
+  START_NEW = 'Iniciar Nova Música',
+  STOP = 'Parar Música'
 }
 
 export enum ImageProvider {
@@ -56,6 +83,13 @@ export interface Soundtrack {
   tags: VideoStyle[]; // Estilos que essa música suporta
 }
 
+export interface SceneMusicConfig {
+  action: MusicAction;
+  trackId?: string; // ID from STOCK_LIBRARY or 'custom'
+  customUrl?: string; // If user uploaded specific track
+  volume: number; // 0.0 to 1.0
+}
+
 export interface Scene {
   id: string;
   speaker: string; 
@@ -74,6 +108,10 @@ export interface Scene {
   audioPath?: string; // Caminho local
   audioBuffer?: AudioBuffer;
   
+  // Effects & Post-Processing
+  particleEffect?: ParticleEffect;
+  musicConfig?: SceneMusicConfig;
+
   isGeneratingImage: boolean;
   isGeneratingAudio: boolean;
   audioError?: boolean; // Flag to indicate if TTS failed
@@ -95,7 +133,7 @@ export interface ProjectState {
   format: VideoFormat;
   scenes: Scene[];
   
-  // Audio Fields
+  // Audio Fields (Global fallback)
   bgMusicUrl?: string;
   bgMusicVolume: number;
   

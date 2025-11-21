@@ -1,6 +1,6 @@
 
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
-import { Scene, VideoFormat, SubtitleStyle, UserTier } from '../types';
+import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ParticleEffect, MusicAction } from '../types';
 import { Play, Pause, SkipBack, SkipForward, Circle } from 'lucide-react';
 import { getAudioContext } from '../services/audioUtils';
 import { triggerBrowserDownload } from '../services/fileSystem';
@@ -12,10 +12,11 @@ interface VideoPlayerProps {
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
   format: VideoFormat;
-  bgMusicUrl?: string;
+  bgMusicUrl?: string; // Global fallback
   bgMusicVolume: number;
   showSubtitles: boolean;
   subtitleStyle: SubtitleStyle;
+  activeFilter?: VideoFilter;
   userTier: UserTier;
   onPlaybackComplete?: () => void;
 }
@@ -23,6 +24,17 @@ interface VideoPlayerProps {
 export interface VideoPlayerRef {
   startRecording: () => void;
   stopRecording: () => void;
+}
+
+interface Particle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  color: string;
+  life: number;
+  maxLife: number;
 }
 
 const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
@@ -36,6 +48,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   bgMusicVolume,
   showSubtitles,
   subtitleStyle,
+  activeFilter = VideoFilter.NONE,
   userTier,
   onPlaybackComplete
 }, ref) => {
@@ -50,8 +63,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const destNodeRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   
   const speechSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  
+  // Music System
   const musicSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const musicGainRef = useRef<GainNode | null>(null);
+  const currentMusicUrlRef = useRef<string | null>(null);
+  const musicBufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map()); // Cache loaded tracks
   
   // Data Refs
   const musicBufferRef = useRef<AudioBuffer | null>(null);
@@ -62,9 +79,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
   // Refs for Loop State (Avoids Stale Closures)
   const scenesRef = useRef<Scene[]>(scenes);
-  const showSubtitlesRef = useRef(showSubtitles); // FIX: Ref for subtitles
+  const showSubtitlesRef = useRef(showSubtitles); 
   const subtitleStyleRef = useRef(subtitleStyle);
+  const activeFilterRef = useRef(activeFilter);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const noisePatternRef = useRef<HTMLCanvasElement | null>(null); // Cache for noise
+  const particlesRef = useRef<Particle[]>([]); // Particle System State
+  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const [isRecording, setIsRecording] = useState(false);
@@ -72,6 +93,124 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const startTimeRef = useRef<number>(0);
   const rafRef = useRef<number>(0);
   const moveParamsRef = useRef<{x: number, y: number, scale: number, direction: number}[]>([]);
+
+  // --- PARTICLE SYSTEM UTILS ---
+  const initParticles = (effect: ParticleEffect, width: number, height: number) => {
+      const particles: Particle[] = [];
+      let count = 0;
+      
+      if (effect === ParticleEffect.SNOW) count = 100;
+      if (effect === ParticleEffect.RAIN) count = 150;
+      if (effect === ParticleEffect.EMBERS) count = 60;
+      if (effect === ParticleEffect.CONFETTI) count = 50;
+      if (effect === ParticleEffect.DUST) count = 80;
+
+      for (let i = 0; i < count; i++) {
+          particles.push(createParticle(effect, width, height, true));
+      }
+      particlesRef.current = particles;
+  };
+
+  const createParticle = (effect: ParticleEffect, width: number, height: number, randomY: boolean = false): Particle => {
+      const x = Math.random() * width;
+      const y = randomY ? Math.random() * height : (effect === ParticleEffect.EMBERS ? height + 10 : -10);
+      
+      let vx = 0, vy = 0, size = 0, color = '', life = 100, maxLife = 100;
+
+      if (effect === ParticleEffect.SNOW) {
+          vx = (Math.random() - 0.5) * 1;
+          vy = 1 + Math.random() * 2;
+          size = 2 + Math.random() * 3;
+          color = 'rgba(255, 255, 255, 0.8)';
+      } else if (effect === ParticleEffect.RAIN) {
+          vx = (Math.random() - 0.5) * 0.5;
+          vy = 15 + Math.random() * 10;
+          size = 1; // Thickness
+          color = 'rgba(150, 180, 255, 0.6)';
+      } else if (effect === ParticleEffect.EMBERS) {
+          vx = (Math.random() - 0.5) * 2;
+          vy = -1 - Math.random() * 3;
+          size = 2 + Math.random() * 4;
+          color = `rgba(255, ${Math.floor(Math.random() * 100)}, 0, ${0.5 + Math.random()*0.5})`;
+          life = 60 + Math.random() * 60;
+          maxLife = life;
+      } else if (effect === ParticleEffect.CONFETTI) {
+          vx = (Math.random() - 0.5) * 4;
+          vy = 2 + Math.random() * 4;
+          size = 5 + Math.random() * 5;
+          const colors = ['#f00', '#0f0', '#00f', '#ff0', '#0ff', '#f0f'];
+          color = colors[Math.floor(Math.random() * colors.length)];
+      } else if (effect === ParticleEffect.DUST) {
+          vx = (Math.random() - 0.5) * 0.5;
+          vy = (Math.random() - 0.5) * 0.5;
+          size = 1 + Math.random() * 2;
+          color = 'rgba(255, 255, 255, 0.3)';
+      }
+
+      return { x, y, vx, vy, size, color, life, maxLife };
+  };
+
+  const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, width: number, height: number, effect: ParticleEffect) => {
+      if (effect === ParticleEffect.NONE) return;
+
+      if (particlesRef.current.length === 0) initParticles(effect, width, height);
+
+      particlesRef.current.forEach((p, index) => {
+          // Update
+          p.x += p.vx;
+          p.y += p.vy;
+          
+          if (effect === ParticleEffect.EMBERS || effect === ParticleEffect.SNOW || effect === ParticleEffect.DUST) {
+              p.x += Math.sin(p.y * 0.01) * 0.5; // Wiggle
+          }
+
+          p.life--;
+
+          // Reset if OOB or Dead
+          const isDead = p.life <= 0;
+          const isOOB = (p.y > height + 20 && p.vy > 0) || (p.y < -20 && p.vy < 0);
+
+          if (isDead || isOOB) {
+              particlesRef.current[index] = createParticle(effect, width, height);
+          }
+
+          // Draw
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          
+          if (effect === ParticleEffect.RAIN) {
+              ctx.rect(p.x, p.y, 2, p.vy);
+          } else if (effect === ParticleEffect.CONFETTI) {
+              ctx.translate(p.x, p.y);
+              ctx.rotate(p.y * 0.1);
+              ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+              ctx.setTransform(1,0,0,1,0,0);
+          } else {
+             ctx.globalAlpha = (p.life / p.maxLife);
+             ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+             ctx.globalAlpha = 1.0;
+          }
+          ctx.fill();
+      });
+  };
+
+
+  // --- PRE-GENERATE NOISE TEXTURE (Performance) ---
+  useEffect(() => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+          const idata = ctx.createImageData(256, 256);
+          const buffer32 = new Uint32Array(idata.data.buffer);
+          for (let i = 0; i < buffer32.length; i++) {
+              if (Math.random() < 0.5) buffer32[i] = 0xff000000; // Black dots
+          }
+          ctx.putImageData(idata, 0, 0);
+          noisePatternRef.current = canvas;
+      }
+  }, []);
 
   // --- INIT AUDIO GRAPH (MASTERING CHAIN) ---
   useEffect(() => {
@@ -99,7 +238,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
 
       // 2. Connect Graph: MasterGain -> Compressor -> Speakers & Recorder
-      // This ensures WHAT YOU HEAR IS WHAT YOU RECORD.
       masterGainRef.current.disconnect();
       compressorRef.current.disconnect();
 
@@ -133,35 +271,144 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     };
   }, []);
 
-  // --- LOAD BACKGROUND MUSIC ---
-  useEffect(() => {
-    const loadMusic = async () => {
-      if (!bgMusicUrl) {
-        musicBufferRef.current = null;
-        stopMusic();
-        return;
+  // --- ADVANCED MUSIC LOGIC (CROSSFADING) ---
+  const loadAudioBuffer = async (url: string): Promise<AudioBuffer | null> => {
+      if (musicBufferCacheRef.current.has(url)) {
+          return musicBufferCacheRef.current.get(url)!;
       }
       try {
-        const response = await fetch(bgMusicUrl);
-        const arrayBuffer = await response.arrayBuffer();
-        const ctx = getAudioContext();
-        const decoded = await ctx.decodeAudioData(arrayBuffer);
-        musicBufferRef.current = decoded;
-        if (isPlaying) {
-            stopMusic();
-            playMusic();
-        }
+          const response = await fetch(url);
+          const arrayBuffer = await response.arrayBuffer();
+          const ctx = getAudioContext();
+          const decoded = await ctx.decodeAudioData(arrayBuffer);
+          musicBufferCacheRef.current.set(url, decoded);
+          return decoded;
       } catch (e) {
-        console.error("Erro ao carregar música de fundo:", e);
+          console.error("Failed to load music:", url, e);
+          return null;
       }
-    };
-    loadMusic();
-  }, [bgMusicUrl]);
+  };
 
-  // --- UPDATE MUSIC VOLUME LIVE ---
+  const fadeOutAndStop = (source: AudioBufferSourceNode, gain: GainNode, duration: number = 1.0) => {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(0, now + duration);
+      source.stop(now + duration);
+      setTimeout(() => source.disconnect(), duration * 1000 + 100);
+  };
+
+  const handleSceneMusic = async (sceneIndex: number, isPlaying: boolean) => {
+      const ctx = getAudioContext();
+      const scene = scenesRef.current[sceneIndex];
+      if (!scene || !isPlaying) return;
+
+      // Determine Desired State
+      let desiredUrl = bgMusicUrl; // Global Fallback
+      let desiredVolume = bgMusicVolume;
+      let action = MusicAction.CONTINUE; // Default for first scene if not set
+
+      if (scene.musicConfig) {
+          if (scene.musicConfig.action === MusicAction.STOP) {
+             // Just stop
+             if (musicSourceRef.current && musicGainRef.current) {
+                 fadeOutAndStop(musicSourceRef.current, musicGainRef.current, 2);
+                 musicSourceRef.current = null;
+                 currentMusicUrlRef.current = null;
+             }
+             return;
+          }
+
+          if (scene.musicConfig.action === MusicAction.START_NEW) {
+              desiredUrl = scene.musicConfig.customUrl || (scene.musicConfig.trackId && scene.musicConfig.trackId !== 'none' ? undefined : "") || bgMusicUrl;
+              // If trackId is 'custom' or specific, finding URL is tricky here without the library list. 
+              // We assume customUrl is populated if it's custom, or we rely on App to pass fully resolved URL.
+              // NOTE: For simplicity, we expect `customUrl` to be populated by App logic if it's from library
+              if (scene.musicConfig.customUrl) desiredUrl = scene.musicConfig.customUrl;
+              
+              action = MusicAction.START_NEW;
+              desiredVolume = scene.musicConfig.volume;
+          } else {
+              // CONTINUE
+              action = MusicAction.CONTINUE;
+              desiredVolume = scene.musicConfig.volume;
+          }
+      } else {
+          // No config = Global Fallback behaviour
+          if (sceneIndex === 0) {
+              action = MusicAction.START_NEW;
+          } else {
+              action = MusicAction.CONTINUE; // Default behavior implies simple background music
+          }
+      }
+
+      // Logic Execution
+      if (action === MusicAction.START_NEW) {
+          // 1. If something playing, fade it out
+          if (musicSourceRef.current && musicGainRef.current) {
+               // Optimisation: If URL is same, just adjust volume? 
+               // For START_NEW, we force restart.
+               fadeOutAndStop(musicSourceRef.current, musicGainRef.current, 2);
+               musicSourceRef.current = null;
+          }
+
+          // 2. Start new track
+          if (desiredUrl) {
+              const buffer = await loadAudioBuffer(desiredUrl);
+              if (buffer && masterGainRef.current) {
+                  const source = ctx.createBufferSource();
+                  source.buffer = buffer;
+                  source.loop = true;
+                  
+                  const gain = ctx.createGain();
+                  gain.gain.value = 0; // Start silent
+                  
+                  source.connect(gain);
+                  gain.connect(masterGainRef.current);
+                  source.start(0);
+                  
+                  // Fade In
+                  gain.gain.linearRampToValueAtTime(desiredVolume, ctx.currentTime + 2);
+
+                  musicSourceRef.current = source;
+                  musicGainRef.current = gain;
+                  currentMusicUrlRef.current = desiredUrl;
+              }
+          }
+      } else if (action === MusicAction.CONTINUE) {
+          // Just adjust volume if track is playing
+          if (musicGainRef.current) {
+              musicGainRef.current.gain.setTargetAtTime(desiredVolume, ctx.currentTime, 1.0);
+          } else if (!musicSourceRef.current && desiredUrl) {
+               // Nothing was playing (maybe first scene fallback), start it
+               // Similar to START_NEW
+                const buffer = await loadAudioBuffer(desiredUrl);
+                if (buffer && masterGainRef.current) {
+                    const source = ctx.createBufferSource();
+                    source.buffer = buffer;
+                    source.loop = true;
+                    const gain = ctx.createGain();
+                    gain.gain.value = 0; 
+                    source.connect(gain);
+                    gain.connect(masterGainRef.current);
+                    source.start(0);
+                    gain.gain.linearRampToValueAtTime(desiredVolume, ctx.currentTime + 2);
+                    musicSourceRef.current = source;
+                    musicGainRef.current = gain;
+                    currentMusicUrlRef.current = desiredUrl;
+                }
+          }
+      }
+  };
+  
+  // --- UPDATE MUSIC VOLUME LIVE (ONLY IF GLOBAL) ---
+  // If using specific scene volume, the scene change logic handles it.
+  // This effect is mostly for when the user drags the slider in real-time
   useEffect(() => {
-    if (musicGainRef.current) {
-        // Smooth transition for volume changes
+    const scene = scenesRef.current[currentSceneIndex];
+    // Only update live if no specific config overrides it, or if we are in "Global" mode
+    if (!scene?.musicConfig && musicGainRef.current) {
         musicGainRef.current.gain.setTargetAtTime(bgMusicVolume, getAudioContext().currentTime, 0.1);
     }
   }, [bgMusicVolume]);
@@ -172,9 +419,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     scenes.forEach(scene => {
       if (scene.mediaType === 'image' && scene.imageUrl) {
         const cachedImg = imageCacheRef.current.get(scene.id);
-
-        // CRITICAL FIX: Update cache if it doesn't exist OR if the URL has changed
-        // This ensures when user uploads a new image, the player actually updates.
         if (!cachedImg || cachedImg.src !== scene.imageUrl) {
           const img = new Image();
           img.src = scene.imageUrl;
@@ -194,11 +438,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     }
   }, [scenes]);
 
-  // Sync Subtitles Ref
+  // Sync Refs
   useEffect(() => {
       showSubtitlesRef.current = showSubtitles;
       subtitleStyleRef.current = subtitleStyle;
-  }, [showSubtitles, subtitleStyle]);
+      activeFilterRef.current = activeFilter;
+  }, [showSubtitles, subtitleStyle, activeFilter]);
 
   useImperativeHandle(ref, () => ({
     startRecording: () => {
@@ -256,39 +501,44 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     const currentScene = scenesList[currentSceneIndex];
     const ctx = canvas?.getContext('2d', { alpha: false }); 
     const moveParams = moveParamsRef.current[currentSceneIndex] || {x:0.5, y:0.5, scale: 1.15, direction: 1};
+    const currentFilter = activeFilterRef.current;
 
     if (canvas && ctx && currentScene) {
-      // 1. Background
+      ctx.save(); // Save state before applying global filters
+
+      // --- 1. APPLY VIDEO FILTERS (POST-PROCESSING) ---
+      let filterString = 'none';
+      if (currentFilter === VideoFilter.NOIR) filterString = 'grayscale(100%) contrast(110%)';
+      if (currentFilter === VideoFilter.VINTAGE) filterString = 'sepia(60%) contrast(90%) brightness(90%)';
+      if (currentFilter === VideoFilter.DREAMY) filterString = 'blur(0.5px) brightness(110%) saturate(120%)';
+      if (currentFilter === VideoFilter.VHS) filterString = 'contrast(120%) saturate(130%)';
+      if (currentFilter === VideoFilter.CYBERPUNK) filterString = 'contrast(110%) saturate(150%) hue-rotate(-10deg)';
+      
+      ctx.filter = filterString;
+
+      // --- 2. BACKGROUND ---
       const hue = (currentSceneIndex * 137.5) % 360;
       ctx.fillStyle = `hsl(${hue}, 20%, 10%)`;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 2. Render Media (Video or Image)
+      // --- 3. RENDER MEDIA ---
       if (currentScene.mediaType === 'video' && videoRef.current && currentScene.videoUrl) {
-          // VIDEO RENDERING (AUTO-CROP LOGIC)
           try {
               const vid = videoRef.current;
               if (vid.readyState >= 2) { 
-                  // The magic logic for "Auto-Crop" (Cover)
                   const scale = Math.max(canvas.width / vid.videoWidth, canvas.height / vid.videoHeight);
                   const w = vid.videoWidth * scale;
                   const h = vid.videoHeight * scale;
                   const x = (canvas.width - w) / 2;
                   const y = (canvas.height - h) / 2;
-                  
                   ctx.drawImage(vid, x, y, w, h);
               }
           } catch (e) {}
       } else {
-          // IMAGE RENDERING (Ken Burns)
           const cachedImg = imageCacheRef.current.get(currentScene.id);
-
           if (cachedImg && cachedImg.complete && cachedImg.naturalWidth > 0) {
-                // Determine Scene Duration for Animation Speed
-                // FIX: Use audio duration if available for smooth sync, else estimate
                 let duration = currentScene.durationEstimate || 5;
                 if (currentScene.audioBuffer) duration = currentScene.audioBuffer.duration;
-
                 const progress = Math.min(elapsed / duration, 1);
                 
                 let zoom;
@@ -313,7 +563,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
                 ctx.drawImage(cachedImg, x, y, drawnWidth, drawnHeight);
           } else {
-            // Placeholder gradient
+            // Placeholder
             const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
             gradient.addColorStop(0, `hsl(${hue}, 40%, 20%)`);
             gradient.addColorStop(1, `hsl(${(hue + 40) % 360}, 30%, 10%)`);
@@ -322,14 +572,91 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           }
       }
       
-      // 3. Vignette
-      const gradient = ctx.createRadialGradient(canvas.width/2, canvas.height/2, canvas.height/3, canvas.width/2, canvas.height/2, canvas.height);
-      gradient.addColorStop(0, 'rgba(0,0,0,0)');
-      gradient.addColorStop(1, 'rgba(0,0,0,0.6)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.filter = 'none'; // Reset filter for overlays
+      ctx.restore(); // Restore to avoid stacking filters incorrectly
 
-      // 4. SUBTITLES (Use Ref to avoid stale state)
+      // --- 4. PARTICLE EFFECTS (VFX) ---
+      if (currentScene.particleEffect && currentScene.particleEffect !== ParticleEffect.NONE) {
+         // Re-initialize particles if effect changed (simple check via ref logic or manual trigger)
+         // For this demo, we check if the current particles match the type, if not, reset
+         // But to keep it simple, we just update existing.
+         updateAndDrawParticles(ctx, canvas.width, canvas.height, currentScene.particleEffect);
+      } else {
+         particlesRef.current = [];
+      }
+
+      // --- 5. OVERLAY EFFECTS (SCANLINES / NOISE) ---
+      if (currentFilter === VideoFilter.VHS) {
+          // Scanlines
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          for (let i = 0; i < canvas.height; i += 4) {
+              ctx.fillRect(0, i, canvas.width, 2);
+          }
+          // Noise
+          if (noisePatternRef.current) {
+              ctx.save();
+              ctx.globalAlpha = 0.1;
+              ctx.globalCompositeOperation = 'overlay';
+              const noiseX = Math.random() * -128;
+              const noiseY = Math.random() * -128;
+              const ptrn = ctx.createPattern(noisePatternRef.current, 'repeat');
+              if (ptrn) {
+                  ctx.fillStyle = ptrn;
+                  ctx.translate(noiseX, noiseY);
+                  ctx.fillRect(0, 0, canvas.width + 128, canvas.height + 128);
+              }
+              ctx.restore();
+          }
+          // Date Overlay
+          ctx.font = '30px monospace';
+          ctx.fillStyle = '#00ff00';
+          ctx.shadowBlur = 5;
+          ctx.shadowColor = '#00ff00';
+          ctx.fillText("PLAY ▶", 40, 60);
+      }
+
+      if (currentFilter === VideoFilter.CYBERPUNK) {
+          const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+          grad.addColorStop(0, 'rgba(255, 0, 255, 0.2)');
+          grad.addColorStop(1, 'rgba(0, 255, 255, 0.2)');
+          ctx.save();
+          ctx.globalCompositeOperation = 'overlay';
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.restore();
+      }
+
+      if (currentFilter === VideoFilter.VINTAGE) {
+          // Vignette Stronger
+          const grad = ctx.createRadialGradient(canvas.width/2, canvas.height/2, canvas.height/3, canvas.width/2, canvas.height/2, canvas.height);
+          grad.addColorStop(0, 'rgba(150, 75, 0, 0)');
+          grad.addColorStop(1, 'rgba(60, 30, 0, 0.6)');
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          if (noisePatternRef.current) {
+              ctx.save();
+              ctx.globalAlpha = 0.15;
+              ctx.globalCompositeOperation = 'multiply';
+              const ptrn = ctx.createPattern(noisePatternRef.current, 'repeat');
+              if (ptrn) {
+                  ctx.fillStyle = ptrn;
+                  ctx.fillRect(0, 0, canvas.width, canvas.height);
+              }
+              ctx.restore();
+          }
+      }
+
+      // Normal Vignette (Default)
+      if (currentFilter === VideoFilter.NONE || currentFilter === VideoFilter.DREAMY) {
+          const gradient = ctx.createRadialGradient(canvas.width/2, canvas.height/2, canvas.height/3, canvas.width/2, canvas.height/2, canvas.height);
+          gradient.addColorStop(0, 'rgba(0,0,0,0)');
+          gradient.addColorStop(1, 'rgba(0,0,0,0.6)');
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      // --- 6. SUBTITLES ---
       const showSubs = showSubtitlesRef.current;
       const subStyle = subtitleStyleRef.current;
 
@@ -340,7 +667,10 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         const bottomMargin = isPortrait ? 280 : 90;
         const maxWidth = canvas.width * (isPortrait ? 0.85 : 0.7);
         
-        ctx.font = `900 ${fontSize}px Inter, Impact, sans-serif`; 
+        // Dynamic Font loading
+        if (subStyle === SubtitleStyle.COMIC) ctx.font = `900 ${fontSize}px "Comic Sans MS", "Impact", sans-serif`;
+        else ctx.font = `900 ${fontSize}px Inter, Impact, sans-serif`; 
+
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
@@ -363,17 +693,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         const totalTextHeight = lines.length * lineHeight;
         const startY = canvas.height - bottomMargin - totalTextHeight;
         
-        // FIX: Use Exact Audio Duration for timing
         let sceneDuration = currentScene.durationEstimate || 5;
-        if (currentScene.audioBuffer) {
-             // Add small buffer (0.2s) so last word stays on screen briefly
-             sceneDuration = currentScene.audioBuffer.duration + 0.2; 
-        }
+        if (currentScene.audioBuffer) sceneDuration = currentScene.audioBuffer.duration + 0.2; 
         
         const totalWords = words.length;
-        // Ensure index doesn't exceed words length
         const currentWordIndex = Math.min(totalWords - 1, Math.floor((elapsed / sceneDuration) * totalWords));
         
+        // --- BACKGROUND BOXES ---
         if (subStyle === SubtitleStyle.MODERN) {
              const boxPadding = 20;
              const boxWidth = maxWidth + (boxPadding * 2);
@@ -387,6 +713,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
              ctx.fill();
         }
 
+        // --- TEXT RENDERING ---
         let wordCounter = 0;
         
         lines.forEach((line, lineIdx) => {
@@ -409,6 +736,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                 ctx.shadowBlur = 0;
                 ctx.strokeStyle = 'transparent';
                 
+                // --- STYLE: CLASSIC ---
                 if (subStyle === SubtitleStyle.CLASSIC) {
                      ctx.fillStyle = isActive ? '#fbbf24' : '#ffffff';
                      ctx.lineWidth = 6;
@@ -416,14 +744,75 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                      ctx.strokeText(w, currentX + (wordWidths[wIdx]/2), lineY);
                      ctx.fillText(w, currentX + (wordWidths[wIdx]/2), lineY);
                 } 
+                // --- STYLE: NEON ---
                 else if (subStyle === SubtitleStyle.NEON) {
                     ctx.shadowBlur = 15;
                     ctx.shadowColor = isActive ? '#ffff00' : '#00ff00';
                     ctx.fillStyle = isActive ? '#ffffff' : '#ccffcc';
                     if (isPast) ctx.fillStyle = 'rgba(255,255,255,0.8)';
-                    
                     ctx.fillText(w, currentX + (wordWidths[wIdx]/2), lineY);
                 }
+                // --- STYLE: KARAOKE (NEW) ---
+                else if (subStyle === SubtitleStyle.KARAOKE) {
+                    ctx.save();
+                    const centerX = currentX + (wordWidths[wIdx]/2);
+                    
+                    if (isActive) {
+                        // Pop effect
+                        const scale = 1.2;
+                        ctx.translate(centerX, lineY);
+                        ctx.scale(scale, scale);
+                        ctx.translate(-centerX, -lineY);
+                        
+                        ctx.fillStyle = '#00ffff'; // Cyan pop
+                        ctx.shadowColor = 'rgba(0,255,255,0.8)';
+                        ctx.shadowBlur = 20;
+                    } else {
+                        ctx.fillStyle = isPast ? '#ffffff' : 'rgba(255,255,255,0.4)';
+                    }
+                    
+                    // Bold outline for readability
+                    ctx.strokeStyle = 'black';
+                    ctx.lineWidth = 4;
+                    ctx.strokeText(w, centerX, lineY);
+                    ctx.fillText(w, centerX, lineY);
+                    
+                    ctx.restore();
+                }
+                // --- STYLE: COMIC (NEW) ---
+                else if (subStyle === SubtitleStyle.COMIC) {
+                    const centerX = currentX + (wordWidths[wIdx]/2);
+                    ctx.fillStyle = isActive ? '#facc15' : '#ffffff'; // Yellow active
+                    ctx.lineWidth = 8;
+                    ctx.strokeStyle = 'black';
+                    ctx.lineJoin = 'round';
+                    
+                    // Offset shadow manually for comic feel
+                    ctx.fillStyle = 'black';
+                    ctx.fillText(w, centerX + 4, lineY + 4);
+                    
+                    ctx.fillStyle = isActive ? '#facc15' : '#ffffff';
+                    ctx.strokeText(w, centerX, lineY);
+                    ctx.fillText(w, centerX, lineY);
+                }
+                // --- STYLE: GLITCH (NEW) ---
+                else if (subStyle === SubtitleStyle.GLITCH) {
+                    const centerX = currentX + (wordWidths[wIdx]/2);
+                    
+                    if (Math.random() > 0.92) {
+                        // RGB Split
+                        ctx.fillStyle = 'red';
+                        ctx.fillText(w, centerX - 3, lineY);
+                        ctx.fillStyle = 'cyan';
+                        ctx.fillText(w, centerX + 3, lineY);
+                    }
+                    
+                    ctx.fillStyle = isActive ? '#ffffff' : 'rgba(255,255,255,0.7)';
+                    ctx.shadowColor = "rgba(0,0,0,0.8)";
+                    ctx.shadowBlur = 4;
+                    ctx.fillText(w, centerX, lineY);
+                }
+                // --- STYLE: NONE/DEFAULT (Modern) ---
                 else {
                     ctx.fillStyle = isActive ? '#fbbf24' : '#ffffff';
                     if (wordCounter > currentWordIndex) ctx.fillStyle = 'rgba(255,255,255,0.35)';
@@ -450,7 +839,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           ctx.restore();
       }
 
-      // FIX: Use Audio Duration + Buffer for Scene Transition
+      // Scene transition logic
       let sceneLimit = currentScene.durationEstimate || 5;
       if (currentScene.audioBuffer) {
           sceneLimit = currentScene.audioBuffer.duration + 0.2;
@@ -475,16 +864,10 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const playSpeech = (buffer: AudioBuffer) => {
     const ctx = getAudioContext();
     stopSpeech();
-    
-    // Ensure Master Chain Exists
     if (!masterGainRef.current) return;
-
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    
-    // Connect to Master Bus (Compressor)
     source.connect(masterGainRef.current);
-    
     source.start(0);
     speechSourceRef.current = source;
   };
@@ -498,31 +881,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     musicGainRef.current = null;
   };
 
+  // Modified to use scene logic or fallback
   const playMusic = () => {
-    if (!musicBufferRef.current) return;
-    
-    // If music is already playing, do nothing (Continuous Loop)
-    if (musicSourceRef.current) return;
-
-    const ctx = getAudioContext();
-    
-    // Ensure Master Chain Exists
-    if (!masterGainRef.current) return;
-
-    const source = ctx.createBufferSource();
-    source.buffer = musicBufferRef.current;
-    source.loop = true;
-    
-    const gain = ctx.createGain();
-    gain.gain.value = bgMusicVolume;
-    
-    // Connect Chain: Music -> MusicGain -> MasterBus
-    source.connect(gain);
-    gain.connect(masterGainRef.current);
-    
-    source.start(0);
-    musicSourceRef.current = source;
-    musicGainRef.current = gain;
+    if (!musicBufferRef.current) return; 
+    // We only use this simple playMusic if we are NOT handling complex scene logic
+    // but wait, handleSceneMusic does it better.
   };
 
   const handleNextScene = () => {
@@ -531,7 +894,9 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     startTimeRef.current = 0;
     
     if (currentSceneIndex < scenesRef.current.length - 1) {
-      setCurrentSceneIndex(currentSceneIndex + 1);
+      const nextIndex = currentSceneIndex + 1;
+      setCurrentSceneIndex(nextIndex);
+      // Audio transition logic handles inside effect when index changes
     } else {
       setIsPlaying(false);
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
@@ -541,31 +906,25 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     }
   };
 
-  // --- INDEPENDENT MUSIC EFFECT (CONTINUOUS) ---
+  // Effects
+  // IMPORTANT: We replaced simple "playMusic" with "handleSceneMusic" triggered by index change
   useEffect(() => {
-      if (isPlaying && bgMusicUrl) {
-          playMusic();
+      if (isPlaying) {
+         handleSceneMusic(currentSceneIndex, true);
       } else {
-          stopMusic();
+         stopMusic();
       }
-      // Only cleanup stops music if we are actually pausing the whole player
-      return () => {
-          // Do not stop music here if we are just re-rendering, let the effect logic decide based on isPlaying
-      };
-  }, [isPlaying, bgMusicUrl]); // DEPENDS ONLY ON PLAY STATE, NOT SCENE INDEX
-
-  // Explicit stop when component unmounts or explicit pause
-  useEffect(() => {
-      if (!isPlaying) stopMusic();
-  }, [isPlaying]);
+  }, [currentSceneIndex, isPlaying]);
 
 
-  // --- SCENE & VISUAL EFFECT (RESTARTS ON SCENE CHANGE) ---
   useEffect(() => {
     if (isPlaying && scenes[currentSceneIndex]) {
       const currentScene = scenes[currentSceneIndex];
+      
+      // Reset particles when scene changes (optional, or keep them flow)
+      // For drastic changes, maybe reset? Let's keep them flowing if same effect, reset if diff.
+      // Actually logic inside draw handles this check.
 
-      // 1. Handle Video Element source if video type
       if (currentScene.mediaType === 'video' && currentScene.videoUrl && videoRef.current) {
           if (videoRef.current.src !== currentScene.videoUrl) {
               videoRef.current.src = currentScene.videoUrl;
@@ -575,29 +934,20 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       } else if (videoRef.current) {
           videoRef.current.pause();
       }
-
-      // 2. Speech (Syncs with scene)
-      if (currentScene.audioBuffer) {
-        playSpeech(currentScene.audioBuffer);
-      }
-
-      // 3. Start Visual Loop
+      if (currentScene.audioBuffer) playSpeech(currentScene.audioBuffer);
       startTimeRef.current = 0;
       rafRef.current = requestAnimationFrame(draw);
-      
     } else {
       cancelAnimationFrame(rafRef.current);
       stopSpeech();
-      // DO NOT STOP MUSIC HERE
       if (videoRef.current) videoRef.current.pause();
     }
-
     return () => {
       cancelAnimationFrame(rafRef.current);
       stopSpeech();
       if (videoRef.current) videoRef.current.pause();
     };
-  }, [isPlaying, currentSceneIndex]); // DEPENDS ON SCENE
+  }, [isPlaying, currentSceneIndex]);
 
   const togglePlay = () => {
     if (isRecording) return;
@@ -617,7 +967,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           ref={canvasRef} 
           width={WIDTH} 
           height={HEIGHT} 
-          className="w-full h-full object-contain"
+          className={`w-full h-full object-contain ${activeFilter === VideoFilter.VHS ? 'contrast-125' : ''}`}
         />
         
         {!isPlaying && !isRecording && (
