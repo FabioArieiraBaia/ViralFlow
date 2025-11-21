@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { Language } from '../types';
 import { translations } from '../services/translations';
@@ -22,7 +21,6 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
   const [currentStep, setCurrentStep] = useState(0);
   const [coords, setCoords] = useState<{top: number, left: number, width: number, height: number} | null>(null);
   const [dontShowAgain, setDontShowAgain] = useState(false);
-  const tooltipRef = useRef<HTMLDivElement>(null);
   
   const t = translations[lang];
 
@@ -39,19 +37,15 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
         setTimeout(() => {
             const element = document.getElementById(step.targetId);
             if (element) {
-                // Scroll element into view logic
-                element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
-                
-                // Wait for scroll to likely finish before grabbing coords
-                setTimeout(() => {
-                    const rect = element.getBoundingClientRect();
-                    setCoords({
-                        top: rect.top + window.scrollY,
-                        left: rect.left + window.scrollX,
-                        width: rect.width,
-                        height: rect.height
-                    });
-                }, 400);
+                const rect = element.getBoundingClientRect();
+                setCoords({
+                    top: rect.top + window.scrollY,
+                    left: rect.left + window.scrollX,
+                    width: rect.width,
+                    height: rect.height
+                });
+                // Scroll to element
+                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
             } else {
                 // Fallback center if element not found
                 setCoords(null); 
@@ -61,15 +55,10 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
 
     updatePosition();
     window.addEventListener('resize', updatePosition);
-    window.addEventListener('scroll', updatePosition); // Re-calc on user scroll
-    return () => {
-        window.removeEventListener('resize', updatePosition);
-        window.removeEventListener('scroll', updatePosition);
-    };
+    return () => window.removeEventListener('resize', updatePosition);
   }, [currentStep, isOpen, steps]);
 
-  const handleNext = (e: React.MouseEvent) => {
-      e.stopPropagation();
+  const handleNext = () => {
       if (currentStep < steps.length - 1) {
           setCurrentStep(currentStep + 1);
       } else {
@@ -77,8 +66,7 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
       }
   };
 
-  const handlePrev = (e: React.MouseEvent) => {
-      e.stopPropagation();
+  const handlePrev = () => {
       if (currentStep > 0) {
           setCurrentStep(currentStep - 1);
       }
@@ -91,44 +79,20 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
       onClose();
   };
 
-  // Close when clicking background
-  const handleBackdropClick = (e: React.MouseEvent) => {
-      // Only close if clicking the backdrop itself, not the target "hole" (although hole clicks pass through via clip-path usually)
-      // But since we have a div covering everything, we just treat it as close.
-      // The actual target click is handled because clip-path removes the element from hit-test in that area.
-      onClose();
-  };
-
   if (!isOpen) return null;
 
   const step = steps[currentStep];
 
-  // Tooltip Position Logic with "Smart Flip" to prevent off-screen
+  // Tooltip Position Logic
   const getTooltipStyle = () => {
-      if (!coords) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', position: 'fixed' as 'fixed' };
+      if (!coords) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
       
-      const gap = 16;
+      const gap = 12;
       let top = 0;
       let left = 0;
       let transform = '';
-      
-      // Viewport Dimensions
-      const vHeight = window.innerHeight;
-      const vWidth = window.innerWidth;
-      const scrollY = window.scrollY;
 
-      // Relative position in viewport
-      const elementTopInViewport = coords.top - scrollY;
-      
-      // Decision logic: If trying to put bottom but element is low, flip to top
-      let effectivePosition = step.position;
-      if (step.position === 'bottom' && elementTopInViewport > vHeight * 0.6) {
-          effectivePosition = 'top';
-      } else if (step.position === 'top' && elementTopInViewport < 150) {
-          effectivePosition = 'bottom';
-      }
-
-      switch (effectivePosition) {
+      switch (step.position) {
           case 'bottom':
               top = coords.top + coords.height + gap;
               left = coords.left + (coords.width / 2);
@@ -150,40 +114,29 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
               transform = 'translate(-100%, -50%)';
               break;
           default:
-              return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)', position: 'fixed' as 'fixed' };
+              return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
       }
 
-      // Simple bounds checking to prevent X-axis overflow
-      // We can't easily fix Y-axis overflow here without changing `top`, 
-      // but the flip logic above handles the worst cases.
-      
-      return { top, left, transform, position: 'absolute' as 'absolute' };
+      return { top, left, transform };
   };
 
-  const style = getTooltipStyle();
-
   return (
-    <div className="absolute inset-0 z-[100] h-full w-full">
+    <div className="fixed inset-0 z-[100] overflow-hidden">
        {/* Backdrop with cutout effect */}
-       {/* We make the backdrop fixed to cover viewport, but logic uses absolute for document flow matching */}
-       <div 
-         className="fixed inset-0 bg-black/70 transition-all duration-300 cursor-pointer"
-         onClick={handleBackdropClick}
-         style={coords ? {
+       <div className="absolute inset-0 bg-black/70 transition-all duration-300" style={coords ? {
            clipPath: `polygon(
              0% 0%, 0% 100%, 
              ${coords.left}px 100%, 
-             ${coords.left}px ${coords.top - window.scrollY}px, 
-             ${coords.left + coords.width}px ${coords.top - window.scrollY}px, 
-             ${coords.left + coords.width}px ${coords.top + coords.height - window.scrollY}px, 
-             ${coords.left}px ${coords.top + coords.height - window.scrollY}px, 
+             ${coords.left}px ${coords.top}px, 
+             ${coords.left + coords.width}px ${coords.top}px, 
+             ${coords.left + coords.width}px ${coords.top + coords.height}px, 
+             ${coords.left}px ${coords.top + coords.height}px, 
              ${coords.left}px 100%, 
              100% 100%, 100% 0%
            )`
-       } : {}}
-       ></div>
+       } : {}}></div>
 
-       {/* Highlight Border - Pointer events none allows clicking through to the element */}
+       {/* Highlight Border */}
        {coords && (
            <div 
              className="absolute border-4 border-indigo-500 rounded-lg shadow-[0_0_20px_rgba(99,102,241,0.6)] transition-all duration-300 pointer-events-none"
@@ -198,10 +151,8 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
 
        {/* Tooltip Card */}
        <div 
-         ref={tooltipRef}
-         onClick={(e) => e.stopPropagation()} // Prevent closing when clicking the card itself
-         className="bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-2xl max-w-sm w-full border border-zinc-200 dark:border-zinc-700 flex flex-col gap-4 transition-all duration-300 z-[101]"
-         style={style}
+         className="absolute bg-white dark:bg-zinc-900 p-6 rounded-2xl shadow-2xl max-w-sm w-full border border-zinc-200 dark:border-zinc-700 flex flex-col gap-4 transition-all duration-300"
+         style={getTooltipStyle()}
        >
            <div className="flex justify-between items-start">
                 <div>
@@ -212,7 +163,7 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
                         {translations[lang][step.translationKey]}
                     </h3>
                 </div>
-                <button onClick={onClose} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1">
+                <button onClick={onClose} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white">
                     <X className="w-5 h-5" />
                 </button>
            </div>
