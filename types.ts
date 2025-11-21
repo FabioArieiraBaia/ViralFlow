@@ -1,4 +1,8 @@
 
+
+export type Language = 'pt' | 'en' | 'es';
+export type Theme = 'light' | 'dark';
+
 export enum VideoStyle {
   SCARY = 'Terror Analógico (Creepypasta)',
   DOCUMENTARY = 'Cinematográfico Realista (Estilo NatGeo/BBC)',

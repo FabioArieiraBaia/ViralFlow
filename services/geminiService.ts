@@ -1,6 +1,7 @@
 
+
 import { GoogleGenAI, Type, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { GeneratedScriptItem, VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, ImageProvider } from "../types";
+import { GeneratedScriptItem, VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
 import { getProjectDir, saveBase64File, saveTextFile } from "./fileSystem";
 
@@ -141,11 +142,13 @@ export const generateVideoScript = async (
   durationMinutes: number,
   pacing: VideoPacing,
   channelName: string,
+  language: Language,
   checkCancelled?: () => boolean
 ): Promise<GeneratedScriptItem[]> => {
   
   return withRetry(async (ai) => {
     const totalWords = Math.ceil(durationMinutes * 150);
+    const targetLanguage = language === 'pt' ? 'PORTUGUESE (BRAZIL)' : language === 'es' ? 'SPANISH' : 'ENGLISH (US)';
     
     const systemInstruction = `You are a World-Class Video Director and Scriptwriter. Channel: "${channelName}". Style: ${style}. Pacing: ${pacing}.
     
@@ -161,7 +164,7 @@ export const generateVideoScript = async (
     7. MANDATORY OUTRO: The FINAL scene MUST be a Call-to-Action (CTA). The narrator explicitly thanks the viewer in the name of the channel "${channelName || 'Narrator'}" and asks for Likes, Comments, and Subscription.
     
     Output ONLY valid JSON array: [{ "speaker": "Name", "text": "Dialogue", "visual_prompt": "CAMERA_ANGLE + Action description" }]
-    Language: PORTUGUESE (BRAZIL).`;
+    Language: ${targetLanguage}.`;
 
     const prompt = `Create a script about: "${topic}".
     Target Duration: ${durationMinutes} minutes (approx ${totalWords} words).
