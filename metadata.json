@@ -1,0 +1,5 @@
+{
+  "name": "Copy of ViralFlow AI",
+  "description": "Automated viral video generator using Gemini 2.5 for Script, TTS, and Imagery. Runs locally in your browser.",
+  "requestFramePermissions": []
+}
