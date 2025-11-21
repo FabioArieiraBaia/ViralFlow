@@ -1,5 +1,3 @@
-
-
 import { GoogleGenAI, Type, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
 import { GeneratedScriptItem, VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
@@ -150,6 +148,21 @@ export const generateVideoScript = async (
     const totalWords = Math.ceil(durationMinutes * 150);
     const targetLanguage = language === 'pt' ? 'PORTUGUESE (BRAZIL)' : language === 'es' ? 'SPANISH' : 'ENGLISH (US)';
     
+    // Define scene duration rules based on pacing
+    let durationRule = "Break the script into scenes of 4-7 seconds.";
+    let cutInstruction = "Standard narrative pacing.";
+    
+    if (pacing === VideoPacing.HYPER) {
+        durationRule = "EXTREMELY IMPORTANT: Break the script into very short scenes of 1-2 seconds max. Short sentences. Rapid cuts.";
+        cutInstruction = "Fast-paced, TikTok style, constant visual changes.";
+    } else if (pacing === VideoPacing.FAST) {
+        durationRule = "Break the script into short scenes of 2-4 seconds.";
+        cutInstruction = "Dynamic YouTuber style, frequent cuts.";
+    } else if (pacing === VideoPacing.SLOW) {
+        durationRule = "Break the script into long, contemplative scenes of 8-15 seconds.";
+        cutInstruction = "Slow documentary style, let the visuals breathe.";
+    }
+
     const systemInstruction = `You are a World-Class Video Director and Scriptwriter. Channel: "${channelName}". Style: ${style}. Pacing: ${pacing}.
     
     YOUR MISSION: Create a script that visually tells a story.
@@ -168,7 +181,10 @@ export const generateVideoScript = async (
 
     const prompt = `Create a script about: "${topic}".
     Target Duration: ${durationMinutes} minutes (approx ${totalWords} words).
-    Constraint: High visual variety. Break the script into scenes of 3-6 seconds.`;
+    PACING CONSTRAINT: ${cutInstruction}
+    SCENE DURATION: ${durationRule}
+    
+    For 'HYPER' or 'FAST' pacing, split long sentences into multiple scene objects to force visual changes.`;
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',

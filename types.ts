@@ -94,6 +94,13 @@ export interface SceneMusicConfig {
   volume: number; // 0.0 to 1.0
 }
 
+export interface OverlayConfig {
+  url: string;
+  x: number; // 0.0 to 1.0 (percentage of width)
+  y: number; // 0.0 to 1.0 (percentage of height)
+  scale: number; // 0.1 to 5.0
+}
+
 export interface Scene {
   id: string;
   speaker: string; 
@@ -115,6 +122,7 @@ export interface Scene {
   // Effects & Post-Processing
   particleEffect?: ParticleEffect;
   musicConfig?: SceneMusicConfig;
+  overlay?: OverlayConfig; // PRO Feature: Per-scene image overlay
 
   isGeneratingImage: boolean;
   isGeneratingAudio: boolean;
@@ -141,6 +149,9 @@ export interface ProjectState {
   bgMusicUrl?: string;
   bgMusicVolume: number;
   
+  // Branding (Global)
+  channelLogo?: OverlayConfig;
+
   // Subtitles
   showSubtitles: boolean;
   subtitleStyle: SubtitleStyle;

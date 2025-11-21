@@ -1,12 +1,12 @@
 
 
 import React, { useState, useRef, useEffect } from 'react';
-import { VideoStyle, VideoDuration, Scene, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, Soundtrack, UserTier, VideoFilter, ParticleEffect, MusicAction, SceneMusicConfig, Language, Theme } from './types';
+import { VideoStyle, VideoDuration, Scene, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, Soundtrack, UserTier, VideoFilter, ParticleEffect, MusicAction, SceneMusicConfig, Language, Theme, OverlayConfig } from './types';
 import { generateVideoScript, generateSpeech, generateSceneImage, generateThumbnails, generateMetadata, getApiKeyCount, saveManualKeys, getManualKeys, savePexelsKey, getPexelsKey } from './services/geminiService';
 import { translations } from './services/translations';
 import { getProjectDir, openProjectFolder, triggerBrowserDownload } from './services/fileSystem';
 import VideoPlayer, { VideoPlayerRef } from './components/VideoPlayer';
-import { Wand2, Video, Download, Loader2, Layers, Film, PlayCircle, Zap, Monitor, Music, Smartphone, Image as ImageIcon, Hash, Clock, Youtube, Captions, Type, Mic, Settings, AlertCircle, CheckCircle2, Save, Palette, StopCircle, RotateCcw, Volume2, Lock, Crown, Key, Copy, ShieldCheck, Edit2, RefreshCcw, X, Upload, FileImage, FileVideo, ZapIcon, Music2, Info, Sparkles, MoveRight, Globe, Sun, Moon } from 'lucide-react';
+import { Wand2, Video, Download, Loader2, Layers, Film, PlayCircle, Zap, Monitor, Music, Smartphone, Image as ImageIcon, Hash, Clock, Youtube, Captions, Type, Mic, Settings, AlertCircle, CheckCircle2, Save, Palette, StopCircle, RotateCcw, Volume2, Lock, Crown, Key, Copy, ShieldCheck, Edit2, RefreshCcw, X, Upload, FileImage, FileVideo, ZapIcon, Music2, Info, Sparkles, MoveRight, Globe, Sun, Moon, FileAudio, TriangleAlert, Sticker, ImagePlus, MousePointer2 } from 'lucide-react';
 
 // --- CONFIGURAÇÃO DE VENDAS ---
 const GUMROAD_PRODUCT_PERMALINK: string = 'viralflow'; 
@@ -58,44 +58,6 @@ const VOICE_OPTIONS = [
   { id: 'Zephyr', label: '🌬️ Zephyr (Masc. Calmo)' },
   { id: 'Custom', label: '✏️ Outra / Personalizada...' }
 ];
-
-const STOCK_LIBRARY: Soundtrack[] = [
-  {
-    id: 'epic_orchestral',
-    label: '🎻 Épico / Motivacional (Cinemático)',
-    url: 'https://cdn.pixabay.com/audio/2022/05/27/audio_1808fbf07a.mp3',
-    tags: [VideoStyle.MOTIVATIONAL, VideoStyle.HISTORY, VideoStyle.DOCUMENTARY, VideoStyle.STORY]
-  },
-  {
-    id: 'dark_ambient',
-    label: '👻 Terror / Suspense (Dark Ambient)',
-    url: 'https://cdn.pixabay.com/audio/2022/10/25/audio_9f1691fa33.mp3',
-    tags: [VideoStyle.SCARY, VideoStyle.MYSTERY, VideoStyle.CURIOSITY]
-  },
-  {
-    id: 'tech_synth',
-    label: '🤖 Tech / Futurista (Synthwave)',
-    url: 'https://cdn.pixabay.com/audio/2022/03/15/audio_c8c8a73467.mp3',
-    tags: [VideoStyle.TECH_NEWS, VideoStyle.CURIOSITY]
-  },
-  {
-    id: 'lofi_chill',
-    label: '☕ Relax / Lo-Fi (Natureza)',
-    url: 'https://cdn.pixabay.com/audio/2022/05/05/audio_13dc87d091.mp3',
-    tags: [VideoStyle.RELAX, VideoStyle.STORY, VideoStyle.MEME]
-  },
-  {
-    id: 'upbeat_pop',
-    label: '⚡ Dinâmico / Viral (Upbeat)',
-    url: 'https://cdn.pixabay.com/audio/2022/01/18/audio_d46a3b4d8c.mp3',
-    tags: [VideoStyle.MEME, VideoStyle.CURIOSITY, VideoStyle.TECH_NEWS]
-  }
-];
-
-const getMusicForStyle = (style: VideoStyle): Soundtrack => {
-    const match = STOCK_LIBRARY.find(t => t.tags.includes(style));
-    return match || STOCK_LIBRARY[0];
-};
 
 const performAutoCasting = (scenes: Scene[]): Scene[] => {
   const uniqueSpeakers = Array.from(new Set(scenes.map(s => s.speaker)));
@@ -271,8 +233,9 @@ const EditSceneModal: React.FC<{
     onRegenerateAsset: (scene: Scene, provider: ImageProvider) => Promise<any>,
     onRegenerateAudio: (scene: Scene) => Promise<any>,
     lang: Language,
+    userTier: UserTier,
     t: any
-}> = ({ scene, onClose, onSave, onRegenerateAsset, onRegenerateAudio, lang, t }) => {
+}> = ({ scene, onClose, onSave, onRegenerateAsset, onRegenerateAudio, lang, userTier, t }) => {
     const [localScene, setLocalScene] = useState<Scene>({...scene});
     const [activeTab, setActiveTab] = useState<'text'|'visual'|'audio'>('text');
     const [isRegenerating, setIsRegenerating] = useState(false);
@@ -283,6 +246,10 @@ const EditSceneModal: React.FC<{
     const [musicAction, setMusicAction] = useState<MusicAction>(localScene.musicConfig?.action || MusicAction.CONTINUE);
     const [musicTrackId, setMusicTrackId] = useState<string>(localScene.musicConfig?.trackId || 'none');
     const [musicVolume, setMusicVolume] = useState<number>(localScene.musicConfig?.volume ?? 0.2);
+    const [customAudioFile, setCustomAudioFile] = useState<string | undefined>(localScene.musicConfig?.customUrl);
+    const [uploadedFileName, setUploadedFileName] = useState<string>('');
+
+    const musicFileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         // Sync music state back to localScene
@@ -290,15 +257,11 @@ const EditSceneModal: React.FC<{
             action: musicAction,
             trackId: musicTrackId,
             volume: musicVolume,
-            customUrl: localScene.musicConfig?.customUrl
+            customUrl: musicTrackId === 'custom' ? customAudioFile : localScene.musicConfig?.customUrl
         };
         
-        // If user chose a specific track, auto-set customUrl if it's in library
-        const libTrack = STOCK_LIBRARY.find(t => t.id === musicTrackId);
-        if (libTrack) config.customUrl = libTrack.url;
-
         setLocalScene(prev => ({ ...prev, musicConfig: config }));
-    }, [musicAction, musicTrackId, musicVolume]);
+    }, [musicAction, musicTrackId, musicVolume, customAudioFile]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -312,6 +275,32 @@ const EditSceneModal: React.FC<{
                 videoUrl: isVideo ? url : undefined,
                 visualPrompt: t[lang].manualUpload
             }));
+        }
+    };
+
+    const handleOverlayUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const url = URL.createObjectURL(file);
+            setLocalScene(prev => ({
+                ...prev,
+                overlay: {
+                    url,
+                    x: 0.5, // Center
+                    y: 0.5,
+                    scale: 1.0
+                }
+            }));
+        }
+    };
+
+    const handleMusicFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const url = URL.createObjectURL(file);
+            setCustomAudioFile(url);
+            setUploadedFileName(file.name);
+            setMusicTrackId('custom');
         }
     };
 
@@ -438,6 +427,44 @@ const EditSceneModal: React.FC<{
                                 )}
                             </div>
                             
+                            {/* PRO: SCENE OVERLAY */}
+                            <div className={`p-4 rounded-lg border ${userTier === UserTier.PRO ? 'border-amber-500/30 bg-amber-500/5' : 'border-zinc-200 dark:border-zinc-800 opacity-70'}`}>
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-xs font-bold text-amber-600 dark:text-amber-500 uppercase tracking-wider flex items-center gap-2">
+                                        <ImagePlus className="w-4 h-4" /> {t[lang].sceneOverlay}
+                                    </label>
+                                    {userTier === UserTier.FREE && <Lock className="w-3 h-3 text-zinc-500" />}
+                                </div>
+                                {userTier === UserTier.PRO ? (
+                                    <div className="flex items-center gap-4">
+                                        {localScene.overlay ? (
+                                            <div className="flex items-center gap-3 flex-1">
+                                                 <img src={localScene.overlay.url} className="w-10 h-10 object-contain bg-black/20 rounded" />
+                                                 <div className="flex-1 text-xs text-zinc-500">
+                                                     {t[lang].dragToMove}
+                                                 </div>
+                                                 <button onClick={() => setLocalScene(prev => ({...prev, overlay: undefined}))} className="text-red-500 hover:bg-red-100 p-1 rounded"><X className="w-4 h-4"/></button>
+                                            </div>
+                                        ) : (
+                                            <label className="flex-1 cursor-pointer border border-dashed border-amber-500/30 rounded-lg p-3 text-center hover:bg-amber-500/10 transition-colors">
+                                                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium">Upload PNG (Overlay)</span>
+                                                <input type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleOverlayUpload} />
+                                            </label>
+                                        )}
+                                        {localScene.overlay && (
+                                            <button 
+                                                onClick={() => setLocalScene(prev => ({...prev, overlay: prev.overlay ? { ...prev.overlay, x: 0.5, y: 0.5, scale: 1.0 } : undefined}))}
+                                                className="text-xs text-zinc-500 underline"
+                                            >
+                                                {t[lang].resetPos}
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <p className="text-xs text-zinc-500">{t[lang].onlyPro}</p>
+                                )}
+                            </div>
+
                             {/* VFX Selector */}
                              <div className="space-y-2">
                                 <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2"><Sparkles className="w-3 h-3"/> {t[lang].particlesVFX}</label>
@@ -525,11 +552,26 @@ const EditSceneModal: React.FC<{
                                                     className="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-900 dark:text-white outline-none focus:border-indigo-500"
                                                 >
                                                     <option value="none">Selecione...</option>
-                                                    {STOCK_LIBRARY.map(track => (
-                                                        <option key={track.id} value={track.id}>{track.label}</option>
-                                                    ))}
+                                                    <option value="custom">{t[lang].customAudio}</option>
                                                 </select>
                                             </div>
+
+                                            {musicTrackId === 'custom' && (
+                                                <div className="bg-zinc-50 dark:bg-zinc-900 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-4 text-center hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer" onClick={() => musicFileInputRef.current?.click()}>
+                                                    <div className="flex flex-col items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                                                        <FileAudio className="w-8 h-8 text-indigo-500" />
+                                                        <span className="text-xs font-medium">{uploadedFileName || t[lang].uploadAudioTip}</span>
+                                                    </div>
+                                                    <input 
+                                                        type="file" 
+                                                        ref={musicFileInputRef} 
+                                                        onChange={handleMusicFileUpload} 
+                                                        accept="audio/*" 
+                                                        className="hidden" 
+                                                    />
+                                                    {customAudioFile && <div className="mt-2 text-[10px] text-emerald-500 flex items-center justify-center gap-1"><CheckCircle2 className="w-3 h-3"/> {t[lang].fileUploaded}</div>}
+                                                </div>
+                                            )}
                                             
                                             <div>
                                                 <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">{t[lang].musicVolume} ({Math.round(musicVolume * 100)}%)</label>
@@ -586,6 +628,10 @@ const App: React.FC = () => {
   const [bgMusicUrl, setBgMusicUrl] = useState<string>("");
   const [bgMusicVolume, setBgMusicVolume] = useState<number>(0.15);
   const musicInputRef = useRef<HTMLInputElement>(null);
+
+  // Branding State
+  const [channelLogo, setChannelLogo] = useState<OverlayConfig | undefined>(undefined);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   // UI State
   const [isGenerating, setIsGenerating] = useState(false);
@@ -706,12 +752,19 @@ const App: React.FC = () => {
       // PASS LANG HERE
       const rawScript = await generateVideoScript(topic, style, durMinutes, pacing, channelName, lang, () => cancelRef.current);
       
+      // Determine Min Scene Duration based on Pacing
+      let minDuration = 3; // Default Normal
+      if (pacing === VideoPacing.HYPER) minDuration = 1.5;
+      if (pacing === VideoPacing.FAST) minDuration = 2.5;
+      if (pacing === VideoPacing.SLOW) minDuration = 6;
+
       let newScenes: Scene[] = rawScript.map((item, idx) => ({
         id: `scene-${idx}`,
         speaker: item.speaker,
         text: item.text,
         visualPrompt: item.visual_prompt,
-        durationEstimate: Math.max(3, item.text.split(' ').length * 0.4), 
+        // DYNAMIC DURATION ESTIMATE based on Pacing
+        durationEstimate: Math.max(minDuration, item.text.split(' ').length * 0.4), 
         mediaType: 'image',
         imageUrl: '', // Placeholder
         isGeneratingImage: true,
@@ -726,10 +779,7 @@ const App: React.FC = () => {
       }
 
       setScenes(newScenes);
-      
-      // Set initial music based on style
-      const defaultMusic = getMusicForStyle(style);
-      setBgMusicUrl(defaultMusic.url);
+      setBgMusicUrl(""); // Start empty, user must upload
 
       // 2. Parallel Generation Loop
       for (let i = 0; i < newScenes.length; i++) {
@@ -841,18 +891,28 @@ const App: React.FC = () => {
       }
   };
 
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const url = URL.createObjectURL(file);
+          setChannelLogo({
+              url,
+              x: 0.8,
+              y: 0.05,
+              scale: 1.0
+          });
+      }
+  };
+
   const handleMusicSelection = (val: string) => {
       if (val === 'upload') {
           musicInputRef.current?.click();
       } else if (val === 'none') {
           setBgMusicUrl("");
-      } else {
-          const track = STOCK_LIBRARY.find(t => t.id === val);
-          if (track) setBgMusicUrl(track.url);
       }
   };
 
-  const currentMusicId = STOCK_LIBRARY.find(t => t.url === bgMusicUrl)?.id || (bgMusicUrl ? 'custom' : 'none');
+  const currentMusicId = bgMusicUrl ? 'custom' : 'none';
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 selection:bg-indigo-500/30 flex flex-col overflow-hidden transition-colors duration-300">
@@ -924,6 +984,15 @@ const App: React.FC = () => {
                     <div className="text-center space-y-4 py-8">
                          <h2 className="text-4xl font-black text-zinc-900 dark:text-white tracking-tight">{translations[lang].whatCreate}</h2>
                          <p className="text-zinc-500 dark:text-zinc-400 text-lg">{translations[lang].appDesc}</p>
+                    </div>
+
+                    {/* Copyright Warning Banner */}
+                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-4 flex items-start gap-3 shadow-sm">
+                        <TriangleAlert className="w-5 h-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
+                        <div>
+                            <h3 className="font-bold text-amber-800 dark:text-amber-400 text-sm mb-1">{translations[lang].copyrightWarning}</h3>
+                            <p className="text-xs text-amber-700 dark:text-amber-300/80 leading-relaxed">{translations[lang].copyrightBody}</p>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1103,9 +1172,9 @@ const App: React.FC = () => {
         {/* PREVIEW / EDITOR TAB */}
         {activeTab === 'preview' && (
              scenes.length > 0 ? (
-                <div className="flex-1 flex flex-col md:flex-row h-full">
-                    {/* LEFT: PLAYER */}
-                    <div className="w-full md:w-1/2 lg:w-2/5 bg-zinc-100 dark:bg-black flex items-center justify-center p-6 border-r border-zinc-200 dark:border-zinc-800 relative">
+                <div className="flex-1 flex flex-col md:flex-row h-full items-start overflow-hidden">
+                    {/* LEFT: PLAYER (Sticky) */}
+                    <div className="w-full md:w-1/2 lg:w-2/5 bg-zinc-100 dark:bg-black flex flex-col items-center p-6 border-r border-zinc-200 dark:border-zinc-800 z-10 md:sticky md:top-0 md:h-screen md:overflow-y-auto custom-scrollbar">
                         <div className="w-full max-w-[400px]">
                             <VideoPlayer 
                                 ref={playerRef}
@@ -1122,16 +1191,42 @@ const App: React.FC = () => {
                                 activeFilter={activeFilter}
                                 userTier={userTier}
                                 onPlaybackComplete={() => setIsPlaying(false)}
+                                channelLogo={channelLogo}
+                                onUpdateChannelLogo={setChannelLogo}
+                                onUpdateSceneOverlay={(id, cfg) => {
+                                    setScenes(prev => prev.map(s => s.id === id ? { ...s, overlay: cfg } : s));
+                                }}
                             />
                             
                             {/* Quick Controls */}
-                            <div className="mt-6 grid grid-cols-2 gap-4">
-                                <button 
-                                    onClick={() => playerRef.current?.startRecording()}
-                                    className="flex items-center justify-center gap-2 py-3 rounded-lg bg-red-600 hover:bg-red-500 text-white font-bold transition-colors"
-                                >
-                                    <div className="w-3 h-3 rounded-full bg-white"></div> {translations[lang].recExport}
-                                </button>
+                            <div className="mt-6 space-y-4">
+                                <div className="flex gap-3">
+                                    <button 
+                                        onClick={() => playerRef.current?.startRecording(false)}
+                                        disabled={isGenerating || isPlaying}
+                                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold transition-colors text-xs"
+                                    >
+                                        <Download className="w-4 h-4" /> {translations[lang].exportHD}
+                                    </button>
+                                    <button 
+                                        onClick={() => {
+                                            if (userTier === UserTier.FREE) {
+                                                setShowUpgradeModal(true);
+                                            } else {
+                                                playerRef.current?.startRecording(true);
+                                            }
+                                        }}
+                                        disabled={isGenerating || isPlaying}
+                                        className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-black font-bold transition-all text-xs relative overflow-hidden group"
+                                    >
+                                        <Crown className="w-4 h-4" /> {translations[lang].export4k}
+                                        {userTier === UserTier.FREE && (
+                                            <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <Lock className="w-4 h-4 text-white" />
+                                            </div>
+                                        )}
+                                    </button>
+                                </div>
                                 
                                 {/* Subtitle Style Selector */}
                                 <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 rounded-lg px-3 border border-zinc-200 dark:border-zinc-800">
@@ -1146,7 +1241,7 @@ const App: React.FC = () => {
                                 </div>
 
                                 {/* Video Filter Selector */}
-                                <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 rounded-lg px-3 border border-zinc-200 dark:border-zinc-800 col-span-2">
+                                <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 rounded-lg px-3 border border-zinc-200 dark:border-zinc-800">
                                     <Sparkles className="w-4 h-4 text-zinc-400" />
                                     <select 
                                         value={activeFilter} 
@@ -1157,7 +1252,7 @@ const App: React.FC = () => {
                                     </select>
                                 </div>
 
-                                <div className="col-span-2 flex items-center justify-center gap-2 mt-1">
+                                <div className="flex items-center justify-center gap-2 mt-1">
                                     <label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white select-none">
                                         <input 
                                             type="checkbox" 
@@ -1173,13 +1268,14 @@ const App: React.FC = () => {
                     </div>
 
                     {/* RIGHT: TIMELINE & ASSETS */}
-                    <div className="flex-1 bg-white dark:bg-zinc-950 flex flex-col overflow-hidden">
+                    <div className="flex-1 h-full bg-white dark:bg-zinc-950 flex flex-col overflow-y-auto custom-scrollbar">
                         
                         {/* MUSIC & ATMOSPHERE CONTROL PANEL */}
                         <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 space-y-3">
                             <h3 className="font-bold text-zinc-900 dark:text-white flex items-center gap-2 text-sm">
                                 <Music2 className="w-4 h-4 text-indigo-600 dark:text-indigo-400" /> {translations[lang].tabAudio}
                             </h3>
+                            
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-center">
                                 {/* Music Selector */}
                                 <div className="relative">
@@ -1189,10 +1285,7 @@ const App: React.FC = () => {
                                         className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-3 pr-8 py-2 text-xs text-zinc-900 dark:text-white appearance-none focus:ring-1 focus:ring-indigo-500 outline-none"
                                     >
                                         <option value="none">🔇 Sem Música (Global)</option>
-                                        {STOCK_LIBRARY.map(track => (
-                                            <option key={track.id} value={track.id}>🎵 {track.label}</option>
-                                        ))}
-                                        <option value="upload">📂 Upload Próprio...</option>
+                                        <option value="upload">📂 Upload Próprio (MP3/WAV)...</option>
                                         {currentMusicId === 'custom' && <option value="custom" disabled>Arquivo Carregado</option>}
                                     </select>
                                     <div className="absolute right-3 top-2.5 pointer-events-none">
@@ -1224,6 +1317,47 @@ const App: React.FC = () => {
                                 accept="audio/*"
                                 className="hidden" 
                             />
+                        </div>
+
+                        {/* BRANDING PANEL (PRO) */}
+                        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="font-bold text-zinc-900 dark:text-white flex items-center gap-2 text-sm">
+                                    <Sticker className="w-4 h-4 text-amber-500" /> {translations[lang].branding}
+                                </h3>
+                                {userTier === UserTier.FREE && <Lock className="w-3 h-3 text-zinc-500" />}
+                            </div>
+                            
+                            {userTier === UserTier.PRO ? (
+                                <div className="flex items-center gap-3">
+                                    <div className="flex-1">
+                                        {channelLogo ? (
+                                            <div className="flex items-center gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                                                <img src={channelLogo.url} className="w-8 h-8 object-contain bg-black/20 rounded" />
+                                                <span className="text-xs text-amber-600 dark:text-amber-400 font-medium flex-1 truncate">Logo Ativa</span>
+                                                <button onClick={() => setChannelLogo(undefined)} className="p-1 hover:bg-amber-500/20 rounded text-amber-600"><X className="w-3 h-3" /></button>
+                                            </div>
+                                        ) : (
+                                            <button 
+                                                onClick={() => logoInputRef.current?.click()}
+                                                className="w-full flex items-center justify-center gap-2 p-2 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                            >
+                                                <Upload className="w-3 h-3 text-zinc-500" />
+                                                <span className="text-xs text-zinc-500 font-medium">{translations[lang].uploadLogo}</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                    {channelLogo && (
+                                        <div className="text-[10px] text-zinc-400 flex flex-col items-center">
+                                            <MousePointer2 className="w-3 h-3 mb-0.5" />
+                                            <span>{translations[lang].dragToMove}</span>
+                                        </div>
+                                    )}
+                                    <input type="file" ref={logoInputRef} onChange={handleLogoUpload} accept="image/png,image/jpeg" className="hidden" />
+                                </div>
+                            ) : (
+                                <div className="text-xs text-zinc-500 italic">{translations[lang].onlyPro}</div>
+                            )}
                         </div>
 
                         <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50">
@@ -1282,6 +1416,10 @@ const App: React.FC = () => {
 
                                             {scene.particleEffect && scene.particleEffect !== ParticleEffect.NONE && (
                                                 <span className="text-[10px] text-blue-600 dark:text-blue-400 flex items-center gap-1 bg-blue-100 dark:bg-blue-400/10 px-1.5 py-0.5 rounded"><Sparkles className="w-3 h-3"/> {scene.particleEffect}</span>
+                                            )}
+                                            
+                                            {scene.overlay && (
+                                                <span className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 bg-amber-100 dark:bg-amber-400/10 px-1.5 py-0.5 rounded"><ImagePlus className="w-3 h-3"/> Overlay</span>
                                             )}
                                             
                                             {scene.musicConfig && scene.musicConfig.action === MusicAction.START_NEW && (
@@ -1409,7 +1547,7 @@ const App: React.FC = () => {
 
       {showWelcomeModal && <WelcomeModal onClose={handleCloseWelcome} lang={lang} t={translations} />}
       {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} onUpgrade={handleUpgrade} lang={lang} t={translations} />}
-      {editingScene && <EditSceneModal scene={editingScene} onClose={() => setEditingScene(null)} onSave={saveSceneUpdate} onRegenerateAsset={handleSceneAssetRegeneration} onRegenerateAudio={handleSceneAudioRegeneration} lang={lang} t={translations} />}
+      {editingScene && <EditSceneModal scene={editingScene} onClose={() => setEditingScene(null)} onSave={saveSceneUpdate} onRegenerateAsset={handleSceneAssetRegeneration} onRegenerateAudio={handleSceneAudioRegeneration} lang={lang} userTier={userTier} t={translations} />}
 
     </div>
   );

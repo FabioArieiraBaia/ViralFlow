@@ -1,5 +1,3 @@
-
-
 import { Language } from "../types";
 
 type Translations = {
@@ -99,7 +97,20 @@ export const translations: Translations = {
         pleasePexels: "Para usar Stock Video, configure a chave Pexels em Configurações.",
         loadingVideo: "Estamos criando seu vídeo...",
         loadingDesc: "O Gemini está escrevendo o roteiro e preparando as cenas.",
-        noScenesYet: "Nenhum vídeo gerado ainda."
+        noScenesYet: "Nenhum vídeo gerado ainda.",
+        customAudio: "Arquivo Personalizado (Upload)",
+        uploadAudioTip: "Clique para carregar música ou efeito (.mp3, .wav)",
+        fileUploaded: "Arquivo carregado",
+        copyrightWarning: "Aviso de Direitos Autorais",
+        copyrightBody: "Por favor, respeite os direitos autorais. Utilize apenas músicas e efeitos sonoros que você possui os direitos ou que sejam Royalty Free / Domínio Público. A plataforma não se responsabiliza por uso indevido.",
+        exportHD: "Exportar HD (720p)",
+        export4k: "Exportar 4K (PRO)",
+        onlyPro: "Apenas Membros PRO",
+        branding: "Branding / Logo",
+        uploadLogo: "Upload Logo (Canal)",
+        sceneOverlay: "Overlay / Imagem Extra",
+        dragToMove: "Arraste para mover, Scroll para redimensionar",
+        resetPos: "Resetar Posição"
     },
     en: {
         welcomeTitle: "Welcome to ViralFlow AI",
@@ -191,7 +202,20 @@ export const translations: Translations = {
         pleasePexels: "To use Stock Video, configure Pexels key in Settings.",
         loadingVideo: "Creating your video...",
         loadingDesc: "Gemini is writing the script and preparing scenes.",
-        noScenesYet: "No video generated yet."
+        noScenesYet: "No video generated yet.",
+        customAudio: "Custom File (Upload)",
+        uploadAudioTip: "Click to upload music or effect (.mp3, .wav)",
+        fileUploaded: "File loaded",
+        copyrightWarning: "Copyright Warning",
+        copyrightBody: "Please respect copyright laws. Only use music and sound effects that you own the rights to or that are Royalty Free / Public Domain. The platform is not responsible for misuse.",
+        exportHD: "Export HD (720p)",
+        export4k: "Export 4K (PRO)",
+        onlyPro: "PRO Members Only",
+        branding: "Branding / Logo",
+        uploadLogo: "Upload Logo (Channel)",
+        sceneOverlay: "Overlay / Extra Image",
+        dragToMove: "Drag to move, Scroll to resize",
+        resetPos: "Reset Position"
     },
     es: {
         welcomeTitle: "Bienvenido a ViralFlow AI",
@@ -283,6 +307,19 @@ export const translations: Translations = {
         pleasePexels: "Para usar Stock Video, configura la clave Pexels en Configuración.",
         loadingVideo: "Creando tu video...",
         loadingDesc: "Gemini está escribiendo el guion y preparando las escenas.",
-        noScenesYet: "Aún no se ha generado ningún video."
+        noScenesYet: "Aún no se ha generado ningún video.",
+        customAudio: "Archivo Personalizado (Upload)",
+        uploadAudioTip: "Clic para cargar música o efecto (.mp3, .wav)",
+        fileUploaded: "Archivo cargado",
+        copyrightWarning: "Aviso de Derechos de Autor",
+        copyrightBody: "Por favor respeta las leyes de derechos de autor. Usa solo música y efectos de sonido de los que poseas derechos o que sean Royalty Free / Dominio Público. La plataforma no se hace responsable por el mal uso.",
+        exportHD: "Exportar HD (720p)",
+        export4k: "Exportar 4K (PRO)",
+        onlyPro: "Sólo Miembros PRO",
+        branding: "Marca / Logo",
+        uploadLogo: "Subir Logo (Canal)",
+        sceneOverlay: "Overlay / Imagen Extra",
+        dragToMove: "Arrastra para mover, Scroll para redimensionar",
+        resetPos: "Reiniciar Posición"
     }
 };

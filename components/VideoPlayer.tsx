@@ -1,6 +1,7 @@
 
+
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
-import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ParticleEffect, MusicAction } from '../types';
+import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ParticleEffect, MusicAction, OverlayConfig } from '../types';
 import { Play, Pause, SkipBack, SkipForward, Circle } from 'lucide-react';
 import { getAudioContext } from '../services/audioUtils';
 import { triggerBrowserDownload } from '../services/fileSystem';
@@ -19,10 +20,13 @@ interface VideoPlayerProps {
   activeFilter?: VideoFilter;
   userTier: UserTier;
   onPlaybackComplete?: () => void;
+  channelLogo?: OverlayConfig;
+  onUpdateChannelLogo?: (config: OverlayConfig) => void;
+  onUpdateSceneOverlay?: (sceneId: string, config: OverlayConfig) => void;
 }
 
 export interface VideoPlayerRef {
-  startRecording: () => void;
+  startRecording: (highQuality?: boolean) => void;
   stopRecording: () => void;
 }
 
@@ -50,7 +54,10 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   subtitleStyle,
   activeFilter = VideoFilter.NONE,
   userTier,
-  onPlaybackComplete
+  onPlaybackComplete,
+  channelLogo,
+  onUpdateChannelLogo,
+  onUpdateSceneOverlay
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -73,9 +80,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   // Data Refs
   const musicBufferRef = useRef<AudioBuffer | null>(null);
   
+  // Dynamic Scale for 4K export
+  const [renderScale, setRenderScale] = useState(1);
+
   // Dimensions
-  const WIDTH = format === VideoFormat.PORTRAIT ? 720 : 1280;
-  const HEIGHT = format === VideoFormat.PORTRAIT ? 1280 : 720;
+  const WIDTH = (format === VideoFormat.PORTRAIT ? 720 : 1280) * renderScale;
+  const HEIGHT = (format === VideoFormat.PORTRAIT ? 1280 : 720) * renderScale;
 
   // Refs for Loop State (Avoids Stale Closures)
   const scenesRef = useRef<Scene[]>(scenes);
@@ -85,25 +95,36 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const noisePatternRef = useRef<HTMLCanvasElement | null>(null); // Cache for noise
   const particlesRef = useRef<Particle[]>([]); // Particle System State
-  
+  const channelLogoRef = useRef(channelLogo);
+  const overlayImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map()); // Cache for overlay images
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingQuality, setRecordingQuality] = useState<'HD'|'4K'>('HD');
   
   const startTimeRef = useRef<number>(0);
   const rafRef = useRef<number>(0);
   const moveParamsRef = useRef<{x: number, y: number, scale: number, direction: number}[]>([]);
+
+  // Interaction Refs for Dragging
+  const isDraggingRef = useRef<'logo' | 'scene_overlay' | null>(null);
+  const dragStartRef = useRef<{x: number, y: number}>({x: 0, y: 0});
+  const initialObjPosRef = useRef<{x: number, y: number}>({x: 0, y: 0});
 
   // --- PARTICLE SYSTEM UTILS ---
   const initParticles = (effect: ParticleEffect, width: number, height: number) => {
       const particles: Particle[] = [];
       let count = 0;
       
-      if (effect === ParticleEffect.SNOW) count = 100;
-      if (effect === ParticleEffect.RAIN) count = 150;
-      if (effect === ParticleEffect.EMBERS) count = 60;
-      if (effect === ParticleEffect.CONFETTI) count = 50;
-      if (effect === ParticleEffect.DUST) count = 80;
+      // Scale particle count for 4K
+      const scaleMult = renderScale === 3 ? 2.5 : 1;
+      
+      if (effect === ParticleEffect.SNOW) count = 100 * scaleMult;
+      if (effect === ParticleEffect.RAIN) count = 150 * scaleMult;
+      if (effect === ParticleEffect.EMBERS) count = 60 * scaleMult;
+      if (effect === ParticleEffect.CONFETTI) count = 50 * scaleMult;
+      if (effect === ParticleEffect.DUST) count = 80 * scaleMult;
 
       for (let i = 0; i < count; i++) {
           particles.push(createParticle(effect, width, height, true));
@@ -116,34 +137,36 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       const y = randomY ? Math.random() * height : (effect === ParticleEffect.EMBERS ? height + 10 : -10);
       
       let vx = 0, vy = 0, size = 0, color = '', life = 100, maxLife = 100;
+      // Scale speeds and sizes for 4K
+      const s = renderScale;
 
       if (effect === ParticleEffect.SNOW) {
-          vx = (Math.random() - 0.5) * 1;
-          vy = 1 + Math.random() * 2;
-          size = 2 + Math.random() * 3;
+          vx = (Math.random() - 0.5) * 1 * s;
+          vy = (1 + Math.random() * 2) * s;
+          size = (2 + Math.random() * 3) * s;
           color = 'rgba(255, 255, 255, 0.8)';
       } else if (effect === ParticleEffect.RAIN) {
-          vx = (Math.random() - 0.5) * 0.5;
-          vy = 15 + Math.random() * 10;
-          size = 1; // Thickness
+          vx = (Math.random() - 0.5) * 0.5 * s;
+          vy = (15 + Math.random() * 10) * s;
+          size = 1 * s; // Thickness
           color = 'rgba(150, 180, 255, 0.6)';
       } else if (effect === ParticleEffect.EMBERS) {
-          vx = (Math.random() - 0.5) * 2;
-          vy = -1 - Math.random() * 3;
-          size = 2 + Math.random() * 4;
+          vx = (Math.random() - 0.5) * 2 * s;
+          vy = (-1 - Math.random() * 3) * s;
+          size = (2 + Math.random() * 4) * s;
           color = `rgba(255, ${Math.floor(Math.random() * 100)}, 0, ${0.5 + Math.random()*0.5})`;
           life = 60 + Math.random() * 60;
           maxLife = life;
       } else if (effect === ParticleEffect.CONFETTI) {
-          vx = (Math.random() - 0.5) * 4;
-          vy = 2 + Math.random() * 4;
-          size = 5 + Math.random() * 5;
+          vx = (Math.random() - 0.5) * 4 * s;
+          vy = (2 + Math.random() * 4) * s;
+          size = (5 + Math.random() * 5) * s;
           const colors = ['#f00', '#0f0', '#00f', '#ff0', '#0ff', '#f0f'];
           color = colors[Math.floor(Math.random() * colors.length)];
       } else if (effect === ParticleEffect.DUST) {
-          vx = (Math.random() - 0.5) * 0.5;
-          vy = (Math.random() - 0.5) * 0.5;
-          size = 1 + Math.random() * 2;
+          vx = (Math.random() - 0.5) * 0.5 * s;
+          vy = (Math.random() - 0.5) * 0.5 * s;
+          size = (1 + Math.random() * 2) * s;
           color = 'rgba(255, 255, 255, 0.3)';
       }
 
@@ -179,7 +202,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           ctx.beginPath();
           
           if (effect === ParticleEffect.RAIN) {
-              ctx.rect(p.x, p.y, 2, p.vy);
+              ctx.rect(p.x, p.y, 2 * renderScale, p.vy);
           } else if (effect === ParticleEffect.CONFETTI) {
               ctx.translate(p.x, p.y);
               ctx.rotate(p.y * 0.1);
@@ -192,6 +215,153 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           }
           ctx.fill();
       });
+  };
+
+  // --- INTERACTION HANDLERS (DRAG & DROP & RESIZE) ---
+  const getMousePos = (e: React.MouseEvent | React.TouchEvent) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return { x: 0, y: 0 };
+      const rect = canvas.getBoundingClientRect();
+      let clientX, clientY;
+      
+      if ('touches' in e) {
+          clientX = e.touches[0].clientX;
+          clientY = e.touches[0].clientY;
+      } else {
+          clientX = (e as React.MouseEvent).clientX;
+          clientY = (e as React.MouseEvent).clientY;
+      }
+
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      
+      return {
+          x: (clientX - rect.left) * scaleX,
+          y: (clientY - rect.top) * scaleY
+      };
+  };
+
+  const isHit = (pos: {x: number, y: number}, config: OverlayConfig, canvasW: number, canvasH: number, imgW: number, imgH: number) => {
+      const objW = (imgW / 4) * config.scale; // Assuming base scale factor relative to canvas
+      const objH = (imgH / 4) * config.scale;
+      // Using 150px base size for consistency logic if no image
+      const finalW = objW || 150 * renderScale * config.scale;
+      const finalH = objH || 150 * renderScale * config.scale;
+
+      const objX = config.x * canvasW;
+      const objY = config.y * canvasH;
+      
+      return pos.x >= objX && pos.x <= objX + finalW && pos.y >= objY && pos.y <= objY + finalH;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
+      if (!canvasRef.current || isPlaying || isRecording) return; // Only edit when paused
+      const pos = getMousePos(e);
+      const canvas = canvasRef.current;
+      
+      // Check Logo Hit
+      if (channelLogoRef.current) {
+         // Simplified hit detection logic - assumes approximate square for simplicity if image not fully loaded in logic scope
+         // But we render it, so we should know dimensions. 
+         // For robust hit test, we need the image dimensions.
+         const img = overlayImageCacheRef.current.get(channelLogoRef.current.url);
+         if (img) {
+             if (isHit(pos, channelLogoRef.current, canvas.width, canvas.height, img.width, img.height)) {
+                 isDraggingRef.current = 'logo';
+                 dragStartRef.current = pos;
+                 initialObjPosRef.current = { x: channelLogoRef.current.x, y: channelLogoRef.current.y };
+                 return;
+             }
+         }
+      }
+
+      // Check Scene Overlay Hit
+      const currentScene = scenesRef.current[currentSceneIndex];
+      if (currentScene?.overlay) {
+          const img = overlayImageCacheRef.current.get(currentScene.overlay.url);
+          if (img) {
+               if (isHit(pos, currentScene.overlay, canvas.width, canvas.height, img.width, img.height)) {
+                   isDraggingRef.current = 'scene_overlay';
+                   dragStartRef.current = pos;
+                   initialObjPosRef.current = { x: currentScene.overlay.x, y: currentScene.overlay.y };
+                   return;
+               }
+          }
+      }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
+      if (!isDraggingRef.current || !canvasRef.current) return;
+      const pos = getMousePos(e);
+      
+      const deltaX = (pos.x - dragStartRef.current.x) / canvasRef.current.width;
+      const deltaY = (pos.y - dragStartRef.current.y) / canvasRef.current.height;
+      
+      const newX = Math.max(0, Math.min(1, initialObjPosRef.current.x + deltaX));
+      const newY = Math.max(0, Math.min(1, initialObjPosRef.current.y + deltaY));
+
+      if (isDraggingRef.current === 'logo' && channelLogoRef.current && onUpdateChannelLogo) {
+          const newConfig = { ...channelLogoRef.current, x: newX, y: newY };
+          channelLogoRef.current = newConfig;
+          onUpdateChannelLogo(newConfig);
+          // Force redraw
+          draw(performance.now());
+      } else if (isDraggingRef.current === 'scene_overlay' && scenesRef.current[currentSceneIndex].overlay && onUpdateSceneOverlay) {
+          const scene = scenesRef.current[currentSceneIndex];
+          const newConfig = { ...scene.overlay!, x: newX, y: newY };
+          scene.overlay = newConfig; // Local update for immediate feedback
+          onUpdateSceneOverlay(scene.id, newConfig);
+          draw(performance.now());
+      }
+  };
+
+  const handleMouseUp = () => {
+      isDraggingRef.current = null;
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+      if (isPlaying || isRecording || !canvasRef.current) return;
+      const pos = getMousePos(e);
+      const canvas = canvasRef.current;
+
+      // Logic to detect what we are scrolling over to resize
+      let target: 'logo' | 'scene_overlay' | null = null;
+      let currentConfig: OverlayConfig | undefined;
+
+      // Check Logo
+      if (channelLogoRef.current) {
+           const img = overlayImageCacheRef.current.get(channelLogoRef.current.url);
+           if (img && isHit(pos, channelLogoRef.current, canvas.width, canvas.height, img.width, img.height)) {
+               target = 'logo';
+               currentConfig = channelLogoRef.current;
+           }
+      }
+      
+      // Check Scene Overlay (priority if overlapping? Let's say scene overlay is on top usually)
+      const currentScene = scenesRef.current[currentSceneIndex];
+      if (currentScene?.overlay) {
+           const img = overlayImageCacheRef.current.get(currentScene.overlay.url);
+           if (img && isHit(pos, currentScene.overlay, canvas.width, canvas.height, img.width, img.height)) {
+               target = 'scene_overlay';
+               currentConfig = currentScene.overlay;
+           }
+      }
+
+      if (target && currentConfig) {
+          e.preventDefault();
+          const scaleDelta = e.deltaY * -0.001;
+          const newScale = Math.max(0.1, Math.min(5.0, currentConfig.scale + scaleDelta));
+          const newConfig = { ...currentConfig, scale: newScale };
+
+          if (target === 'logo' && onUpdateChannelLogo) {
+              channelLogoRef.current = newConfig;
+              onUpdateChannelLogo(newConfig);
+          } else if (target === 'scene_overlay' && onUpdateSceneOverlay) {
+              scenesRef.current[currentSceneIndex].overlay = newConfig;
+              onUpdateSceneOverlay(currentScene.id, newConfig);
+          }
+          draw(performance.now());
+      }
   };
 
 
@@ -322,9 +492,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
           if (scene.musicConfig.action === MusicAction.START_NEW) {
               desiredUrl = scene.musicConfig.customUrl || (scene.musicConfig.trackId && scene.musicConfig.trackId !== 'none' ? undefined : "") || bgMusicUrl;
-              // If trackId is 'custom' or specific, finding URL is tricky here without the library list. 
-              // We assume customUrl is populated if it's custom, or we rely on App to pass fully resolved URL.
-              // NOTE: For simplicity, we expect `customUrl` to be populated by App logic if it's from library
               if (scene.musicConfig.customUrl) desiredUrl = scene.musicConfig.customUrl;
               
               action = MusicAction.START_NEW;
@@ -382,7 +549,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               musicGainRef.current.gain.setTargetAtTime(desiredVolume, ctx.currentTime, 1.0);
           } else if (!musicSourceRef.current && desiredUrl) {
                // Nothing was playing (maybe first scene fallback), start it
-               // Similar to START_NEW
                 const buffer = await loadAudioBuffer(desiredUrl);
                 if (buffer && masterGainRef.current) {
                     const source = ctx.createBufferSource();
@@ -403,8 +569,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   };
   
   // --- UPDATE MUSIC VOLUME LIVE (ONLY IF GLOBAL) ---
-  // If using specific scene volume, the scene change logic handles it.
-  // This effect is mostly for when the user drags the slider in real-time
   useEffect(() => {
     const scene = scenesRef.current[currentSceneIndex];
     // Only update live if no specific config overrides it, or if we are in "Global" mode
@@ -416,6 +580,16 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   // Sync Prop to Ref & Preload
   useEffect(() => {
     scenesRef.current = scenes;
+    channelLogoRef.current = channelLogo;
+
+    // Preload Overlay Images
+    if (channelLogo && channelLogo.url) {
+        if (!overlayImageCacheRef.current.has(channelLogo.url)) {
+            const img = new Image();
+            img.src = channelLogo.url;
+            overlayImageCacheRef.current.set(channelLogo.url, img);
+        }
+    }
     scenes.forEach(scene => {
       if (scene.mediaType === 'image' && scene.imageUrl) {
         const cachedImg = imageCacheRef.current.get(scene.id);
@@ -423,6 +597,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           const img = new Image();
           img.src = scene.imageUrl;
           imageCacheRef.current.set(scene.id, img);
+        }
+      }
+      if (scene.overlay && scene.overlay.url) {
+        if (!overlayImageCacheRef.current.has(scene.overlay.url)) {
+            const img = new Image();
+            img.src = scene.overlay.url;
+            overlayImageCacheRef.current.set(scene.overlay.url, img);
         }
       }
     });
@@ -436,7 +617,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
        }));
        moveParamsRef.current = [...moveParamsRef.current, ...newParams];
     }
-  }, [scenes]);
+  }, [scenes, channelLogo]);
 
   // Sync Refs
   useEffect(() => {
@@ -446,44 +627,64 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   }, [showSubtitles, subtitleStyle, activeFilter]);
 
   useImperativeHandle(ref, () => ({
-    startRecording: () => {
+    startRecording: (highQuality: boolean = false) => {
       if (!canvasRef.current || !destNodeRef.current) return;
-      const ctx = getAudioContext();
-      if (ctx.state === 'suspended') ctx.resume();
       
-      setIsRecording(true);
-      chunksRef.current = [];
-      
-      // 30 FPS capture from Canvas
-      const canvasStream = canvasRef.current.captureStream(30);
-      
-      // Combine Canvas Video + The Master Audio Stream
-      const combinedStream = new MediaStream([
-        ...canvasStream.getVideoTracks(),
-        ...destNodeRef.current.stream.getAudioTracks()
-      ]);
+      // If High Quality (4K), we set render scale to 3 (approx 2160p for portrait)
+      if (highQuality) {
+          setRenderScale(3);
+          setRecordingQuality('4K');
+      } else {
+          setRenderScale(1);
+          setRecordingQuality('HD');
+      }
 
-      const recorder = new MediaRecorder(combinedStream, {
-        mimeType: 'video/webm;codecs=vp9',
-        videoBitsPerSecond: 8000000 
-      });
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunksRef.current.push(e.data);
-      };
-
-      recorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-        const filename = `viral_flow_${format === VideoFormat.PORTRAIT ? 'SHORTS' : 'VIDEO'}_${Date.now()}.webm`;
-        triggerBrowserDownload(blob, filename);
-        setIsRecording(false);
-      };
-
-      mediaRecorderRef.current = recorder;
-      recorder.start();
-      
-      setCurrentSceneIndex(0);
-      setIsPlaying(true);
+      // We use a timeout to allow React to re-render the canvas with new dimensions before capturing
+      setTimeout(() => {
+          const ctx = getAudioContext();
+          if (ctx.state === 'suspended') ctx.resume();
+          
+          setIsRecording(true);
+          chunksRef.current = [];
+          
+          // 30 FPS capture from Canvas
+          if (!canvasRef.current) return;
+          const canvasStream = canvasRef.current.captureStream(30);
+          
+          // Combine Canvas Video + The Master Audio Stream
+          const combinedStream = new MediaStream([
+            ...canvasStream.getVideoTracks(),
+            ...destNodeRef.current!.stream.getAudioTracks()
+          ]);
+    
+          // Higher bitrate for 4K
+          const bitrate = highQuality ? 25000000 : 8000000;
+    
+          const recorder = new MediaRecorder(combinedStream, {
+            mimeType: 'video/webm;codecs=vp9',
+            videoBitsPerSecond: bitrate 
+          });
+    
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunksRef.current.push(e.data);
+          };
+    
+          recorder.onstop = () => {
+            const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+            const suffix = highQuality ? '4K_UHD' : 'HD';
+            const filename = `viral_flow_${format === VideoFormat.PORTRAIT ? 'SHORTS' : 'VIDEO'}_${suffix}_${Date.now()}.webm`;
+            triggerBrowserDownload(blob, filename);
+            setIsRecording(false);
+            // Reset to normal scale after recording for performance
+            setRenderScale(1); 
+          };
+    
+          mediaRecorderRef.current = recorder;
+          recorder.start();
+          
+          setCurrentSceneIndex(0);
+          setIsPlaying(true);
+      }, 300); // 300ms delay for resize
     },
     stopRecording: () => {
        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -502,6 +703,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     const ctx = canvas?.getContext('2d', { alpha: false }); 
     const moveParams = moveParamsRef.current[currentSceneIndex] || {x:0.5, y:0.5, scale: 1.15, direction: 1};
     const currentFilter = activeFilterRef.current;
+    const s = renderScale;
 
     if (canvas && ctx && currentScene) {
       ctx.save(); // Save state before applying global filters
@@ -577,20 +779,18 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
       // --- 4. PARTICLE EFFECTS (VFX) ---
       if (currentScene.particleEffect && currentScene.particleEffect !== ParticleEffect.NONE) {
-         // Re-initialize particles if effect changed (simple check via ref logic or manual trigger)
-         // For this demo, we check if the current particles match the type, if not, reset
-         // But to keep it simple, we just update existing.
          updateAndDrawParticles(ctx, canvas.width, canvas.height, currentScene.particleEffect);
       } else {
          particlesRef.current = [];
       }
 
       // --- 5. OVERLAY EFFECTS (SCANLINES / NOISE) ---
+
       if (currentFilter === VideoFilter.VHS) {
           // Scanlines
           ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-          for (let i = 0; i < canvas.height; i += 4) {
-              ctx.fillRect(0, i, canvas.width, 2);
+          for (let i = 0; i < canvas.height; i += (4 * s)) {
+              ctx.fillRect(0, i, canvas.width, (2 * s));
           }
           // Noise
           if (noisePatternRef.current) {
@@ -601,18 +801,19 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               const noiseY = Math.random() * -128;
               const ptrn = ctx.createPattern(noisePatternRef.current, 'repeat');
               if (ptrn) {
+                  ctx.scale(s, s); // Scale noise pattern
                   ctx.fillStyle = ptrn;
                   ctx.translate(noiseX, noiseY);
-                  ctx.fillRect(0, 0, canvas.width + 128, canvas.height + 128);
+                  ctx.fillRect(0, 0, (canvas.width + 128)/s, (canvas.height + 128)/s);
               }
               ctx.restore();
           }
           // Date Overlay
-          ctx.font = '30px monospace';
+          ctx.font = `${30 * s}px monospace`;
           ctx.fillStyle = '#00ff00';
-          ctx.shadowBlur = 5;
+          ctx.shadowBlur = 5 * s;
           ctx.shadowColor = '#00ff00';
-          ctx.fillText("PLAY ▶", 40, 60);
+          ctx.fillText("PLAY ▶", 40 * s, 60 * s);
       }
 
       if (currentFilter === VideoFilter.CYBERPUNK) {
@@ -640,8 +841,9 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               ctx.globalCompositeOperation = 'multiply';
               const ptrn = ctx.createPattern(noisePatternRef.current, 'repeat');
               if (ptrn) {
+                  ctx.scale(s, s);
                   ctx.fillStyle = ptrn;
-                  ctx.fillRect(0, 0, canvas.width, canvas.height);
+                  ctx.fillRect(0, 0, canvas.width/s, canvas.height/s);
               }
               ctx.restore();
           }
@@ -662,9 +864,9 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
       if (showSubs && currentScene.text && currentScene.text.trim().length > 0) {
         const isPortrait = format === VideoFormat.PORTRAIT;
-        const fontSize = isPortrait ? 52 : 36;
+        const fontSize = (isPortrait ? 52 : 36) * s;
         const lineHeight = fontSize * 1.3;
-        const bottomMargin = isPortrait ? 280 : 90;
+        const bottomMargin = (isPortrait ? 280 : 90) * s;
         const maxWidth = canvas.width * (isPortrait ? 0.85 : 0.7);
         
         // Dynamic Font loading
@@ -701,7 +903,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         
         // --- BACKGROUND BOXES ---
         if (subStyle === SubtitleStyle.MODERN) {
-             const boxPadding = 20;
+             const boxPadding = 20 * s;
              const boxWidth = maxWidth + (boxPadding * 2);
              const boxHeight = totalTextHeight + (boxPadding * 2);
              const boxX = (canvas.width - boxWidth) / 2;
@@ -709,7 +911,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
              ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
              ctx.beginPath();
-             ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 16);
+             ctx.roundRect(boxX, boxY, boxWidth, boxHeight, 16 * s);
              ctx.fill();
         }
 
@@ -739,14 +941,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                 // --- STYLE: CLASSIC ---
                 if (subStyle === SubtitleStyle.CLASSIC) {
                      ctx.fillStyle = isActive ? '#fbbf24' : '#ffffff';
-                     ctx.lineWidth = 6;
+                     ctx.lineWidth = 6 * s;
                      ctx.strokeStyle = 'black';
                      ctx.strokeText(w, currentX + (wordWidths[wIdx]/2), lineY);
                      ctx.fillText(w, currentX + (wordWidths[wIdx]/2), lineY);
                 } 
                 // --- STYLE: NEON ---
                 else if (subStyle === SubtitleStyle.NEON) {
-                    ctx.shadowBlur = 15;
+                    ctx.shadowBlur = 15 * s;
                     ctx.shadowColor = isActive ? '#ffff00' : '#00ff00';
                     ctx.fillStyle = isActive ? '#ffffff' : '#ccffcc';
                     if (isPast) ctx.fillStyle = 'rgba(255,255,255,0.8)';
@@ -766,14 +968,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                         
                         ctx.fillStyle = '#00ffff'; // Cyan pop
                         ctx.shadowColor = 'rgba(0,255,255,0.8)';
-                        ctx.shadowBlur = 20;
+                        ctx.shadowBlur = 20 * s;
                     } else {
                         ctx.fillStyle = isPast ? '#ffffff' : 'rgba(255,255,255,0.4)';
                     }
                     
                     // Bold outline for readability
                     ctx.strokeStyle = 'black';
-                    ctx.lineWidth = 4;
+                    ctx.lineWidth = 4 * s;
                     ctx.strokeText(w, centerX, lineY);
                     ctx.fillText(w, centerX, lineY);
                     
@@ -783,13 +985,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                 else if (subStyle === SubtitleStyle.COMIC) {
                     const centerX = currentX + (wordWidths[wIdx]/2);
                     ctx.fillStyle = isActive ? '#facc15' : '#ffffff'; // Yellow active
-                    ctx.lineWidth = 8;
+                    ctx.lineWidth = 8 * s;
                     ctx.strokeStyle = 'black';
                     ctx.lineJoin = 'round';
                     
                     // Offset shadow manually for comic feel
                     ctx.fillStyle = 'black';
-                    ctx.fillText(w, centerX + 4, lineY + 4);
+                    ctx.fillText(w, centerX + (4 * s), lineY + (4 * s));
                     
                     ctx.fillStyle = isActive ? '#facc15' : '#ffffff';
                     ctx.strokeText(w, centerX, lineY);
@@ -802,14 +1004,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                     if (Math.random() > 0.92) {
                         // RGB Split
                         ctx.fillStyle = 'red';
-                        ctx.fillText(w, centerX - 3, lineY);
+                        ctx.fillText(w, centerX - (3 * s), lineY);
                         ctx.fillStyle = 'cyan';
-                        ctx.fillText(w, centerX + 3, lineY);
+                        ctx.fillText(w, centerX + (3 * s), lineY);
                     }
                     
                     ctx.fillStyle = isActive ? '#ffffff' : 'rgba(255,255,255,0.7)';
                     ctx.shadowColor = "rgba(0,0,0,0.8)";
-                    ctx.shadowBlur = 4;
+                    ctx.shadowBlur = 4 * s;
                     ctx.fillText(w, centerX, lineY);
                 }
                 // --- STYLE: NONE/DEFAULT (Modern) ---
@@ -817,7 +1019,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                     ctx.fillStyle = isActive ? '#fbbf24' : '#ffffff';
                     if (wordCounter > currentWordIndex) ctx.fillStyle = 'rgba(255,255,255,0.35)';
                     ctx.shadowColor = "rgba(0,0,0,0.5)";
-                    ctx.shadowBlur = 4;
+                    ctx.shadowBlur = 4 * s;
                     ctx.fillText(w, currentX + (wordWidths[wIdx]/2), lineY);
                 }
 
@@ -827,15 +1029,69 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         });
       }
       
+      // --- 7. OVERLAYS (BRANDING/LOGO & SCENE IMAGE) ---
+      
+      const drawOverlay = (config: OverlayConfig, isGlobal: boolean = false) => {
+         const img = overlayImageCacheRef.current.get(config.url);
+         if (img && img.complete && img.naturalWidth > 0) {
+             // Calculate size preserving aspect ratio, based on scale
+             // Base size: 20% of width for scale 1.0
+             const baseSize = canvas.width * 0.2; 
+             const aspect = img.width / img.height;
+             
+             let drawW, drawH;
+             if (aspect > 1) {
+                 drawW = baseSize * config.scale;
+                 drawH = (baseSize / aspect) * config.scale;
+             } else {
+                 drawH = baseSize * config.scale;
+                 drawW = (baseSize * aspect) * config.scale;
+             }
+
+             const x = config.x * canvas.width;
+             const y = config.y * canvas.height;
+             
+             ctx.save();
+             ctx.shadowColor = 'rgba(0,0,0,0.5)';
+             ctx.shadowBlur = 5 * s;
+             ctx.drawImage(img, x, y, drawW, drawH);
+
+             // Selection border if dragging
+             if (!isPlaying && !isRecording) {
+                 // Check if dragging this specific one
+                 const isDragTarget = (isGlobal && isDraggingRef.current === 'logo') || (!isGlobal && isDraggingRef.current === 'scene_overlay');
+                 
+                 if (isDragTarget) {
+                     ctx.strokeStyle = '#00ff00';
+                     ctx.lineWidth = 2 * s;
+                     ctx.setLineDash([5 * s, 5 * s]);
+                     ctx.strokeRect(x, y, drawW, drawH);
+                 }
+             }
+             ctx.restore();
+         }
+      };
+
+      // Draw Scene Overlay first
+      if (currentScene.overlay) {
+          drawOverlay(currentScene.overlay, false);
+      }
+
+      // Draw Global Logo last (Topmost)
+      if (channelLogoRef.current) {
+          drawOverlay(channelLogoRef.current, true);
+      }
+
+      // --- 8. WATERMARK (FREE TIER) ---
       if (userTier === UserTier.FREE) {
           ctx.save();
-          ctx.font = "bold 24px Inter";
+          ctx.font = `bold ${24 * s}px Inter`;
           ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
           ctx.textAlign = "right";
           ctx.shadowColor = "black";
-          ctx.shadowBlur = 4;
+          ctx.shadowBlur = 4 * s;
           const wmText = "⚡ Feito com ViralFlow (Versão Grátis)";
-          ctx.fillText(wmText, canvas.width - 30, 50);
+          ctx.fillText(wmText, canvas.width - (30 * s), (50 * s));
           ctx.restore();
       }
 
@@ -881,13 +1137,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     musicGainRef.current = null;
   };
 
-  // Modified to use scene logic or fallback
-  const playMusic = () => {
-    if (!musicBufferRef.current) return; 
-    // We only use this simple playMusic if we are NOT handling complex scene logic
-    // but wait, handleSceneMusic does it better.
-  };
-
   const handleNextScene = () => {
     stopSpeech();
     cancelAnimationFrame(rafRef.current);
@@ -921,10 +1170,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     if (isPlaying && scenes[currentSceneIndex]) {
       const currentScene = scenes[currentSceneIndex];
       
-      // Reset particles when scene changes (optional, or keep them flow)
-      // For drastic changes, maybe reset? Let's keep them flowing if same effect, reset if diff.
-      // Actually logic inside draw handles this check.
-
       if (currentScene.mediaType === 'video' && currentScene.videoUrl && videoRef.current) {
           if (videoRef.current.src !== currentScene.videoUrl) {
               videoRef.current.src = currentScene.videoUrl;
@@ -956,6 +1201,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     setIsPlaying(!isPlaying);
   };
 
+  // Ensure CSS always forces the canvas to fit container, regardless of internal resolution
   const containerClass = format === VideoFormat.PORTRAIT 
     ? "relative w-full aspect-[9/16] bg-black rounded-[3rem] overflow-hidden shadow-2xl border-[8px] border-zinc-800 ring-1 ring-zinc-700"
     : "relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-2xl border border-zinc-800 ring-1 ring-zinc-700";
@@ -967,14 +1213,22 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           ref={canvasRef} 
           width={WIDTH} 
           height={HEIGHT} 
-          className={`w-full h-full object-contain ${activeFilter === VideoFilter.VHS ? 'contrast-125' : ''}`}
+          className={`w-full h-full object-contain ${activeFilter === VideoFilter.VHS ? 'contrast-125' : ''} cursor-crosshair`}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onTouchStart={handleMouseDown}
+          onTouchMove={handleMouseMove}
+          onTouchEnd={handleMouseUp}
+          onWheel={handleWheel}
         />
         
         {!isPlaying && !isRecording && (
-           <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity z-20">
+           <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] transition-opacity z-20 pointer-events-none">
               <button 
-                onClick={togglePlay}
-                className="p-6 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 transition-all transform hover:scale-105"
+                onClick={(e) => { e.stopPropagation(); togglePlay(); }}
+                className="p-6 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 transition-all transform hover:scale-105 pointer-events-auto"
               >
                 <Play className="w-12 h-12 text-white fill-current" />
               </button>
@@ -983,7 +1237,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         
         {isRecording && (
             <div className="absolute top-8 right-6 flex items-center gap-2 px-3 py-1 bg-red-600/90 backdrop-blur text-white text-xs font-bold rounded-full animate-pulse z-30">
-                <Circle className="w-3 h-3 fill-white" /> GRAVANDO (STEREO)
+                <Circle className="w-3 h-3 fill-white" /> GRAVANDO ({recordingQuality})
             </div>
         )}
 
