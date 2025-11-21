@@ -1,13 +1,14 @@
 {
   "name": "viral-flow-desktop",
   "version": "2.1.0",
-  "description": "Viral Video Generator using Gemini 2.5",
+  "description": "Viral Video Generator using Gemini 2.5. Developed by Full Stack Developer Fábio Arieira. All Rights Reserved.",
   "main": "electron-main.js",
   "author": {
-    "name": "ViralFlow Team",
-    "email": "support@viralflow.ai"
+    "name": "Fábio Arieira",
+    "email": "contact@fabioarieira.com",
+    "url": "https://fabioarieira.com"
   },
-  "homepage": "./",
+  "homepage": "https://fabioarieira.com",
   "private": true,
   "scripts": {
     "start": "vite",
@@ -19,6 +20,7 @@
   "build": {
     "appId": "com.viralflow.ai",
     "productName": "ViralFlow AI",
+    "copyright": "Copyright © 2025 Fábio Arieira. All Rights Reserved.",
     "files": [
       "build/**/*",
       "electron-main.js",
