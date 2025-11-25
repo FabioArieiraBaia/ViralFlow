@@ -8,14 +8,14 @@
     "email": "contact@fabioarieira.com",
     "url": "https://fabioarieira.com"
   },
-  "homepage": "https://fabioarieira.com",
+  "homepage": "./",
   "private": true,
   "scripts": {
     "start": "vite",
-    "build": "vite build",
-    "electron": "concurrently \"npm start\" \"wait-on http://localhost:3000 && electron .\"",
-    "postinstall": "electron-builder install-app-deps",
-    "dist": "npm run build && electron-builder --win --x64"
+    "build": "tsc && vite build",
+    "electron": "npx concurrently \"npm start\" \"npx wait-on http://localhost:3000 && npx electron .\"",
+    "postinstall": "npx electron-builder install-app-deps",
+    "dist": "npm run build && npx electron-builder --win --x64"
   },
   "build": {
     "appId": "com.viralflow.ai",

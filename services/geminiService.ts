@@ -8,6 +8,7 @@ import { getProjectDir, saveBase64File, saveTextFile } from "./fileSystem";
 
 const STORAGE_KEY = 'viralflow_manual_keys';
 const PEXELS_STORAGE_KEY = 'viralflow_pexels_key';
+const POLLINATIONS_STORAGE_KEY = 'viralflow_pollinations_key';
 
 let allKeys: string[] = [];
 let currentKeyPointer = 0; // Pointer for Round Robin
@@ -51,6 +52,14 @@ export const savePexelsKey = (key: string) => {
 
 export const getPexelsKey = (): string => {
     return localStorage.getItem(PEXELS_STORAGE_KEY) || "";
+};
+
+export const savePollinationsToken = (token: string) => {
+    localStorage.setItem(POLLINATIONS_STORAGE_KEY, token.trim());
+};
+
+export const getPollinationsToken = (): string => {
+    return localStorage.getItem(POLLINATIONS_STORAGE_KEY) || "";
 };
 
 export const getApiKeyCount = () => {
@@ -324,6 +333,11 @@ const generatePollinationsImage = async (prompt: string, width: number, height: 
   const encodedPrompt = encodeURIComponent(prompt);
   const seed = Math.floor(Math.random() * 1000000);
   
+  // Determine Token: Priority to User Config, then Env, then Fallback
+  const userToken = getPollinationsToken();
+  const envToken = (import.meta as any).env.VITE_POLLINATIONS_TOKEN;
+  const activeToken = userToken || envToken || 'R2z4SJZV4O99r3dS';
+
   // MODELS TO TRY IN ORDER
   const modelsToTry: PollinationsModel[] = [model];
   if (model === 'flux') modelsToTry.push('turbo'); // Fallback to Turbo if Flux fails (500 error)
@@ -332,10 +346,17 @@ const generatePollinationsImage = async (prompt: string, width: number, height: 
   for (const m of modelsToTry) {
       if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
       
-      const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=${m}`;
+      const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=${m}&private=true`;
       
       try {
-          const response = await fetch(url);
+          const response = await fetch(url, {
+              headers: {
+                  // Auth is required for stable Flux access
+                  'Authorization': `Bearer ${activeToken}`,
+                  'User-Agent': 'ViralFlow-Client/2.0'
+              }
+          });
+          
           if (!response.ok) throw new Error(`Status ${response.status}`);
           
           const blob = await response.blob();
