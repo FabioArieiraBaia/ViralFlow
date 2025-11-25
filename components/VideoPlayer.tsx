@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ParticleEffect, MusicAction, OverlayConfig, VideoTransition } from '../types';
 import { Play, Pause, SkipBack, SkipForward, Circle } from 'lucide-react';

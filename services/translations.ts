@@ -117,19 +117,9 @@ export const translations: Translations = {
         globalTrans: "Transição Global",
         sceneTrans: "Transição desta Cena",
         autoTrans: "🤖 IA Auto",
-        // Tour Strings
-        tourWelcome: "Bem-vindo ao ViralFlow! Vamos fazer um tour rápido?",
-        tourStep1: "Aqui você define o tema do seu vídeo. Seja criativo!",
-        tourStep2: "Configure suas chaves de API aqui. É essencial para gerar o conteúdo.",
-        tourStep3: "Escolha o estilo visual, ritmo e formato do seu vídeo.",
-        tourStep4: "Clique aqui para começar a mágica e gerar o vídeo.",
-        tourStep5: "Aqui você assiste, edita cenas e exporta o resultado final.",
-        next: "Próximo",
-        prev: "Anterior",
-        finish: "Concluir",
-        skip: "Pular Tutorial",
-        dontShowAgain: "Não mostrar novamente",
-        tutorial: "Tutorial"
+        videoLang: "Idioma do Vídeo (Conteúdo)",
+        pollinationsModel: "Modelo (Pollinations)",
+        selectModel: "Selecione..."
     },
     en: {
         welcomeTitle: "Welcome to ViralFlow AI",
@@ -240,19 +230,9 @@ export const translations: Translations = {
         globalTrans: "Global Transition",
         sceneTrans: "Scene Transition",
         autoTrans: "🤖 AI Auto",
-        // Tour
-        tourWelcome: "Welcome to ViralFlow! Want a quick tour?",
-        tourStep1: "Define your video topic here. Be creative!",
-        tourStep2: "Configure your API keys here. Essential for content generation.",
-        tourStep3: "Choose visual style, pacing, and format.",
-        tourStep4: "Click here to start the magic and generate the video.",
-        tourStep5: "Watch, edit scenes, and export your final result here.",
-        next: "Next",
-        prev: "Previous",
-        finish: "Finish",
-        skip: "Skip Tour",
-        dontShowAgain: "Don't show again",
-        tutorial: "Tutorial"
+        videoLang: "Video Language (Content)",
+        pollinationsModel: "Model (Pollinations)",
+        selectModel: "Select..."
     },
     es: {
         welcomeTitle: "Bienvenido a ViralFlow AI",
@@ -287,7 +267,7 @@ export const translations: Translations = {
         generate: "Generar",
         visualPrompt: "Prompt visual...",
         sceneSoundtrack: "Banda Sonora de Escena",
-        behavior: "Comportamiento",
+        behavior: "Comportamento",
         chooseTrack: "Elegir Pista",
         musicVolume: "Volumen de Música",
         saveChanges: "Guardar Cambios",
@@ -297,7 +277,7 @@ export const translations: Translations = {
         videoTopic: "Tema del Video",
         topicPlaceholder: "Ej: La Historia Secreta del Café...",
         visualStyle: "Estilo Visual",
-        pacing: "Ritmo / Edición",
+        pacing: "Ritmo / Edição",
         format: "Formato",
         duration: "Duración",
         channelName: "Nombre del Canal",
@@ -363,18 +343,8 @@ export const translations: Translations = {
         globalTrans: "Transición Global",
         sceneTrans: "Transición de Escena",
         autoTrans: "🤖 IA Auto",
-        // Tour
-        tourWelcome: "¡Bienvenido a ViralFlow! ¿Quieres un tour rápido?",
-        tourStep1: "Define el tema de tu video aquí. ¡Sé creativo!",
-        tourStep2: "Configura tus claves API aquí. Esencial para generar contenido.",
-        tourStep3: "Elige el estilo visual, ritmo y formato.",
-        tourStep4: "Haz clic aquí para iniciar la magia y generar el video.",
-        tourStep5: "Mira, edita escenas y exporta tu resultado final aquí.",
-        next: "Siguiente",
-        prev: "Anterior",
-        finish: "Terminar",
-        skip: "Saltar Tour",
-        dontShowAgain: "No mostrar de nuevo",
-        tutorial: "Tutorial"
+        videoLang: "Idioma del Video (Contenido)",
+        pollinationsModel: "Modelo (Pollinations)",
+        selectModel: "Seleccionar..."
     }
 };

@@ -1,5 +1,6 @@
+
 import { GoogleGenAI, Type, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { GeneratedScriptItem, VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language } from "../types";
+import { GeneratedScriptItem, VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
 import { getProjectDir, saveBase64File, saveTextFile } from "./fileSystem";
 
@@ -317,31 +318,42 @@ const searchPexelsVideo = async (query: string, format: VideoFormat, checkCancel
 };
 
 // --- POLLINATIONS.AI INTEGRATION ---
-const generatePollinationsImage = async (prompt: string, width: number, height: number, checkCancelled?: () => boolean): Promise<string> => {
+const generatePollinationsImage = async (prompt: string, width: number, height: number, model: PollinationsModel = 'flux', checkCancelled?: () => boolean): Promise<string> => {
   if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
 
   const encodedPrompt = encodeURIComponent(prompt);
   const seed = Math.floor(Math.random() * 1000000);
-  const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=flux`;
   
-  const response = await fetch(url);
-  if (!response.ok) {
-      throw new Error(`Pollinations API Error: ${response.statusText}`);
-  }
-  
-  if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
+  // MODELS TO TRY IN ORDER
+  const modelsToTry: PollinationsModel[] = [model];
+  if (model === 'flux') modelsToTry.push('turbo'); // Fallback to Turbo if Flux fails (500 error)
+  if (model !== 'turbo' && model !== 'flux') modelsToTry.push('turbo'); // General Fallback
 
-  const blob = await response.blob();
-  
-  return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-          const base64 = reader.result as string;
-          resolve(base64.split(',')[1]); 
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-  });
+  for (const m of modelsToTry) {
+      if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
+      
+      const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=${m}`;
+      
+      try {
+          const response = await fetch(url);
+          if (!response.ok) throw new Error(`Status ${response.status}`);
+          
+          const blob = await response.blob();
+          return await new Promise((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                  const base64 = reader.result as string;
+                  resolve(base64.split(',')[1]); 
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+          });
+      } catch (e) {
+          console.warn(`Pollinations model '${m}' failed. Trying next...`, e);
+          // Continue loop
+      }
+  }
+  throw new Error("All Pollinations models failed.");
 };
 
 // PLACEHOLDER BASE64 (Simple Grey Gradient)
@@ -354,6 +366,7 @@ export const generateSceneImage = async (
     projectTopic: string,
     provider: ImageProvider,
     style: VideoStyle = VideoStyle.STORY,
+    pollinationsModel: PollinationsModel = 'flux',
     checkCancelled?: () => boolean
 ): Promise<{ imageUrl: string, videoUrl?: string, mediaType: 'image' | 'video' }> => {
   
@@ -387,7 +400,7 @@ export const generateSceneImage = async (
 
       // 2. POLLINATIONS PATH
       if (provider === ImageProvider.POLLINATIONS) {
-          const base64 = await generatePollinationsImage(fullPromptPollinations, width, height, checkCancelled);
+          const base64 = await generatePollinationsImage(fullPromptPollinations, width, height, pollinationsModel, checkCancelled);
           return processBase64Result(base64, 'image/jpeg', 'jpg', projectTopic, sceneIndex);
       }
 
@@ -428,8 +441,8 @@ export const generateSceneImage = async (
       // If Gemini failed, or Stock failed -> Try Pollinations ONCE
       if (provider === ImageProvider.GEMINI || provider === ImageProvider.STOCK_VIDEO) {
           try {
-              console.log("🔄 Attempting Fallback to Pollinations...");
-              const base64 = await generatePollinationsImage(fullPromptPollinations, width, height, checkCancelled);
+              console.log("🔄 Attempting Fallback to Pollinations (Turbo)...");
+              const base64 = await generatePollinationsImage(fullPromptPollinations, width, height, 'turbo', checkCancelled);
               return processBase64Result(base64, 'image/jpeg', 'jpg', projectTopic, sceneIndex);
           } catch (fallbackError) {
               console.error("❌ Fallback also failed.", fallbackError);
@@ -470,7 +483,8 @@ export const generateThumbnails = async (
   for (const prompt of prompts) {
       if (checkCancelled && checkCancelled()) break;
       try {
-          const result = await generateSceneImage(prompt, VideoFormat.LANDSCAPE, 999, topic, provider, style, checkCancelled);
+          // Thumbnails fallback to Flux if provider allows, or stick to Gemini
+          const result = await generateSceneImage(prompt, VideoFormat.LANDSCAPE, 999, topic, provider, style, 'flux', checkCancelled);
           results.push(result.imageUrl);
       } catch (e) {
           console.error("Thumb failed", e);

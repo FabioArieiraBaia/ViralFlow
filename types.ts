@@ -1,7 +1,8 @@
 
-
 export type Language = 'pt' | 'en' | 'es';
 export type Theme = 'light' | 'dark';
+
+export type PollinationsModel = 'flux' | 'turbo' | 'dreamshaper' | 'deliberate' | 'midjourney';
 
 export enum VideoStyle {
   SCARY = 'Terror Analógico (Creepypasta)',
@@ -154,6 +155,7 @@ export interface ProjectState {
   voice: string;
   duration: VideoDuration;
   format: VideoFormat;
+  contentLanguage: Language; // Idioma do Vídeo (Conteúdo)
   scenes: Scene[];
   
   // Audio Fields (Global fallback)
