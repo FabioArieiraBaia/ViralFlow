@@ -1,6 +1,7 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { Scene, Language, UserTier, ImageProvider, ParticleEffect, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel } from '../types';
-import { ShieldCheck, Crown, Key, Loader2, CheckCircle2, X, Edit2, RefreshCcw, Upload, ImagePlus, Sparkles, ArrowRightLeft, Music2, FileAudio, AlertCircle, Zap } from 'lucide-react';
+import { Scene, Language, UserTier, ImageProvider, ParticleEffect, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel } from '../types';
+import { ShieldCheck, Crown, Key, Loader2, CheckCircle2, X, Edit2, RefreshCcw, Upload, ImagePlus, Sparkles, ArrowRightLeft, Music2, FileAudio, AlertCircle, Zap, Mic } from 'lucide-react';
 
 // --- WELCOME MODAL ---
 export const WelcomeModal: React.FC<{ onClose: () => void, lang: Language, t: any }> = ({ onClose, lang, t }) => {
@@ -91,7 +92,7 @@ export const EditSceneModal: React.FC<{
     scene: Scene, 
     onClose: () => void, 
     onSave: (updatedScene: Scene) => void, 
-    onRegenerateAsset: (scene: Scene, provider: ImageProvider, pollinationsModel?: PollinationsModel) => Promise<any>,
+    onRegenerateAsset: (scene: Scene, provider: ImageProvider, pollinationsModel?: PollinationsModel, geminiModel?: GeminiModel) => Promise<any>,
     onRegenerateAudio: (scene: Scene) => Promise<any>,
     lang: Language,
     userTier: UserTier,
@@ -102,7 +103,8 @@ export const EditSceneModal: React.FC<{
     const [isRegenerating, setIsRegenerating] = useState(false);
     const [isRegeneratingAudio, setIsRegeneratingAudio] = useState(false);
     const [selectedProvider, setSelectedProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
-    const [pollinationsModel, setPollinationsModel] = useState<PollinationsModel>('flux');
+    const [pollinationsModel, setPollinationsModel] = useState<PollinationsModel>('turbo');
+    const [geminiModel, setGeminiModel] = useState<GeminiModel>('gemini-2.5-flash-image');
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [musicAction, setMusicAction] = useState<MusicAction>(localScene.musicConfig?.action || MusicAction.CONTINUE);
@@ -162,7 +164,7 @@ export const EditSceneModal: React.FC<{
     const handleRegenerateVisual = async () => {
         setIsRegenerating(true);
         try {
-            const result = await onRegenerateAsset(localScene, selectedProvider, pollinationsModel);
+            const result = await onRegenerateAsset(localScene, selectedProvider, pollinationsModel, geminiModel);
             if (result.success) {
                 setLocalScene(prev => ({
                     ...prev,
@@ -217,9 +219,26 @@ export const EditSceneModal: React.FC<{
                         <div className="space-y-4">
                             <div><label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">{t[lang].speaker}</label><input value={localScene.speaker} onChange={(e) => setLocalScene({...localScene, speaker: e.target.value})} className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-zinc-900 dark:text-white text-sm focus:ring-1 focus:ring-indigo-500 outline-none"/></div>
                             <div><label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">{t[lang].subtitleText}</label><textarea value={localScene.text} onChange={(e) => setLocalScene({...localScene, text: e.target.value})} rows={5} className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-zinc-900 dark:text-white text-sm focus:ring-1 focus:ring-indigo-500 outline-none resize-none leading-relaxed"/></div>
-                             <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 flex items-center justify-between shadow-sm">
-                                <div className="flex flex-col"><span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{t[lang].voiceTTS}</span>{localScene.audioError ? (<span className="text-red-500 text-xs font-bold flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3"/> {t[lang].audioError}</span>) : (<span className="text-emerald-500 text-xs font-bold flex items-center gap-1 mt-1"><CheckCircle2 className="w-3 h-3"/> {t[lang].audioSync}</span>)}</div>
-                                <button onClick={handleRegenerateAudio} disabled={isRegeneratingAudio} className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50 transition-colors ${localScene.audioError ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white'}`}>{isRegeneratingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}{localScene.audioError ? t[lang].tryAgain : t[lang].regenerateVoice}</button>
+                             <div className="bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-3 shadow-sm">
+                                <div className="flex flex-col gap-2">
+                                    <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{t[lang].voiceTTS}</span>
+                                    <div className="flex items-center gap-2">
+                                        <select 
+                                            value={localScene.assignedVoice || 'Fenrir'} 
+                                            onChange={(e) => setLocalScene({...localScene, assignedVoice: e.target.value})} 
+                                            className="bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2 outline-none flex-1"
+                                        >
+                                            <option value="Fenrir">Fenrir (Masc. Épico)</option>
+                                            <option value="Charon">Charon (Masc. Grave)</option>
+                                            <option value="Zephyr">Zephyr (Masc. Calmo)</option>
+                                            <option value="Puck">Puck (Fem. Suave)</option>
+                                            <option value="Kore">Kore (Fem. Tech)</option>
+                                            <option value="Aoede">Aoede (Fem. Dramática)</option>
+                                        </select>
+                                    </div>
+                                    {localScene.audioError ? (<span className="text-red-500 text-xs font-bold flex items-center gap-1 mt-1"><AlertCircle className="w-3 h-3"/> {t[lang].audioError}</span>) : (<span className="text-emerald-500 text-xs font-bold flex items-center gap-1 mt-1"><CheckCircle2 className="w-3 h-3"/> {t[lang].audioSync}</span>)}
+                                </div>
+                                <button onClick={handleRegenerateAudio} disabled={isRegeneratingAudio} className={`w-full px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-colors ${localScene.audioError ? 'bg-red-600 hover:bg-red-500 text-white' : 'bg-indigo-600 hover:bg-indigo-500 text-white'}`}>{isRegeneratingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCcw className="w-4 h-4" />}{t[lang].regenerateVoice}</button>
                             </div>
                         </div>
                     )}
@@ -256,7 +275,21 @@ export const EditSceneModal: React.FC<{
                                         <option value={ImageProvider.POLLINATIONS}>Pollinations (Free)</option>
                                         <option value={ImageProvider.STOCK_VIDEO}>Stock Video (Pexels)</option>
                                     </select>
-                                    {selectedProvider === ImageProvider.POLLINATIONS && (<select value={pollinationsModel} onChange={(e) => setPollinationsModel(e.target.value as PollinationsModel)} className="bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2 outline-none w-32"><option value="flux">Flux</option><option value="turbo">Turbo</option><option value="dreamshaper">Dreamshaper</option><option value="deliberate">Deliberate</option><option value="midjourney">Midjourney (Style)</option></select>)}
+                                    {selectedProvider === ImageProvider.POLLINATIONS && (
+                                        <select value={pollinationsModel} onChange={(e) => setPollinationsModel(e.target.value as PollinationsModel)} className="bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2 outline-none w-32">
+                                            <option value="turbo">Turbo (Recomendado)</option>
+                                            <option value="flux">Flux</option>
+                                            <option value="dreamshaper">Dreamshaper</option>
+                                            <option value="deliberate">Deliberate</option>
+                                            <option value="midjourney">Midjourney (Style)</option>
+                                        </select>
+                                    )}
+                                    {selectedProvider === ImageProvider.GEMINI && (
+                                        <select value={geminiModel} onChange={(e) => setGeminiModel(e.target.value as GeminiModel)} className="bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-white text-sm rounded-lg border border-zinc-200 dark:border-zinc-800 px-3 py-2 outline-none w-36">
+                                            <option value="gemini-2.5-flash-image">Flash 2.5 (Rápido)</option>
+                                            <option value="imagen-3.0-generate-001">Imagen 3.0 (HQ)</option>
+                                        </select>
+                                    )}
                                     <button onClick={handleRegenerateVisual} disabled={isRegenerating} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-medium text-sm flex items-center gap-2 disabled:opacity-50 transition-colors">{isRegenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}{t[lang].generate}</button>
                                 </div>
                                 <textarea value={localScene.visualPrompt} onChange={(e) => setLocalScene({...localScene, visualPrompt: e.target.value})} rows={2} placeholder={t[lang].visualPrompt} className="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-zinc-900 dark:text-zinc-300 text-xs focus:ring-1 focus:ring-indigo-500 outline-none resize-none"/>

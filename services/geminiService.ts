@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { GeneratedScriptItem, VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel } from "../types";
+import { GeneratedScriptItem, VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
 import { getProjectDir, saveBase64File, saveTextFile } from "./fileSystem";
 
@@ -19,7 +19,8 @@ const cleanKey = (key: string) => {
 
 // Initialize once per session/update to avoid constant re-parsing
 export const initKeys = () => {
-  const envKeys = (process.env.API_KEY as string) || "";
+  const env = (import.meta as any).env || {};
+  const envKeys = (env.API_KEY as string) || "";
   const localKeys = localStorage.getItem(STORAGE_KEY) || "";
   
   // Merge LocalStorage keys (User Input) with Env keys
@@ -86,9 +87,9 @@ async function withRetry<T>(
   // Ensure keys are loaded
   if (allKeys.length === 0) initKeys();
   
-  // URGENT FIX: Default retries lowered significantly to prevent infinite loops.
-  // If customRetries is passed, use it. Otherwise default to 3.
-  const maxRetries = customRetries !== undefined ? customRetries : 3;
+  // If customRetries is passed, use it. Otherwise default to number of keys or 3, whichever is higher (max 10)
+  // This ensures we try all keys if we have them.
+  const maxRetries = customRetries !== undefined ? customRetries : Math.min(Math.max(3, allKeys.length), 10);
 
   let lastError: any = null;
 
@@ -126,7 +127,9 @@ async function withRetry<T>(
       if (isQuotaError) {
          const shortKey = key.slice(-4);
          console.warn(`⚠️ Cota (429) na chave ...${shortKey}. Tentativa (${i+1}/${maxRetries}).`);
-         await new Promise(resolve => setTimeout(resolve, 1000)); // Short delay
+         // No delay needed if we have multiple keys, just rotate to next key in next iteration
+         // If we only have 1 key, then delay.
+         if (allKeys.length === 1) await new Promise(resolve => setTimeout(resolve, 2000));
          continue;
       } 
       else if (isAuthError) {
@@ -173,6 +176,18 @@ export const generateVideoScript = async (
         cutInstruction = "Slow documentary style, let the visuals breathe.";
     }
 
+    let extraStyleInstructions = "";
+    
+    if (style === VideoStyle.KIDS_STORY) {
+        extraStyleInstructions = "Create a multi-character FABLE or STORY. You MUST use specific character names for the 'speaker' field (e.g., 'Wolf', 'Little Red', 'Bear', 'Fairy', 'Narrator'). Create dialogue between them. Keep language simple, fun, and engaging for kids. Visuals should be colorful 3D animation style.";
+    } else if (style === VideoStyle.NEWS) {
+        extraStyleInstructions = "Create a TV News segment. Use speakers like 'Anchor', 'Reporter', 'Witness', 'Expert'. Visuals should look like a TV broadcast, including 'Breaking News' lower thirds descriptions in visual prompts.";
+    } else if (style === VideoStyle.PROFESSOR) {
+        extraStyleInstructions = "Create an educational lecture. Speaker should be 'Professor'. Visuals should be diagrams, whiteboards, or historical footage explaining the concept clearly.";
+    } else if (style === VideoStyle.DEBATE) {
+        extraStyleInstructions = "Create a DEBATE. Use speakers: 'Host', 'Proponent' (For), 'Opponent' (Against). The Host introduces, and the others argue their points. Ensure conflict and back-and-forth dialogue.";
+    }
+
     const systemInstruction = `You are a World-Class Video Director and Scriptwriter. Channel: "${channelName}". Style: ${style}. Pacing: ${pacing}.
     
     YOUR MISSION: Create a script that visually tells a story.
@@ -186,6 +201,9 @@ export const generateVideoScript = async (
     6. KEYWORDS: Include 2-3 specific keywords at the end of visual_prompt for search engines (e.g., "gold, ring, luxury").
     7. MANDATORY OUTRO: The FINAL scene MUST be a Call-to-Action (CTA). The narrator explicitly thanks the viewer in the name of the channel "${channelName || 'Narrator'}" and asks for Likes, Comments, and Subscription.
     
+    SPECIAL STYLE INSTRUCTIONS:
+    ${extraStyleInstructions}
+
     Output ONLY valid JSON array: [{ "speaker": "Name", "text": "Dialogue", "visual_prompt": "CAMERA_ANGLE + Action description" }]
     Language: ${targetLanguage}.`;
 
@@ -232,6 +250,8 @@ export const generateSpeech = async (
     checkCancelled?: () => boolean
 ): Promise<{url: string, buffer: AudioBuffer}> => {
   return withRetry(async (ai) => {
+    // If voice is not provided, default to Fenrir.
+    // Ensure we use valid Gemini voices: Puck, Charon, Kore, Fenrir, Aoede, Zephyr
     const selectedVoice = voiceId && voiceId.trim().length > 0 ? voiceId : 'Fenrir';
     
     const response = await ai.models.generateContent({
@@ -327,54 +347,65 @@ const searchPexelsVideo = async (query: string, format: VideoFormat, checkCancel
 };
 
 // --- POLLINATIONS.AI INTEGRATION ---
-const generatePollinationsImage = async (prompt: string, width: number, height: number, model: PollinationsModel = 'flux', checkCancelled?: () => boolean): Promise<string> => {
+const blobToBase64 = (blob: Blob): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+        const base64 = reader.result as string;
+        // remove prefix "data:image/png;base64,"
+        resolve(base64.split(',')[1]);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+};
+
+const generatePollinationsImage = async (prompt: string, width: number, height: number, model: PollinationsModel = 'turbo', checkCancelled?: () => boolean): Promise<string> => {
   if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
 
   const encodedPrompt = encodeURIComponent(prompt);
   const seed = Math.floor(Math.random() * 1000000);
-  
-  // Determine Token: Priority to User Config, then Env, then Fallback
-  const userToken = getPollinationsToken();
-  const envToken = (import.meta as any).env.VITE_POLLINATIONS_TOKEN;
-  const activeToken = userToken || envToken || 'R2z4SJZV4O99r3dS';
+  const isDev = (import.meta as any).env?.DEV;
 
-  // MODELS TO TRY IN ORDER
-  const modelsToTry: PollinationsModel[] = [model];
-  if (model === 'flux') modelsToTry.push('turbo'); // Fallback to Turbo if Flux fails (500 error)
-  if (model !== 'turbo' && model !== 'flux') modelsToTry.push('turbo'); // General Fallback
-
-  for (const m of modelsToTry) {
-      if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
-      
-      const url = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=${m}&private=true`;
-      
-      try {
-          const response = await fetch(url, {
-              headers: {
-                  // Auth is required for stable Flux access
-                  'Authorization': `Bearer ${activeToken}`,
-                  'User-Agent': 'ViralFlow-Client/2.0'
-              }
-          });
-          
-          if (!response.ok) throw new Error(`Status ${response.status}`);
-          
-          const blob = await response.blob();
-          return await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => {
-                  const base64 = reader.result as string;
-                  resolve(base64.split(',')[1]); 
-              };
-              reader.onerror = reject;
-              reader.readAsDataURL(blob);
-          });
-      } catch (e) {
-          console.warn(`Pollinations model '${m}' failed. Trying next...`, e);
-          // Continue loop
+  // Helper to fetch and convert to base64
+  const fetchAndConvert = async (url: string) => {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Status ${response.status}`);
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.startsWith("image")) {
+         throw new Error(`Invalid content-type: ${contentType}`);
       }
+      const blob = await response.blob();
+      return await blobToBase64(blob);
+  };
+
+  const strategies: string[] = [];
+
+  // 1. DEV MODE: Use Vite Proxy directly (Most reliable for local dev)
+  if (isDev) {
+      strategies.push(`/pollinations_proxy/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=${model}`);
   }
-  throw new Error("All Pollinations models failed.");
+  
+  // 2. PROD MODE: Try PHP Proxy first (if available on server)
+  if (!isDev) {
+      strategies.push(`./proxy.php?prompt=${encodedPrompt}&width=${width}&height=${height}&seed=${seed}&model=${model}`);
+  }
+
+  // 3. FINAL FALLBACK: Direct URL (Last resort, might block)
+  strategies.push(`https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=${model}`);
+
+  let lastError;
+  for (const url of strategies) {
+     if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
+     try {
+         return await fetchAndConvert(url);
+     } catch (e) {
+         console.warn(`Polling Strategy failed: ${url}`, e);
+         lastError = e;
+     }
+  }
+  
+  throw lastError || new Error("All Pollinations strategies failed");
 };
 
 // PLACEHOLDER BASE64 (Simple Grey Gradient)
@@ -387,11 +418,17 @@ export const generateSceneImage = async (
     projectTopic: string,
     provider: ImageProvider,
     style: VideoStyle = VideoStyle.STORY,
-    pollinationsModel: PollinationsModel = 'flux',
+    pollinationsModel: PollinationsModel = 'turbo', 
+    geminiModel: GeminiModel = 'gemini-2.5-flash-image', 
     checkCancelled?: () => boolean
 ): Promise<{ imageUrl: string, videoUrl?: string, mediaType: 'image' | 'video' }> => {
   
   if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
+
+  // 0. NONE PATH (SCRIPT ONLY)
+  if (provider === ImageProvider.NONE) {
+      return processBase64Result(PLACEHOLDER_IMAGE, 'image/png', 'png', projectTopic, sceneIndex);
+  }
 
   const isPortrait = format === VideoFormat.PORTRAIT;
   const aspectRatio = isPortrait ? "9:16" : "16:9";
@@ -405,9 +442,6 @@ export const generateSceneImage = async (
   const fullPromptGemini = `${safeVisualPrompt}. Style: ${cleanStyle}. High quality, 8k, photorealistic, cinematic lighting. \nNEGATIVE PROMPT: ${negativePrompt}`;
   const fullPromptPollinations = `(masterpiece, best quality, absolute realism), ${safeVisualPrompt}, ${cleanStyle}, detailed lighting. (no text:1.5), (no watermark:1.5), (no logo:1.5), (no netflix:1.5).`;
 
-  // --- STRATEGY: TRY-CATCH BLOCKS WITH STRICT FALLBACKS ---
-  // DO NOT allow Gemini if provider is NOT Gemini.
-  
   try {
       // 1. STOCK VIDEO PATH
       if (provider === ImageProvider.STOCK_VIDEO) {
@@ -425,44 +459,60 @@ export const generateSceneImage = async (
           return processBase64Result(base64, 'image/jpeg', 'jpg', projectTopic, sceneIndex);
       }
 
-      // 3. GEMINI PATH (Only if explicitly requested)
+      // 3. GEMINI PATH
       if (provider === ImageProvider.GEMINI) {
-          // FAST FAIL: Try Gemini max 3 times.
           const base64 = await withRetry(async (ai) => {
-              const response = await ai.models.generateContent({
-                  model: 'gemini-2.5-flash-image',
-                  contents: { parts: [{ text: fullPromptGemini }] },
-                  config: { imageConfig: { aspectRatio: aspectRatio } }
-              });
-              if (response.candidates?.[0]?.finishReason === 'SAFETY') throw new Error("SAFETY_BLOCK");
-              
               let imgData = "";
-              if (response.candidates?.[0]?.content?.parts) {
-                 for(const p of response.candidates[0].content.parts) {
-                     if(p.inlineData) { imgData = p.inlineData.data; break; }
-                 }
+              
+              if (geminiModel === 'imagen-3.0-generate-001') {
+                  // IMAGEN 3.0 USES generateImages
+                  const response = await ai.models.generateImages({
+                      model: 'imagen-3.0-generate-001',
+                      prompt: fullPromptGemini,
+                      config: {
+                          numberOfImages: 1,
+                          aspectRatio: aspectRatio,
+                          outputMimeType: 'image/png'
+                      }
+                  });
+                  
+                  if (response.generatedImages && response.generatedImages.length > 0) {
+                      imgData = response.generatedImages[0].image.imageBytes;
+                  }
+              } else {
+                  // GEMINI FLASH USES generateContent
+                  const response = await ai.models.generateContent({
+                      model: 'gemini-2.5-flash-image',
+                      contents: { parts: [{ text: fullPromptGemini }] },
+                      config: { imageConfig: { aspectRatio: aspectRatio } }
+                  });
+                  
+                  if (response.candidates?.[0]?.content?.parts) {
+                     for(const p of response.candidates[0].content.parts) {
+                         if(p.inlineData) { imgData = p.inlineData.data; break; }
+                     }
+                  }
               }
-              if(!imgData) throw new Error("No image data from Gemini");
+              
+              if(!imgData) throw new Error(`No image data from ${geminiModel}`);
               return imgData;
-          }, checkCancelled, 3); // MAX 3 RETRIES FOR GEMINI IMAGES
-          
+          }, checkCancelled, 5); // More retries for manual generation to exhaust keys if needed
+
           return processBase64Result(base64, 'image/png', 'png', projectTopic, sceneIndex);
       }
 
-      // 4. UPLOAD (Should fail over to Placeholder in UI usually, but handle here just in case)
-      throw new Error("Provider not handled in generation logic");
+      throw new Error("Provider not handled");
 
   } catch (error: any) {
       if (error.message === "CANCELLED_BY_USER") throw error;
 
       console.error(`❌ Asset Generation Failed [Provider: ${provider}]:`, error);
 
-      // --- FALLBACK LOGIC ---
-      
-      // If Gemini failed, or Stock failed -> Try Pollinations ONCE
+      // --- FINAL FALLBACK: Pollinations via Proxy ---
       if (provider === ImageProvider.GEMINI || provider === ImageProvider.STOCK_VIDEO) {
           try {
-              console.log("🔄 Attempting Fallback to Pollinations (Turbo)...");
+              console.log("🔄 Final Fallback to Pollinations (Turbo)...");
+              // Fallback uses 'turbo' explicitly to be safe
               const base64 = await generatePollinationsImage(fullPromptPollinations, width, height, 'turbo', checkCancelled);
               return processBase64Result(base64, 'image/jpeg', 'jpg', projectTopic, sceneIndex);
           } catch (fallbackError) {
@@ -470,7 +520,6 @@ export const generateSceneImage = async (
           }
       }
 
-      // IF EVERYTHING FAILS: Return Placeholder so the app doesn't crash/hang.
       console.warn("⚠️ Returning Placeholder Image for Scene " + sceneIndex);
       return processBase64Result(PLACEHOLDER_IMAGE, 'image/png', 'png', projectTopic, sceneIndex);
   }
@@ -504,8 +553,8 @@ export const generateThumbnails = async (
   for (const prompt of prompts) {
       if (checkCancelled && checkCancelled()) break;
       try {
-          // Thumbnails fallback to Flux if provider allows, or stick to Gemini
-          const result = await generateSceneImage(prompt, VideoFormat.LANDSCAPE, 999, topic, provider, style, 'flux', checkCancelled);
+          // Thumbnails typically use Flash for speed, but fallback to turbo (not flux) if needed
+          const result = await generateSceneImage(prompt, VideoFormat.LANDSCAPE, 999, topic, provider, style, 'turbo', 'gemini-2.5-flash-image', checkCancelled);
           results.push(result.imageUrl);
       } catch (e) {
           console.error("Thumb failed", e);

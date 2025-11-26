@@ -112,14 +112,20 @@ export const translations: Translations = {
         sceneOverlay: "Overlay / Imagem Extra",
         dragToMove: "Arraste para mover, Scroll para redimensionar",
         resetPos: "Resetar Posição",
-        transitions: "Transições (VFX)",
+        transitions: "Transiciones (VFX)",
         transitionType: "Tipo de Transição",
         globalTrans: "Transição Global",
         sceneTrans: "Transição desta Cena",
         autoTrans: "🤖 IA Auto",
         videoLang: "Idioma do Vídeo (Conteúdo)",
         pollinationsModel: "Modelo (Pollinations)",
-        selectModel: "Selecione..."
+        selectModel: "Selecione...",
+        originDomain: "Domínio de Origem (Pollinations)",
+        originDesc: "Copie este endereço e cole no painel do Pollinations (Referrer) para autorizar o uso.",
+        copy: "Copiar",
+        copied: "Copiado!",
+        providerNone: "⛔ Apenas Roteiro (Sem Imagem)",
+        providerNoneSub: "Rápido / Placeholder / Manual"
     },
     en: {
         welcomeTitle: "Welcome to ViralFlow AI",
@@ -232,7 +238,13 @@ export const translations: Translations = {
         autoTrans: "🤖 AI Auto",
         videoLang: "Video Language (Content)",
         pollinationsModel: "Model (Pollinations)",
-        selectModel: "Select..."
+        selectModel: "Select...",
+        originDomain: "Origin Domain (Pollinations)",
+        originDesc: "Copy this address and paste it into the Pollinations dashboard (Referrer) to authorize usage.",
+        copy: "Copy",
+        copied: "Copied!",
+        providerNone: "⛔ Script & Audio Only",
+        providerNoneSub: "Fast / Placeholder / Manual"
     },
     es: {
         welcomeTitle: "Bienvenido a ViralFlow AI",
@@ -345,6 +357,12 @@ export const translations: Translations = {
         autoTrans: "🤖 IA Auto",
         videoLang: "Idioma del Video (Contenido)",
         pollinationsModel: "Modelo (Pollinations)",
-        selectModel: "Seleccionar..."
+        selectModel: "Seleccionar...",
+        originDomain: "Dominio de Origen (Pollinations)",
+        originDesc: "Copia esta dirección y pégala en el panel de Pollinations (Referrer) para autorizar el uso.",
+        copy: "Copiar",
+        copied: "¡Copiado!",
+        providerNone: "⛔ Solo Guion (Sin Imagen)",
+        providerNoneSub: "Rápido / Placeholder / Manual"
     }
 };

@@ -1,16 +1,17 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { VideoStyle, VideoDuration, Scene, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, MusicAction, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, ParticleEffect } from './types';
+import { VideoStyle, VideoDuration, Scene, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, MusicAction, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, ParticleEffect, GeminiModel } from './types';
 import { generateVideoScript, generateSpeech, generateSceneImage, generateThumbnails, generateMetadata, getApiKeyCount, saveManualKeys, getManualKeys, savePexelsKey, getPexelsKey, savePollinationsToken, getPollinationsToken } from './services/geminiService';
 import { translations } from './services/translations';
 import { triggerBrowserDownload } from './services/fileSystem';
 import VideoPlayer, { VideoPlayerRef } from './components/VideoPlayer';
 import { WelcomeModal, UpgradeModal, EditSceneModal } from './components/Modals';
-import { Wand2, Film, Download, Loader2, Layers, Zap, Monitor, Music, Smartphone, Image as ImageIcon, Hash, Settings, AlertCircle, CheckCircle2, Crown, Key, Copy, ShieldCheck, RefreshCcw, X, Upload, ZapIcon, Music2, Info, Sparkles, Globe, Sun, Moon, TriangleAlert, Sticker, ImagePlus, ArrowRightLeft, MessageCircle, Captions, Volume2, Lock, Youtube, Edit2 } from 'lucide-react';
+import { Wand2, Film, Download, Loader2, Layers, Zap, Monitor, Music, Smartphone, Image as ImageIcon, Hash, Settings, AlertCircle, CheckCircle2, Crown, Key, Copy, ShieldCheck, RefreshCcw, X, Upload, ZapIcon, Music2, Info, Sparkles, Globe, Sun, Moon, TriangleAlert, Sticker, ImagePlus, ArrowRightLeft, MessageCircle, Captions, Volume2, Lock, Youtube, Edit2, Play, ChevronRight, Terminal } from 'lucide-react';
 
 // --- SALES & SECURITY CONFIG ---
 // Safe access to environment variables
 const env = (import.meta as any).env || {};
-const MASTER_KEY = (env.VITE_ADMIN_KEY || 'ADMIN-TEST-KEY-2025').trim(); 
+const MASTER_KEY = 'ADMIN-TEST-KEY-2025'; 
 const LICENSE_SALT = env.VITE_LICENSE_SALT || 'DEV_SALT_INSECURE';
 
 const verifyLocalKey = (keyInput: string): boolean => {
@@ -44,32 +45,173 @@ const generateLicenseKey = (): string => {
     return `VFPRO-${randomPart}-${signature}`;
 };
 
+// --- LANDING SCREEN COMPONENT (3D HIGH TECH) ---
+const LandingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
+    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+    const [isExiting, setIsExiting] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (containerRef.current) {
+                const { innerWidth, innerHeight } = window;
+                const x = (e.clientX / innerWidth - 0.5) * 2; // -1 to 1
+                const y = (e.clientY / innerHeight - 0.5) * 2;
+                setMousePos({ x, y });
+            }
+        };
+        window.addEventListener('mousemove', handleMouseMove);
+        return () => window.removeEventListener('mousemove', handleMouseMove);
+    }, []);
+
+    const handleEnter = () => {
+        setIsExiting(true);
+        setTimeout(onComplete, 800); // Wait for animation
+    };
+
+    return (
+        <div 
+            ref={containerRef}
+            className={`fixed inset-0 z-50 bg-black flex flex-col items-center justify-center overflow-hidden transition-all duration-700 ${isExiting ? 'opacity-0 scale-110 blur-xl' : 'opacity-100'}`}
+        >
+            {/* Dynamic Background Grid */}
+            <div className="scene-3d absolute inset-0 w-full h-full pointer-events-none">
+                <div className="grid-floor"></div>
+                
+                {/* Parallax Stars */}
+                <div 
+                    className="absolute inset-0 transition-transform duration-100 ease-out"
+                    style={{ transform: `translate(${mousePos.x * -20}px, ${mousePos.y * -20}px)` }}
+                >
+                    {[...Array(50)].map((_, i) => (
+                        <div 
+                            key={i}
+                            className="absolute rounded-full bg-white animate-pulse"
+                            style={{
+                                width: Math.random() * 2 + 'px',
+                                height: Math.random() * 2 + 'px',
+                                top: Math.random() * 100 + '%',
+                                left: Math.random() * 100 + '%',
+                                opacity: Math.random() * 0.5 + 0.1,
+                                animationDuration: Math.random() * 3 + 2 + 's'
+                            }}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {/* Central 3D Reactor */}
+            <div 
+                className="scene-3d mb-12"
+                style={{ 
+                    transform: `rotateY(${mousePos.x * 20}deg) rotateX(${mousePos.y * -20}deg)`,
+                    transition: 'transform 0.1s ease-out'
+                }}
+            >
+                <div className="reactor-container">
+                    <div className="reactor-ring ring-1"></div>
+                    <div className="reactor-ring ring-2"></div>
+                    <div className="reactor-ring ring-3"></div>
+                    <div className="core-glow"></div>
+                </div>
+            </div>
+
+            {/* Content */}
+            <div className="relative z-10 text-center space-y-6">
+                <div className="space-y-2">
+                     <div className="flex items-center justify-center gap-2 text-indigo-500 font-mono text-xs tracking-[0.2em] uppercase animate-pulse">
+                        <Terminal className="w-3 h-3" /> System Ready
+                     </div>
+                     <h1 className="text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-white to-purple-400 tracking-tighter drop-shadow-[0_0_30px_rgba(99,102,241,0.5)]">
+                        ViralFlow
+                     </h1>
+                     <div className="flex items-center justify-center gap-3">
+                        <span className="h-[1px] w-12 bg-zinc-700"></span>
+                        <span className="text-zinc-400 font-mono text-sm">AI VIDEO GENERATOR 2.5</span>
+                        <span className="h-[1px] w-12 bg-zinc-700"></span>
+                     </div>
+                </div>
+
+                <button 
+                    onClick={handleEnter}
+                    className="group relative px-8 py-4 bg-transparent overflow-hidden rounded-none mt-8 transition-all hover:tracking-widest"
+                >
+                    <div className="absolute inset-0 w-full h-full bg-indigo-600/10 border border-indigo-500/50 skew-x-[-20deg]"></div>
+                    <div className="absolute inset-0 w-0 h-full bg-indigo-600/80 skew-x-[-20deg] transition-all duration-300 ease-out group-hover:w-full"></div>
+                    
+                    <span className="relative flex items-center gap-3 text-indigo-300 group-hover:text-white font-bold font-mono uppercase tracking-wider transition-colors">
+                        Initialize <ChevronRight className="w-4 h-4" />
+                    </span>
+                </button>
+
+                <p className="text-zinc-600 text-[10px] font-mono mt-8">
+                    POWERED BY GOOGLE GEMINI 2.5 &bull; ELECTRON &bull; REACT
+                </p>
+            </div>
+            
+            {/* Vignette */}
+            <div className="absolute inset-0 bg-radial-gradient from-transparent to-black pointer-events-none"></div>
+        </div>
+    );
+}
+
+// All Gemini 2.5 Flash Audio Voices
 const VOICE_OPTIONS = [
-  { id: 'Auto', label: '🤖 Elenco Automático (Multi-Voz)' },
+  { id: 'Auto', label: '🤖 Elenco Automático' },
   { id: 'Fenrir', label: '🎙️ Fenrir (Masc. Épico)' },
+  { id: 'Charon', label: '💀 Charon (Masc. Grave)' },
+  { id: 'Zephyr', label: '🌬️ Zephyr (Masc. Calmo)' },
   { id: 'Puck', label: '👩 Puck (Fem. Suave)' },
   { id: 'Kore', label: '🧬 Kore (Fem. Tech)' },
-  { id: 'Charon', label: '💀 Charon (Masc. Grave)' },
   { id: 'Aoede', label: '🎭 Aoede (Fem. Dramática)' },
-  { id: 'Zephyr', label: '🌬️ Zephyr (Masc. Calmo)' },
   { id: 'Custom', label: '✏️ Outra / Personalizada...' }
 ];
 
-const performAutoCasting = (scenes: Scene[]): Scene[] => {
+const performAutoCasting = (scenes: Scene[], style: VideoStyle): Scene[] => {
   const uniqueSpeakers = Array.from(new Set(scenes.map(s => s.speaker)));
   const cast: Record<string, string> = {};
+  
+  // Specific voices suitable for different roles
   const maleVoices = ['Fenrir', 'Charon', 'Zephyr'];
   const femaleVoices = ['Puck', 'Kore', 'Aoede'];
+  const narratorVoice = 'Fenrir';
+  
+  // Logic for DEBATE Style
+  if (style === VideoStyle.DEBATE) {
+      cast['Host'] = 'Zephyr'; // Neutral/Calm
+      cast['Proponent'] = 'Kore'; // Sharp/Tech
+      cast['Opponent'] = 'Charon'; // Deep/Serious
+  }
+
+  // Logic for KIDS STORY
+  else if (style === VideoStyle.KIDS_STORY) {
+      cast['Narrator'] = 'Puck'; // Soft/Storyteller
+      cast['Wolf'] = 'Fenrir'; // Deep/Scary
+      cast['Bear'] = 'Charon'; // Deep
+      cast['Fairy'] = 'Aoede'; // Dramatic/High
+      cast['Princess'] = 'Kore'; 
+  }
+
+  // Logic for NEWS
+  else if (style === VideoStyle.NEWS) {
+      cast['Anchor'] = 'Fenrir'; // Authoritative
+      cast['Reporter'] = 'Puck'; // Clear
+      cast['Witness'] = 'Zephyr'; // Normal
+  }
+
   let maleIdx = 0, femaleIdx = 0, neutralIdx = 0;
   
   uniqueSpeakers.forEach(speaker => {
+     if (cast[speaker]) return; // Already casted by special logic above
+
      const lower = speaker.toLowerCase();
      let assigned = '';
-     const isFemale = lower.match(/(mulher|woman|ela|rainha|queen|senhora|menina|girl|deusa|mae|chapeuzinho|maria|ana|julia|princesa|bruxa)/);
-     const isMale = lower.match(/(homem|man|ele|rei|king|senhor|menino|boy|deus|pai|lobo|joao|pedro|general|soldado|principe|cacador)/);
+     
+     const isFemale = lower.match(/(mulher|woman|ela|rainha|queen|senhora|menina|girl|deusa|mae|chapeuzinho|maria|ana|julia|princesa|bruxa|fairy|fada|witch|avó|grandma|reporter|repórter|little red)/);
+     const isMale = lower.match(/(homem|man|ele|rei|king|senhor|menino|boy|deus|pai|lobo|joao|pedro|general|soldado|principe|cacador|wolf|bear|urso|fox|raposa|professor|teacher|anchor|âncora)/);
      const isNarrator = lower.includes('narrador') || lower.includes('narrator');
 
-     if (isNarrator) { assigned = 'Fenrir'; } 
+     if (isNarrator) { assigned = narratorVoice; } 
      else if (isFemale) { assigned = femaleVoices[femaleIdx % femaleVoices.length]; femaleIdx++; } 
      else if (isMale) { assigned = maleVoices[maleIdx % maleVoices.length]; maleIdx++; } 
      else { const neutralVoices = [...maleVoices, ...femaleVoices]; assigned = neutralVoices[neutralIdx % neutralVoices.length]; neutralIdx++; }
@@ -79,6 +221,7 @@ const performAutoCasting = (scenes: Scene[]): Scene[] => {
 };
 
 const App: React.FC = () => {
+  const [showLanding, setShowLanding] = useState(true); // Controla a tela de entrada
   const [lang, setLang] = useState<Language>('pt');
   const [contentLang, setContentLang] = useState<Language>('pt');
   const [theme, setTheme] = useState<Theme>('dark');
@@ -125,6 +268,8 @@ const App: React.FC = () => {
   const [userKey, setUserKey] = useState('');
   
   const [generatedAdminKey, setGeneratedAdminKey] = useState('');
+  const [copiedOrigin, setCopiedOrigin] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState('');
 
   const cancelRef = useRef(false);
   const playerRef = useRef<VideoPlayerRef>(null);
@@ -133,6 +278,15 @@ const App: React.FC = () => {
       if (theme === 'dark') document.documentElement.classList.add('dark');
       else document.documentElement.classList.remove('dark');
   }, [theme]);
+
+  useEffect(() => {
+      // Capture the correct origin/host after mount
+      if (typeof window !== 'undefined') {
+          // Priority to host (domain:port) as it is usually what's needed for Referrer matching
+          // Fallback to origin if host is empty
+          setCurrentUrl(window.location.host || window.location.origin);
+      }
+  }, []);
 
   useEffect(() => {
       const savedKey = localStorage.getItem('viralflow_pro_key');
@@ -174,11 +328,11 @@ const App: React.FC = () => {
       sessionStorage.setItem('viralflow_welcome_seen', 'true');
   };
 
-  const handleSceneAssetRegeneration = async (scene: Scene, provider: ImageProvider, pollinationsModel?: PollinationsModel): Promise<any> => {
+  const handleSceneAssetRegeneration = async (scene: Scene, provider: ImageProvider, pollinationsModel?: PollinationsModel, geminiModel?: GeminiModel): Promise<any> => {
       const index = scenes.findIndex(s => s.id === scene.id);
       const idx = index >= 0 ? index : 0;
       try {
-          const result = await generateSceneImage(scene.visualPrompt, format, idx, topic, provider, style, pollinationsModel);
+          const result = await generateSceneImage(scene.visualPrompt, format, idx, topic, provider, style, pollinationsModel || 'turbo', geminiModel);
           return { ...result, success: true };
       } catch (e) {
           alert("Erro ao regenerar asset: " + e);
@@ -190,6 +344,7 @@ const App: React.FC = () => {
       const index = scenes.findIndex(s => s.id === scene.id);
       const idx = index >= 0 ? index : 0;
       try {
+         // Uses the newly assignedVoice if it was changed in the modal
          const audioResult = await generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', idx, topic);
          return { ...audioResult, success: true };
       } catch (e) {
@@ -232,20 +387,31 @@ const App: React.FC = () => {
         audioError: false
       }));
 
-      if (voice === 'Auto') newScenes = performAutoCasting(newScenes);
+      // Apply Auto Casting logic passing the current Style
+      if (voice === 'Auto') newScenes = performAutoCasting(newScenes, style);
       else newScenes = newScenes.map(s => ({ ...s, assignedVoice: voice === 'Custom' ? customVoice : voice }));
 
       setScenes(newScenes);
-      setBgMusicUrl(""); 
+      // setBgMusicUrl(""); // Do not reset if user set it before, or maybe yes? Let's keep manual selection.
 
       for (let i = 0; i < newScenes.length; i++) {
         if (cancelRef.current) break;
         setProgress(`${translations[lang].producingScene} ${i + 1} / ${newScenes.length}...`);
         const scene = newScenes[i];
+        
+        let safeImageProvider = imageProvider;
+        
+        if (imageProvider === ImageProvider.NONE) {
+            safeImageProvider = ImageProvider.NONE;
+        } else if (imageProvider === ImageProvider.GEMINI) {
+            safeImageProvider = ImageProvider.POLLINATIONS;
+        }
+
         const audioPromise = generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', i, topic, () => cancelRef.current)
             .then(audio => ({ ...audio, success: true }))
             .catch(e => ({ url: '', buffer: undefined, success: false }));
-        const imagePromise = generateSceneImage(scene.visualPrompt, format, i, topic, imageProvider, style, 'flux', () => cancelRef.current)
+            
+        const imagePromise = generateSceneImage(scene.visualPrompt, format, i, topic, safeImageProvider, style, 'turbo', 'gemini-2.5-flash-image', () => cancelRef.current)
             .then(img => ({ ...img, success: true }))
             .catch(e => ({ imageUrl: '', mediaType: 'image' as const, success: false, videoUrl: undefined }));
 
@@ -287,6 +453,13 @@ const App: React.FC = () => {
   const updatePexelsKey = (val: string) => { setPexelsKeyInput(val); savePexelsKey(val); };
   const updatePollinationsToken = (val: string) => { setPollinationsToken(val); savePollinationsToken(val); };
   const handleGenerateLicense = () => { const key = generateLicenseKey(); setGeneratedAdminKey(key); };
+  
+  const handleCopyOrigin = () => {
+     if (!currentUrl) return;
+     navigator.clipboard.writeText(currentUrl);
+     setCopiedOrigin(true);
+     setTimeout(() => setCopiedOrigin(false), 2000);
+  };
 
   const regenerateSceneAsset = async (index: number, type: 'image') => {
       if (isGenerating) return;
@@ -294,7 +467,7 @@ const App: React.FC = () => {
       if (!scene) return;
       setScenes(prev => { const updated = [...prev]; updated[index] = { ...updated[index], isGeneratingImage: true }; return updated; });
       try {
-          const result = await generateSceneImage(scene.visualPrompt, format, index, topic, imageProvider, style, 'flux');
+          const result = await generateSceneImage(scene.visualPrompt, format, index, topic, imageProvider, style, 'turbo');
           setScenes(prev => {
               const updated = [...prev];
               updated[index] = { ...updated[index], imageUrl: result.imageUrl, videoUrl: result.videoUrl, mediaType: result.mediaType, isGeneratingImage: false };
@@ -312,8 +485,13 @@ const App: React.FC = () => {
   const handleMusicSelection = (val: string) => { if (val === 'upload') musicInputRef.current?.click(); else if (val === 'none') setBgMusicUrl(""); };
   const currentMusicId = bgMusicUrl ? 'custom' : 'none';
 
+  // RENDER LANDING OR APP
+  if (showLanding) {
+      return <LandingScreen onComplete={() => setShowLanding(false)} />;
+  }
+
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 selection:bg-indigo-500/30 flex flex-col overflow-hidden transition-colors duration-300">
+    <div className="min-h-screen bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 selection:bg-indigo-500/30 flex flex-col overflow-hidden transition-colors duration-300 animate-in fade-in duration-1000">
       {/* HEADER */}
       <header className="h-16 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/50 backdrop-blur-xl sticky top-0 z-40">
         <div className="flex items-center gap-3">
@@ -365,11 +543,11 @@ const App: React.FC = () => {
                                 </div>
                                 {voice === 'Custom' && userTier === UserTier.PRO && (<input type="text" value={customVoice} onChange={(e) => setCustomVoice(e.target.value)} placeholder="Nome da voz (ex: en-US-Studio-M)" className="w-full mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none" />)}
                              </div>
-                             <div className="space-y-2"><label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center justify-between">{translations[lang].imageProvider}{imageProvider === ImageProvider.GEMINI && <span className="text-[10px] text-amber-500 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {translations[lang].quota}</span>}</label><div className="grid grid-cols-1 gap-2">{[{id: ImageProvider.GEMINI, label: '✨ Gemini 2.5', sub: 'High Quality'}, {id: ImageProvider.POLLINATIONS, label: '🎨 Pollinations.ai', sub: 'Flux Model - Free'}, {id: ImageProvider.STOCK_VIDEO, label: '🎥 Stock Video', sub: 'Real Footage (Pexels)'}].map(p => (<button key={p.id} onClick={() => setImageProvider(p.id as ImageProvider)} className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${imageProvider === p.id ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-500/20' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}><div className="text-left"><div className={`font-bold text-sm ${imageProvider === p.id ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'}`}>{p.label}</div><div className={`text-xs ${imageProvider === p.id ? 'text-indigo-200' : 'text-zinc-500'}`}>{p.sub}</div></div>{imageProvider === p.id && <CheckCircle2 className="w-5 h-5 text-white" />}</button>))}</div></div>
+                             <div className="space-y-2"><label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center justify-between">{translations[lang].imageProvider}{imageProvider === ImageProvider.GEMINI && <span className="text-[10px] text-amber-500 flex items-center gap-1"><AlertCircle className="w-3 h-3"/> {translations[lang].quota}</span>}</label><div className="grid grid-cols-1 gap-2">{[{id: ImageProvider.GEMINI, label: '✨ Gemini 2.5', sub: 'High Quality (Manual Only)'}, {id: ImageProvider.POLLINATIONS, label: '🎨 Pollinations.ai', sub: 'Turbo Model - Free'}, {id: ImageProvider.STOCK_VIDEO, label: '🎥 Stock Video', sub: 'Real Footage (Pexels)'}, {id: ImageProvider.NONE, label: translations[lang].providerNone, sub: translations[lang].providerNoneSub}].map(p => (<button key={p.id} onClick={() => setImageProvider(p.id as ImageProvider)} className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${imageProvider === p.id ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-500/20' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}><div className="text-left"><div className={`font-bold text-sm ${imageProvider === p.id ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'}`}>{p.label}</div><div className={`text-xs ${imageProvider === p.id ? 'text-indigo-200' : 'text-zinc-500'}`}>{p.sub}</div></div>{imageProvider === p.id && <CheckCircle2 className="w-5 h-5 text-white" />}</button>))}</div></div>
                              <div className="space-y-2"><div className="flex items-center justify-between"><label className="text-xs font-bold text-amber-600 dark:text-amber-500 uppercase tracking-wider flex items-center gap-2"><ArrowRightLeft className="w-3 h-3" /> {translations[lang].globalTrans}</label>{userTier === UserTier.FREE && <Lock className="w-3 h-3 text-zinc-500" />}</div><select value={globalTransition} onChange={(e) => setGlobalTransition(e.target.value as VideoTransition)} disabled={userTier === UserTier.FREE} className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none disabled:opacity-50">{Object.values(VideoTransition).map(s => <option key={s} value={s}>{s}</option>)}</select>{userTier === UserTier.FREE && <p className="text-[10px] text-zinc-500 italic text-right">{translations[lang].onlyPro}</p>}</div>
                         </div>
                     </div>
-                    <div className="pt-8 flex justify-center"><button id="tour-generate-btn" onClick={handleGenerateVideo} disabled={isGenerating} className="group relative px-8 py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-full font-black text-lg shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100">{isGenerating ? (<span className="flex items-center gap-3"><Loader2 className="w-6 h-6 animate-spin" /> {translations[lang].generating} {progress && '...'}</span>) : (<span className="flex items-center gap-3">{translations[lang].generateVideo} <Wand2 className="w-6 h-6 text-indigo-400 dark:text-indigo-600" /></span>)}</button></div>
+                    <div className="pt-8 flex justify-center"><button id="tour-generate-btn" onClick={handleGenerateVideo} disabled={isGenerating} className="group relative px-8 py-4 bg-zinc-900 dark:bg-white text-white dark:text-black rounded-full font-black text-lg shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100">{isGenerating ? (<span className="flex items-center gap-3"><Loader2 className="w-6 h-6 animate-spin" /> {progress || translations[lang].generating}</span>) : (<span className="flex items-center gap-3">{translations[lang].generateVideo} <Wand2 className="w-6 h-6 text-indigo-400 dark:text-indigo-600" /></span>)}</button></div>
                 </div>
             </div>
         )}
@@ -380,6 +558,30 @@ const App: React.FC = () => {
                     <h2 className="text-2xl font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Settings className="w-6 h-6"/> {translations[lang].settings}</h2>
                     <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 space-y-4"><div className="flex items-center justify-between"><div><h3 className="text-lg font-semibold text-zinc-900 dark:text-white">{translations[lang].keysTitle}</h3><p className="text-zinc-500 dark:text-zinc-400 text-sm">{translations[lang].keysDesc}</p></div><div className="px-3 py-1 bg-zinc-100 dark:bg-zinc-800 rounded text-xs font-mono text-zinc-600 dark:text-zinc-300">{apiKeyCount} {translations[lang].activeKeys}</div></div><textarea value={manualKeys} onChange={(e) => updateKeys(e.target.value)} className="w-full h-32 bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 font-mono text-xs text-zinc-600 dark:text-zinc-300 focus:border-indigo-500 outline-none" placeholder="AIzaSy..., AIzaSy..." /><div className="flex justify-end"><a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-indigo-500 dark:text-indigo-400 text-xs hover:underline flex items-center gap-1">{translations[lang].getKey}</a></div></div>
                     <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 space-y-4"><div><h3 className="text-lg font-semibold text-zinc-900 dark:text-white">{translations[lang].pexelsTitle}</h3><p className="text-zinc-500 dark:text-zinc-400 text-sm">{translations[lang].pexelsDesc}</p></div><input type="text" value={pexelsKey} onChange={(e) => updatePexelsKey(e.target.value)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 font-mono text-sm text-zinc-900 dark:text-white focus:border-indigo-500 outline-none" placeholder="..." /></div>
+                    
+                    {/* ORIGIN DOMAIN DISPLAY */}
+                    <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 space-y-4">
+                        <div>
+                            <h3 className="text-lg font-semibold text-zinc-900 dark:text-white">{translations[lang].originDomain}</h3>
+                            <p className="text-zinc-500 dark:text-zinc-400 text-sm">{translations[lang].originDesc}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="text" 
+                                readOnly 
+                                value={currentUrl} 
+                                className="flex-1 bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 font-mono text-sm text-zinc-900 dark:text-white outline-none" 
+                            />
+                            <button 
+                                onClick={handleCopyOrigin} 
+                                className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 rounded-lg font-bold text-sm transition-colors flex items-center gap-2"
+                            >
+                                {copiedOrigin ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                {copiedOrigin ? translations[lang].copied : translations[lang].copy}
+                            </button>
+                        </div>
+                    </div>
+
                     <div className="p-4 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-500/30 flex gap-4 items-start"><ShieldCheck className="w-6 h-6 text-indigo-600 dark:text-indigo-400 shrink-0 mt-1" /><div><h4 className="font-bold text-indigo-900 dark:text-indigo-200">{translations[lang].localSecurity}</h4><p className="text-xs text-indigo-700 dark:text-indigo-300/80 mt-1">{translations[lang].localSecDesc}</p></div></div>
                     
                     {/* ADMIN AREA - ONLY VISIBLE WITH MASTER KEY */}
@@ -405,7 +607,8 @@ const App: React.FC = () => {
             </div>
         )}
 
-        {activeTab === 'preview' && (scenes.length > 0 ? (
+        {activeTab === 'preview' && (
+            scenes.length > 0 ? (
                 <div className="flex-1 flex flex-col md:flex-row h-full items-start overflow-hidden">
                     <div className="w-full md:w-1/2 lg:w-2/5 bg-zinc-100 dark:bg-black flex flex-col items-center p-6 border-r border-zinc-200 dark:border-zinc-800 z-10 md:sticky md:top-0 md:h-screen md:overflow-y-auto custom-scrollbar">
                         <div className="w-full max-w-[400px]">
@@ -415,6 +618,24 @@ const App: React.FC = () => {
                                     <button onClick={() => playerRef.current?.startRecording(false)} disabled={isGenerating || isPlaying} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white font-bold transition-colors text-xs"><Download className="w-4 h-4" /> {translations[lang].exportHD}</button>
                                     <button onClick={() => { if (userTier === UserTier.FREE) { setShowUpgradeModal(true); } else { playerRef.current?.startRecording(true); } }} disabled={isGenerating || isPlaying} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-lg bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-black font-bold transition-all text-xs relative overflow-hidden group"><Crown className="w-4 h-4" /> {translations[lang].export4k}{userTier === UserTier.FREE && (<div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity"><Lock className="w-4 h-4 text-white" /></div>)}</button>
                                 </div>
+                                
+                                {/* RESTORED GLOBAL AUDIO CONTROL */}
+                                <div className="bg-white dark:bg-zinc-900 rounded-lg p-3 border border-zinc-200 dark:border-zinc-800 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                                            <Music className="w-3 h-3" /> Áudio Global
+                                        </div>
+                                        <div className="text-[10px] text-zinc-400">{Math.round(bgMusicVolume * 100)}%</div>
+                                    </div>
+                                    <input type="range" min="0" max="1" step="0.05" value={bgMusicVolume} onChange={(e) => setBgMusicVolume(parseFloat(e.target.value))} className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
+                                    <div className="flex gap-2">
+                                        <button onClick={() => musicInputRef.current?.click()} className="flex-1 flex items-center justify-center gap-2 py-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-md text-xs font-medium text-zinc-700 dark:text-zinc-300 transition-colors">
+                                            <Upload className="w-3 h-3" /> {bgMusicUrl ? translations[lang].fileUploaded : translations[lang].customAudio}
+                                        </button>
+                                        <input type="file" ref={musicInputRef} onChange={handleMusicUpload} accept="audio/*" className="hidden" />
+                                    </div>
+                                </div>
+
                                 <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 rounded-lg px-3 border border-zinc-200 dark:border-zinc-800"><Captions className="w-4 h-4 text-zinc-400" /><select value={subtitleStyle} onChange={(e) => setSubtitleStyle(e.target.value as SubtitleStyle)} className="bg-transparent text-xs text-zinc-900 dark:text-white outline-none flex-1 py-3 cursor-pointer">{Object.values(SubtitleStyle).map(s => <option key={s} value={s}>{s}</option>)}</select></div>
                                 <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 rounded-lg px-3 border border-zinc-200 dark:border-zinc-800"><Sparkles className="w-4 h-4 text-zinc-400" /><select value={activeFilter} onChange={(e) => setActiveFilter(e.target.value as VideoFilter)} className="bg-transparent text-xs text-zinc-900 dark:text-white outline-none flex-1 py-3 cursor-pointer">{Object.values(VideoFilter).map(s => <option key={s} value={s}>Filtro: {s}</option>)}</select></div>
                                 <div className="flex items-center justify-center gap-2 mt-1"><label className="flex items-center gap-2 cursor-pointer text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white select-none"><input type="checkbox" checked={showSubtitles} onChange={(e) => setShowSubtitles(e.target.checked)} className="w-4 h-4 rounded border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900 text-indigo-600 focus:ring-indigo-500" />{translations[lang].showSub}</label></div>
@@ -440,7 +661,10 @@ const App: React.FC = () => {
                                     <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
                                         <div>
                                             <div className="flex items-center justify-between mb-1">
-                                                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide">{scene.speaker}</span>
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide">{scene.speaker}</span>
+                                                    <span className="text-[9px] text-zinc-400">{scene.assignedVoice || 'Fenrir'}</span>
+                                                </div>
                                                 <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button onClick={(e) => { e.stopPropagation(); regenerateSceneAsset(index, 'image'); }} className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded text-zinc-500 dark:text-zinc-400" title="Regenerar Imagem"><RefreshCcw className="w-3.5 h-3.5" /></button>
                                                     <button onClick={(e) => { e.stopPropagation(); setEditingScene(scene); }} className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded text-zinc-500 dark:text-zinc-400" title="Editar Cena"><Edit2 className="w-3.5 h-3.5" /></button>
@@ -458,6 +682,15 @@ const App: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            ) : isGenerating ? (
+                <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-6 animate-in fade-in duration-500">
+                    <Loader2 className="w-16 h-16 text-indigo-600 dark:text-indigo-500 animate-spin" />
+                    <div className="space-y-2 max-w-md">
+                        <h3 className="text-xl font-bold text-zinc-900 dark:text-white">{translations[lang].loadingVideo}</h3>
+                        <p className="text-zinc-500 dark:text-zinc-400 text-sm font-mono">{progress}</p>
+                        <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-4">{translations[lang].loadingDesc}</p>
+                    </div>
+                </div>
             ) : (
                 <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-6">
                     <div className="w-24 h-24 bg-zinc-100 dark:bg-zinc-900 rounded-full flex items-center justify-center mb-4 border border-zinc-200 dark:border-zinc-800"><Film className="w-10 h-10 text-zinc-400" /></div>
@@ -465,7 +698,8 @@ const App: React.FC = () => {
                     <p className="text-zinc-500 dark:text-zinc-400 max-w-md">{translations[lang].appDesc}</p>
                     <button onClick={() => setActiveTab('create')} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold shadow-lg shadow-indigo-500/20 transition-all">{translations[lang].tabCreate}</button>
                 </div>
-        ))}
+            )
+        )}
 
         {activeTab === 'metadata' && (
              <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
@@ -518,7 +752,7 @@ const App: React.FC = () => {
 
       {/* MODALS */}
       {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} onUpgrade={handleUpgrade} lang={lang} t={translations} />}
-      {showWelcomeModal && <WelcomeModal onClose={handleCloseWelcome} lang={lang} t={translations} />}
+      {showWelcomeModal && !showLanding && <WelcomeModal onClose={handleCloseWelcome} lang={lang} t={translations} />}
       {editingScene && (
           <EditSceneModal 
             scene={editingScene} 

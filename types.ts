@@ -3,6 +3,7 @@ export type Language = 'pt' | 'en' | 'es';
 export type Theme = 'light' | 'dark';
 
 export type PollinationsModel = 'flux' | 'turbo' | 'dreamshaper' | 'deliberate' | 'midjourney';
+export type GeminiModel = 'gemini-2.5-flash-image' | 'imagen-3.0-generate-001';
 
 export enum VideoStyle {
   SCARY = 'Terror Analógico (Creepypasta)',
@@ -14,7 +15,11 @@ export enum VideoStyle {
   CURIOSITY = 'Você Sabia? (Curiosidades Rápidas)',
   MYSTERY = 'True Crime (Investigativo)',
   RELAX = 'Natureza 8K (Relaxamento)',
-  HISTORY = 'Pintura Clássica a Óleo'
+  HISTORY = 'Pintura Clássica a Óleo',
+  PROFESSOR = 'Professor / Tutorial (Didático)',
+  NEWS = 'Reportagem / Jornalismo (TV News)',
+  KIDS_STORY = 'História Infantil (Multi-Voz / Fábula)',
+  DEBATE = 'Debate / Podcast (Host vs Convidado)'
 }
 
 export enum VideoPacing {
@@ -42,6 +47,7 @@ export enum SubtitleStyle {
   KARAOKE = 'Karaoke (Highlight Dinâmico)',
   GLITCH = 'Glitch (Cyberpunk)',
   COMIC = 'Comic (Quadrinhos)',
+  WORD_BY_WORD = 'Palavra por Palavra (Speed Reading)',
   NONE = 'Desativado' 
 }
 
@@ -51,7 +57,11 @@ export enum VideoFilter {
   VINTAGE = 'Filme Antigo (1950)',
   CYBERPUNK = 'Cyberpunk (Neon/Azul)',
   NOIR = 'Noir (Preto e Branco)',
-  DREAMY = 'Sonho (Glow Suave)'
+  DREAMY = 'Sonho (Glow Suave)',
+  SEPIA = 'Sépia (Western)',
+  COLD = 'Frio (Cinemático Azul)',
+  WARM = 'Quente (Golden Hour)',
+  HIGH_CONTRAST = 'Alto Contraste (Dramático)'
 }
 
 export enum VideoTransition {
@@ -61,6 +71,9 @@ export enum VideoTransition {
   WIPE = 'Limpar (Wipe)',
   ZOOM = 'Zoom In/Out',
   GLITCH = 'Glitch Digital',
+  PIXELATE = 'Pixelização',
+  CURTAIN = 'Cortinas (Teatro)',
+  ROTATION = 'Giro Rápido',
   AUTO = '🤖 IA Auto (Aleatório)'
 }
 
@@ -80,6 +93,7 @@ export enum MusicAction {
 }
 
 export enum ImageProvider {
+  NONE = 'Apenas Roteiro (Sem Imagem)',
   GEMINI = 'Gemini 2.5 Flash (Google)',
   POLLINATIONS = 'Pollinations.ai (Flux/SD - Grátis)',
   STOCK_VIDEO = 'Stock Video (Pexels - Real)',

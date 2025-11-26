@@ -12,15 +12,32 @@
           extend: {
             fontFamily: {
               sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
             },
+            animation: {
+              'spin-slow': 'spin 10s linear infinite',
+              'spin-reverse': 'spin-reverse 15s linear infinite',
+              'pulse-glow': 'pulse-glow 3s ease-in-out infinite',
+            },
+            keyframes: {
+              'spin-reverse': {
+                '0%': { transform: 'rotate(0deg)' },
+                '100%': { transform: 'rotate(-360deg)' },
+              },
+              'pulse-glow': {
+                '0%, 100%': { opacity: '0.6', transform: 'scale(1)' },
+                '50%': { opacity: '1', transform: 'scale(1.1)' },
+              }
+            }
           }
         }
       }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
       body {
         font-family: 'Inter', sans-serif;
+        background-color: #000;
       }
       /* Custom scrollbar for webkit */
       ::-webkit-scrollbar {
@@ -49,6 +66,80 @@
         background: rgba(24, 24, 27, 0.7);
         border: 1px solid rgba(255, 255, 255, 0.1);
       }
+
+      /* 3D SCENE STYLES */
+      .scene-3d {
+        perspective: 1000px;
+        transform-style: preserve-3d;
+      }
+      
+      .reactor-container {
+        position: relative;
+        width: 300px;
+        height: 300px;
+        transform-style: preserve-3d;
+        animation: reactor-spin 20s linear infinite;
+      }
+
+      .reactor-ring {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform-style: preserve-3d;
+        border-radius: 50%;
+        border: 2px solid rgba(99, 102, 241, 0.3);
+        box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+      }
+
+      .ring-1 { width: 200px; height: 200px; margin: -100px; animation: rotate-x 10s linear infinite; border-color: rgba(99, 102, 241, 0.8); box-shadow: 0 0 30px rgba(99, 102, 241, 0.4); }
+      .ring-2 { width: 260px; height: 260px; margin: -130px; animation: rotate-y 15s linear infinite; border-color: rgba(168, 85, 247, 0.6); }
+      .ring-3 { width: 320px; height: 320px; margin: -160px; animation: rotate-z 20s linear infinite; border-color: rgba(236, 72, 153, 0.4); }
+
+      .core-glow {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 60px;
+        height: 60px;
+        margin: -30px;
+        background: radial-gradient(circle, #fff, #6366f1);
+        border-radius: 50%;
+        box-shadow: 0 0 60px #6366f1, 0 0 100px #6366f1;
+        animation: pulse-core 2s ease-in-out infinite alternate;
+      }
+
+      @keyframes rotate-x { from { transform: rotateX(0deg) rotateY(0deg); } to { transform: rotateX(360deg) rotateY(45deg); } }
+      @keyframes rotate-y { from { transform: rotateY(0deg) rotateX(45deg); } to { transform: rotateY(360deg) rotateX(0deg); } }
+      @keyframes rotate-z { from { transform: rotateZ(0deg) rotateX(15deg); } to { transform: rotateZ(360deg) rotateX(-15deg); } }
+      @keyframes pulse-core { from { transform: scale(0.8); opacity: 0.8; } to { transform: scale(1.1); opacity: 1; } }
+      
+      .grid-floor {
+        position: absolute;
+        bottom: -200px;
+        left: -50%;
+        width: 200%;
+        height: 1000px;
+        background-image: 
+          linear-gradient(rgba(99, 102, 241, 0.3) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(99, 102, 241, 0.3) 1px, transparent 1px);
+        background-size: 50px 50px;
+        transform: rotateX(80deg);
+        mask-image: linear-gradient(to top, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%);
+        -webkit-mask-image: linear-gradient(to top, rgba(0,0,0,0) 0%, rgba(0,0,0,1) 50%, rgba(0,0,0,0) 100%);
+        animation: grid-move 5s linear infinite;
+        z-index: -1;
+      }
+
+      @keyframes grid-move { from { background-position: 0 0; } to { background-position: 0 50px; } }
+
+      .warp-speed {
+        animation: warp 0.5s ease-in forwards;
+      }
+
+      @keyframes warp {
+        0% { transform: scale(1); opacity: 1; filter: blur(0); }
+        100% { transform: scale(5); opacity: 0; filter: blur(10px); }
+      }
     </style>
   <script type="importmap">
 {
@@ -65,7 +156,7 @@
 }
 </script>
 </head>
-  <body class="bg-zinc-50 text-zinc-900 dark:bg-[#09090b] dark:text-zinc-100 transition-colors duration-300">
+  <body class="bg-zinc-50 text-zinc-900 dark:bg-[#09090b] dark:text-zinc-100 transition-colors duration-300 overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>
