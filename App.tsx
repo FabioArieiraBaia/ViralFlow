@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, MusicAction, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, GeminiModel, Scene, ViralMetadataResult } from './types';
 import { generateVideoScript, generateSpeech, generateSceneImage, generateThumbnails, generateMetadata, getApiKeyCount, saveManualKeys, getManualKeys, savePexelsKey, getPexelsKey, savePollinationsToken, getPollinationsToken, generateMovieOutline, generateViralMetadata } from './services/geminiService';
@@ -7,7 +6,7 @@ import { triggerBrowserDownload } from './services/fileSystem';
 import { downloadBook } from './services/bookService';
 import VideoPlayer, { VideoPlayerRef } from './components/VideoPlayer';
 import { WelcomeModal, UpgradeModal, EditSceneModal } from './components/Modals';
-import { Wand2, Film, Download, Loader2, Layers, Zap, Monitor, Music, Smartphone, Hash, Settings, AlertCircle, CheckCircle2, Crown, Key, Copy, ShieldCheck, RefreshCcw, X, Upload, ZapIcon, Music2, Info, Sparkles, Globe, Sun, Moon, TriangleAlert, ImagePlus, ArrowRightLeft, MessageCircle, Captions, Volume2, Lock, Youtube, Edit2, ChevronRight, Terminal, Clapperboard, FileText, BookOpen, Save, FolderOpen, Square, Plus, Trash2, CheckSquare, Square as SquareIcon, MicOff, Palette, Eye, Move, Smartphone as MobileIcon, Monitor as MonitorIcon, Video } from 'lucide-react';
+import { Wand2, Film, Download, Loader2, Layers, Zap, Monitor, Music, Smartphone, Hash, Settings, AlertCircle, CheckCircle2, Crown, Key, Copy, ShieldCheck, RefreshCcw, X, Upload, ZapIcon, Music2, Info, Sparkles, Globe, Sun, Moon, TriangleAlert, ImagePlus, ArrowRightLeft, MessageCircle, Captions, Volume2, Lock, Youtube, Edit2, ChevronRight, Terminal, Clapperboard, FileText, BookOpen, Save, FolderOpen, Square, Plus, Trash2, CheckSquare, Square as SquareIcon, MicOff, Palette, Eye, Move, Smartphone as MobileIcon, Monitor as MonitorIcon, Video, DollarSign, Calendar } from 'lucide-react';
 
 // --- SALES & SECURITY CONFIG ---
 // Safe access to environment variables
@@ -16,13 +15,39 @@ const env = (import.meta as any).env || {};
 const MASTER_KEY = 'ADMIN-TEST-KEY-2025'; 
 const LICENSE_SALT = env.VITE_LICENSE_SALT || 'DEV_SALT_INSECURE';
 
+type LicenseType = 'VF-M' | 'VF-T' | 'VF-A' | 'VF-L'; // Mensal, Trimestral, Anual, Lifetime
+
 const verifyLocalKey = (keyInput: string): boolean => {
     const key = keyInput.trim().toUpperCase();
-    if (!key.startsWith('VFPRO-')) return false;
+    
+    // Check for Master Key first
+    if (key === MASTER_KEY) return true;
+
+    // Check Format PREFIX-RANDOM-SIGNATURE
     const parts = key.split('-');
-    if (parts.length !== 3) return false;
-    const randomPart = parts[1];
-    const providedSignature = parts[2];
+    
+    // Allow legacy (3 parts) and new format (4 parts)
+    if (parts.length < 3 || parts.length > 4) return false;
+    
+    let randomPart = '';
+    let providedSignature = '';
+    
+    // Legacy Support (VFPRO-...)
+    if (parts[0] === 'VFPRO' && parts.length === 3) {
+        randomPart = parts[1];
+        providedSignature = parts[2];
+    } 
+    // New Formats (VF-M-..., VF-T-..., VF-A-...)
+    else if (parts.length === 4 && ['VF', 'VFPRO'].includes(parts[0])) {
+         // parts[0] is VF, parts[1] is Type (M, T, A, L)
+         const type = parts[1];
+         if (!['M', 'T', 'A', 'L'].includes(type)) return false;
+         randomPart = parts[2];
+         providedSignature = parts[3];
+    } else {
+        return false;
+    }
+
     const signatureSource = randomPart + LICENSE_SALT;
     let hash = 0;
     for (let i = 0; i < signatureSource.length; i++) {
@@ -34,7 +59,7 @@ const verifyLocalKey = (keyInput: string): boolean => {
     return providedSignature === expectedSignature;
 };
 
-const generateLicenseKey = (): string => {
+const generateLicenseKey = (type: LicenseType = 'VF-L'): string => {
     const randomPart = Math.random().toString(36).substring(2, 8).toUpperCase();
     const signatureSource = randomPart + LICENSE_SALT;
     let hash = 0;
@@ -44,7 +69,17 @@ const generateLicenseKey = (): string => {
         hash = hash & hash; 
     }
     const signature = Math.abs(hash).toString(16).substring(0, 4).toUpperCase().padStart(4, '0');
-    return `VFPRO-${randomPart}-${signature}`;
+    
+    // Format: VF-TYPE-RANDOM-SIGNATURE
+    // VF-M-XYZ123-A1B2
+    const prefixMap: Record<string, string> = {
+        'VF-M': 'VF-M',
+        'VF-T': 'VF-T',
+        'VF-A': 'VF-A',
+        'VF-L': 'VF-L' // Or VFPRO for legacy, but let's standardize on 4 parts for new ones
+    };
+
+    return `${prefixMap[type]}-${randomPart}-${signature}`;
 };
 
 const LandingScreen: React.FC<{ onComplete: () => void }> = ({ onComplete }) => {
@@ -191,6 +226,7 @@ const App: React.FC = () => {
   const [showWelcomeModal, setShowWelcomeModal] = useState(true);
   const [userKey, setUserKey] = useState('');
   const [generatedAdminKey, setGeneratedAdminKey] = useState('');
+  const [selectedLicenseType, setSelectedLicenseType] = useState<LicenseType>('VF-M');
   const [copiedOrigin, setCopiedOrigin] = useState(false);
   const [currentUrl, setCurrentUrl] = useState('');
   const importInputRef = useRef<HTMLInputElement>(null);
@@ -208,7 +244,24 @@ const App: React.FC = () => {
   useEffect(() => { if (typeof window !== 'undefined') { setCurrentUrl(window.location.host || window.location.origin); } }, []);
   useEffect(() => { const initUser = async () => { const savedKey = localStorage.getItem('viralflow_pro_key'); if (savedKey) { if (savedKey === MASTER_KEY || verifyLocalKey(savedKey)) { setUserTier(UserTier.PRO); setUserKey(savedKey); } } }; initUser(); const seenWelcome = sessionStorage.getItem('viralflow_welcome_seen'); if (seenWelcome) setShowWelcomeModal(false); }, []);
 
-  const handleUpgrade = async (keyInput: string): Promise<boolean> => { const input = keyInput.trim(); if (input === MASTER_KEY) { setUserTier(UserTier.PRO); localStorage.setItem('viralflow_pro_key', input); setUserKey(input); return true; } if (verifyLocalKey(input)) { setUserTier(UserTier.PRO); const formattedKey = input.toUpperCase(); localStorage.setItem('viralflow_pro_key', formattedKey); setUserKey(formattedKey); return true; } return false; };
+  const handleUpgrade = async (keyInput: string): Promise<boolean> => { 
+      const input = keyInput.trim(); 
+      if (input === MASTER_KEY) { 
+          setUserTier(UserTier.PRO); 
+          localStorage.setItem('viralflow_pro_key', input); 
+          setUserKey(input); 
+          return true; 
+      } 
+      if (verifyLocalKey(input)) { 
+          setUserTier(UserTier.PRO); 
+          const formattedKey = input.toUpperCase(); 
+          localStorage.setItem('viralflow_pro_key', formattedKey); 
+          setUserKey(formattedKey); 
+          return true; 
+      } 
+      return false; 
+  };
+
   const handleCloseWelcome = () => { setShowWelcomeModal(false); sessionStorage.setItem('viralflow_welcome_seen', 'true'); };
   const handleSceneAssetRegeneration = async (scene: Scene, provider: ImageProvider, pollinationsModel?: PollinationsModel, geminiModel?: GeminiModel): Promise<any> => { const index = scenes.findIndex(s => s.id === scene.id); const idx = index >= 0 ? index : 0; try { const result = await generateSceneImage(scene.visualPrompt, format, idx, topic, provider, style, pollinationsModel || 'turbo', geminiModel); return { ...result, success: true }; } catch (e) { alert("Erro ao regenerar asset: " + e); return { success: false }; } };
   const handleSceneAudioRegeneration = async (scene: Scene): Promise<any> => { const index = scenes.findIndex(s => s.id === scene.id); const idx = index >= 0 ? index : 0; try { const audioResult = await generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', idx, topic); return { ...audioResult, success: true }; } catch (e) { console.error("Regeneration failed", e); return { success: false }; } };
@@ -224,8 +277,8 @@ const App: React.FC = () => {
   const updateKeys = (val: string) => { setManualKeys(val); saveManualKeys(val); setApiKeyCount(getApiKeyCount()); };
   const updatePexelsKey = (val: string) => { setPexelsKeyInput(val); savePexelsKey(val); };
   const updatePollinationsToken = (val: string) => { setPollinationsToken(val); savePollinationsToken(val); };
-  const handleGenerateLicense = () => { const key = generateLicenseKey(); setGeneratedAdminKey(key); };
-  const handleCopyOrigin = () => { if (!currentUrl) return; navigator.clipboard.writeText(currentUrl); setCopiedOrigin(true); setTimeout(() => setCopiedOrigin(false), 2000); };
+  const handleGenerateLicense = () => { const key = generateLicenseKey(selectedLicenseType); setGeneratedAdminKey(key); };
+  const handleCopyOrigin = () => { if (!currentUrl) return; navigator.clipboard.writeText(currentUrl); setCopiedOrigin(true); setTimeout(() => { setCopiedOrigin(false); }, 2000); };
   const regenerateSceneAsset = async (index: number, type: 'image' | 'video') => { if (isGenerating) return; const scene = scenes[index]; if (!scene) return; setScenes(prev => { const updated = [...prev]; updated[index] = { ...updated[index], isGeneratingImage: true }; return updated; }); try { const result = await generateSceneImage(scene.visualPrompt, format, index, topic, imageProvider, style, 'turbo'); setScenes(prev => { const updated = [...prev]; updated[index] = { ...updated[index], imageUrl: result.imageUrl, videoUrl: result.videoUrl, mediaType: result.mediaType, isGeneratingImage: false }; return updated; }); } catch (e) { console.error("Quick Regen Failed", e); setScenes(prev => { const updated = [...prev]; updated[index] = { ...updated[index], isGeneratingImage: false }; return updated; }); } };
   const saveSceneUpdate = (updated: Scene) => { setScenes(prev => prev.map(s => s.id === updated.id ? updated : s)); setEditingScene(null); };
   const handleMusicUpload = (e: React.ChangeEvent<HTMLInputElement>) => { const file = e.target.files?.[0]; if (file) setBgMusicUrl(URL.createObjectURL(file)); };
@@ -750,6 +803,53 @@ const App: React.FC = () => {
                              <p className="text-xs text-amber-700 dark:text-amber-500/80 mt-1">{translations[lang].localSecDesc}</p>
                          </div>
                      </div>
+
+                     {/* ADMIN PANEL - ONLY VISIBLE IF LOGGED IN AS ADMIN */}
+                     {userKey === MASTER_KEY && (
+                         <div className="bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 rounded-xl p-6 space-y-4 relative overflow-hidden">
+                             <div className="absolute -top-4 -right-4 w-20 h-20 bg-indigo-500/10 rounded-full blur-xl"></div>
+                             <div>
+                                 <h3 className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                                     <Terminal className="w-4 h-4" /> Painel do Vendedor (Admin)
+                                 </h3>
+                                 <p className="text-xs text-indigo-700 dark:text-indigo-400 mt-1">Gere chaves de licença para venda.</p>
+                             </div>
+
+                             <div className="grid grid-cols-2 gap-4">
+                                 <div>
+                                     <label className="text-xs font-bold text-zinc-500 dark:text-zinc-400 uppercase mb-2 block">Tipo de Licença</label>
+                                     <div className="space-y-2">
+                                         {[
+                                             { id: 'VF-M', label: '📅 Mensal', icon: Calendar },
+                                             { id: 'VF-T', label: '📅 Trimestral', icon: Calendar },
+                                             { id: 'VF-A', label: '📅 Anual', icon: Calendar },
+                                             { id: 'VF-L', label: '♾️ Vitalício (Lifetime)', icon: CheckCircle2 },
+                                         ].map(t => (
+                                             <button 
+                                                key={t.id} 
+                                                onClick={() => setSelectedLicenseType(t.id as LicenseType)}
+                                                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${selectedLicenseType === t.id ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800'}`}
+                                             >
+                                                <t.icon className="w-3 h-3"/> {t.label}
+                                             </button>
+                                         ))}
+                                     </div>
+                                 </div>
+                                 <div className="flex flex-col justify-end">
+                                     <button onClick={handleGenerateLicense} className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-sm shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 mb-2">
+                                         <Key className="w-4 h-4" /> Gerar Chave
+                                     </button>
+                                     {generatedAdminKey && (
+                                         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 relative group">
+                                             <div className="font-mono text-xs text-zinc-600 dark:text-zinc-300 break-all">{generatedAdminKey}</div>
+                                             <button onClick={() => { navigator.clipboard.writeText(generatedAdminKey); alert("Chave Copiada!"); }} className="absolute top-1 right-1 p-1.5 bg-zinc-100 dark:bg-zinc-800 rounded hover:bg-indigo-100 dark:hover:bg-indigo-900 text-zinc-400 hover:text-indigo-500 transition-colors"><Copy className="w-3 h-3" /></button>
+                                         </div>
+                                     )}
+                                 </div>
+                             </div>
+                         </div>
+                     )}
+
                 </div>
             </div>
         )}

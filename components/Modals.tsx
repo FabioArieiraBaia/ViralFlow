@@ -215,7 +215,8 @@ export const EditSceneModal: React.FC<{
 
     const [localScene, setLocalScene] = useState<Scene>({...scene, layers: initialLayers});
     const [activeTab, setActiveTab] = useState<'text'|'visual'|'audio'|'vfx'>('text');
-    const [isRegenerating, setIsRegenerating] = useState(false);
+    const [isRegeneratingVisual, setIsRegeneratingVisual] = useState(false);
+    const [isRegeneratingAudio, setIsRegeneratingAudio] = useState(false);
     const [selectedProvider, setSelectedProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
     const [pollinationsModel, setPollinationsModel] = useState<PollinationsModel>('turbo');
     const [geminiModel, setGeminiModel] = useState<GeminiModel>('gemini-2.5-flash-image');
@@ -401,14 +402,25 @@ export const EditSceneModal: React.FC<{
     };
 
     const handleRegenerateVisual = async () => {
-        setIsRegenerating(true);
+        setIsRegeneratingVisual(true);
         try {
             const result = await onRegenerateAsset(localScene, selectedProvider, pollinationsModel, geminiModel);
             if(result.success) {
                 setLocalScene(prev => ({ ...prev, imageUrl: result.imageUrl, videoUrl: result.videoUrl, mediaType: result.mediaType }));
             }
         } catch(e) { console.error(e); }
-        setIsRegenerating(false);
+        setIsRegeneratingVisual(false);
+    };
+
+    const handleRegenerateAudio = async () => {
+        setIsRegeneratingAudio(true);
+        try {
+            const res = await onRegenerateAudio(localScene);
+            if (res.success) {
+                setLocalScene(prev => ({ ...prev, audioUrl: res.url, audioBuffer: res.buffer }));
+            }
+        } catch (e) { console.error(e); }
+        setIsRegeneratingAudio(false);
     };
 
     const handleMusicFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -516,7 +528,10 @@ export const EditSceneModal: React.FC<{
                                     </select>
                                 </div>
                                 <div className="pt-2">
-                                     <button onClick={() => onRegenerateAudio(localScene).then(res => { if (res.success) setLocalScene(prev => ({ ...prev, audioUrl: res.url, audioBuffer: res.buffer })); })} className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2"><Mic className="w-4 h-4" /> Atualizar Áudio (Regenerar Voz)</button>
+                                     <button onClick={handleRegenerateAudio} disabled={isRegeneratingAudio} className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
+                                        {isRegeneratingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
+                                        {isRegeneratingAudio ? "Gerando Voz..." : "Atualizar Áudio (Regenerar Voz)"}
+                                     </button>
                                 </div>
                              </div>
                         </div>
@@ -665,9 +680,9 @@ export const EditSceneModal: React.FC<{
                                      <span className="text-xs font-bold">Upload Imagem ou Vídeo</span>
                                      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,video/*" />
                                  </button>
-                                 <button onClick={handleRegenerateVisual} disabled={isRegenerating} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50">
-                                     {isRegenerating ? <Loader2 className="w-6 h-6 animate-spin" /> : <Wand2 className="w-6 h-6" />}
-                                     <span className="text-xs font-bold">Gerar com IA</span>
+                                 <button onClick={handleRegenerateVisual} disabled={isRegeneratingVisual} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50">
+                                     {isRegeneratingVisual ? <Loader2 className="w-6 h-6 animate-spin" /> : <Wand2 className="w-6 h-6" />}
+                                     <span className="text-xs font-bold">{isRegeneratingVisual ? "Gerando..." : "Gerar com IA"}</span>
                                  </button>
                              </div>
                              
