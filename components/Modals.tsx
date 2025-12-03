@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle, CameraMovement } from '../types';
-import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera } from 'lucide-react';
+import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle, CameraMovement, AudioLayer } from '../types';
+import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera, Speaker } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 
 // VOICE OPTIONS CONSTANT (Reused here for the modal)
@@ -12,6 +12,16 @@ const VOICE_OPTIONS = [
   { id: 'Puck', label: '👩 Puck (Fem. Suave)' },
   { id: 'Kore', label: '🧬 Kore (Fem. Tech)' },
   { id: 'Aoede', label: '🎭 Aoede (Fem. Dramática)' }
+];
+
+const SFX_PRESETS = [
+    { name: 'Whoosh (Rápido)', url: 'https://cdn.pixabay.com/download/audio/2022/03/24/audio_c8c8a73467.mp3' },
+    { name: 'Boom (Impacto)', url: 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8c8a73467.mp3' }, // Placeholder URLs - in real app, bundle these or use a reliable CDN
+    { name: 'Click (Mouse)', url: '' },
+    { name: 'Pop', url: '' },
+    { name: 'Camera Shutter', url: '' },
+    { name: 'Risada', url: '' },
+    { name: 'Glitch', url: '' }
 ];
 
 export const WelcomeModal: React.FC<{ onClose: () => void, lang: Language, t: any }> = ({ onClose, lang, t }) => {
@@ -212,8 +222,9 @@ export const EditSceneModal: React.FC<{
         id: 'legacy-overlay', type: 'image' as const, url: scene.overlay.url, name: 'Overlay Inicial',
         x: scene.overlay.x, y: scene.overlay.y, scale: scene.overlay.scale, rotation: 0, opacity: scene.overlay.opacity ?? 1
     }] : []);
+    const initialAudioLayers = scene.audioLayers || [];
 
-    const [localScene, setLocalScene] = useState<Scene>({...scene, layers: initialLayers});
+    const [localScene, setLocalScene] = useState<Scene>({...scene, layers: initialLayers, audioLayers: initialAudioLayers});
     const [activeTab, setActiveTab] = useState<'text'|'visual'|'audio'|'vfx'>('text');
     const [isRegeneratingVisual, setIsRegeneratingVisual] = useState(false);
     const [isRegeneratingAudio, setIsRegeneratingAudio] = useState(false);
@@ -234,6 +245,7 @@ export const EditSceneModal: React.FC<{
     const [musicVolume, setMusicVolume] = useState<number>(localScene.musicConfig?.volume ?? 0.2);
     const [customAudioFile, setCustomAudioFile] = useState<string | undefined>(localScene.musicConfig?.customUrl);
     const [uploadedFileName, setUploadedFileName] = useState<string>('');
+    const [sfxUploadName, setSfxUploadName] = useState('');
     
     // VFX State
     const [vfx, setVfx] = useState<VFXConfig>(localScene.vfxConfig || { shakeIntensity: 0, chromaticAberration: 0, bloomIntensity: 0, vignetteIntensity: 0, filmGrain: 0 });
@@ -242,6 +254,7 @@ export const EditSceneModal: React.FC<{
     const fileInputRef = useRef<HTMLInputElement>(null);
     const layerInputRef = useRef<HTMLInputElement>(null);
     const musicFileInputRef = useRef<HTMLInputElement>(null);
+    const sfxInputRef = useRef<HTMLInputElement>(null);
 
     // Sync Music Config
     useEffect(() => {
@@ -446,6 +459,34 @@ export const EditSceneModal: React.FC<{
         }
     };
 
+    // --- SFX (Audio Layers) ---
+    const handleAddAudioLayer = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const url = URL.createObjectURL(file);
+            const newLayer: AudioLayer = {
+                id: `sfx-${Date.now()}`,
+                name: file.name,
+                url: url,
+                volume: 0.5,
+                startTime: 0,
+                type: 'sfx'
+            };
+            setLocalScene(prev => ({ ...prev, audioLayers: [...(prev.audioLayers || []), newLayer] }));
+        }
+    };
+
+    const handleRemoveAudioLayer = (id: string) => {
+        setLocalScene(prev => ({ ...prev, audioLayers: prev.audioLayers?.filter(l => l.id !== id) }));
+    };
+
+    const updateAudioLayer = (id: string, updates: Partial<AudioLayer>) => {
+        setLocalScene(prev => ({
+            ...prev,
+            audioLayers: prev.audioLayers?.map(l => l.id === id ? { ...l, ...updates } : l)
+        }));
+    };
+
     return (
         <div className="fixed inset-0 z-[100] bg-black flex flex-col md:flex-row animate-in fade-in duration-300">
             {showTrimmer && selectedLayer?.url && selectedLayer.type === 'video' && (
@@ -615,125 +656,6 @@ export const EditSceneModal: React.FC<{
                                 <p className="text-[10px] text-zinc-500">Simula movimento em imagens estáticas.</p>
                              </div>
 
-                             <div className="space-y-3">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Camadas (Layers)</label>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => layerInputRef.current?.click()} className="text-[10px] bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 px-2 py-1 rounded font-bold flex items-center gap-1"><Plus className="w-3 h-3"/> Mídia</button>
-                                        <button onClick={handleAddTextLayer} className="text-[10px] bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 px-2 py-1 rounded font-bold flex items-center gap-1"><Type className="w-3 h-3"/> Texto</button>
-                                        <input type="file" ref={layerInputRef} onChange={handleAddLayer} className="hidden" accept="image/*,video/*" />
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
-                                    {localScene.layers && localScene.layers.length > 0 ? (
-                                        localScene.layers.map((layer, idx) => (
-                                            <div key={layer.id} onClick={() => setSelectedLayerId(layer.id)} className={`flex items-center justify-between p-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors ${selectedLayerId === layer.id ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
-                                                <div className="flex items-center gap-3">
-                                                    {layer.type === 'image' && <ImagePlus className="w-4 h-4 text-emerald-500" />}
-                                                    {layer.type === 'video' && <Video className="w-4 h-4 text-blue-500" />}
-                                                    {layer.type === 'text' && <Type className="w-4 h-4 text-amber-500" />}
-                                                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 truncate w-24">{layer.name}</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <button onClick={(e) => {e.stopPropagation(); moveLayer(idx, 'down')}} className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white"><MoveUp className="w-3 h-3" /></button>
-                                                    <button onClick={(e) => {e.stopPropagation(); moveLayer(idx, 'up')}} className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white"><MoveDown className="w-3 h-3" /></button>
-                                                    <button onClick={(e) => {e.stopPropagation(); removeLayer(layer.id)}} className="p-1 text-zinc-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : ( <div className="p-4 text-center text-xs text-zinc-500">Nenhuma camada adicionada.</div> )}
-                                </div>
-                             </div>
-
-                             {selectedLayer && (
-                                <div className="bg-zinc-100 dark:bg-zinc-900/50 rounded-xl p-4 border border-zinc-200 dark:border-zinc-800 space-y-4">
-                                     <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2 mb-2">
-                                         <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase">Propriedades: {selectedLayer.name}</h4>
-                                     </div>
-
-                                     {selectedLayer.type === 'video' && (
-                                         <div className="space-y-3 pb-3 border-b border-zinc-200 dark:border-zinc-800">
-                                              <div className="flex items-center justify-between">
-                                                  <div className="flex items-center gap-2 text-indigo-500">
-                                                      <Scissors className="w-4 h-4" />
-                                                      <span className="text-xs font-bold uppercase">Corte de Vídeo</span>
-                                                  </div>
-                                                  <button onClick={() => setShowTrimmer(true)} className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded font-bold flex items-center gap-1">✂️ Editor de Corte</button>
-                                              </div>
-                                              <div className="text-[10px] text-zinc-500 font-mono">Duração Original: {(selectedLayer.totalDuration || 0).toFixed(1)}s</div>
-                                              <div className="grid grid-cols-2 gap-4">
-                                                  <div>
-                                                      <label className="text-[10px] text-zinc-500 font-bold">Início (s)</label>
-                                                      <input type="number" min="0" max={selectedLayer.trimEnd || selectedLayer.totalDuration} step="0.1" value={selectedLayer.trimStart || 0} onChange={(e) => updateLayer(selectedLayer.id, { trimStart: parseFloat(e.target.value) })} className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs" />
-                                                  </div>
-                                                  <div>
-                                                      <label className="text-[10px] text-zinc-500 font-bold">Fim (s)</label>
-                                                      <input type="number" min={selectedLayer.trimStart} max={selectedLayer.totalDuration} step="0.1" value={selectedLayer.trimEnd || selectedLayer.totalDuration} onChange={(e) => updateLayer(selectedLayer.id, { trimEnd: parseFloat(e.target.value) })} className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs" />
-                                                  </div>
-                                              </div>
-                                         </div>
-                                     )}
-
-                                     <div className="grid grid-cols-2 gap-4">
-                                         <div>
-                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Posição X</label>
-                                             <input type="range" min="0" max="1" step="0.01" value={selectedLayer.x} onChange={(e) => updateLayer(selectedLayer.id, { x: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
-                                         </div>
-                                         <div>
-                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Posição Y</label>
-                                             <input type="range" min="0" max="1" step="0.01" value={selectedLayer.y} onChange={(e) => updateLayer(selectedLayer.id, { y: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
-                                         </div>
-                                         <div>
-                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Escala</label>
-                                             <input type="range" min="0.1" max="3" step="0.1" value={selectedLayer.scale} onChange={(e) => updateLayer(selectedLayer.id, { scale: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
-                                         </div>
-                                         <div>
-                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Rotação</label>
-                                             <input type="range" min="-180" max="180" step="1" value={selectedLayer.rotation} onChange={(e) => updateLayer(selectedLayer.id, { rotation: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
-                                         </div>
-                                     </div>
-
-                                     {selectedLayer.type === 'text' && (
-                                         <div className="space-y-3 pt-2 border-t border-zinc-200 dark:border-zinc-800">
-                                             <div>
-                                                 <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Conteúdo do Texto</label>
-                                                 <input type="text" value={selectedLayer.text} onChange={(e) => updateLayer(selectedLayer.id, { text: e.target.value })} className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-2 text-xs" />
-                                             </div>
-                                             <div className="flex gap-2">
-                                                 <div className="flex-1">
-                                                     <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Fonte</label>
-                                                     <select value={selectedLayer.fontFamily} onChange={(e) => updateLayer(selectedLayer.id, { fontFamily: e.target.value })} className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs">
-                                                         {['Inter', 'Roboto', 'Oswald', 'Montserrat', 'Playfair Display', 'Comic Neue'].map(f => <option key={f} value={f}>{f}</option>)}
-                                                     </select>
-                                                 </div>
-                                                 <div className="w-16">
-                                                     <label className="text-[10px] text-zinc-500 uppercase font-bold mb-1 block">Cor</label>
-                                                     <input type="color" value={selectedLayer.fontColor} onChange={(e) => updateLayer(selectedLayer.id, { fontColor: e.target.value })} className="w-full h-6 rounded cursor-pointer" />
-                                                 </div>
-                                             </div>
-                                         </div>
-                                     )}
-
-                                     <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
-                                         <div className="flex items-center gap-2 mb-2">
-                                             <input type="checkbox" checked={!!selectedLayer.textShadow} onChange={(e) => updateLayer(selectedLayer.id, { textShadow: e.target.checked })} className="rounded text-indigo-600" />
-                                             <label className="text-xs font-bold text-zinc-600 dark:text-zinc-400">Ativar Sombra (Outline)</label>
-                                         </div>
-                                         <div className="flex items-center gap-2 mb-2">
-                                              <input type="checkbox" checked={!!selectedLayer.shadowColor} onChange={(e) => updateLayer(selectedLayer.id, { shadowColor: e.target.checked ? '#000000' : undefined })} className="rounded text-indigo-600" />
-                                              <label className="text-xs font-bold text-zinc-600 dark:text-zinc-400">Sombra Projetada (Drop Shadow)</label>
-                                         </div>
-                                         {selectedLayer.shadowColor && (
-                                             <div className="grid grid-cols-3 gap-2">
-                                                 <input type="range" min="0" max="20" value={selectedLayer.shadowBlur || 0} onChange={(e) => updateLayer(selectedLayer.id, { shadowBlur: parseFloat(e.target.value) })} title="Blur" className="h-1 bg-zinc-300 rounded appearance-none" />
-                                                 <input type="range" min="-20" max="20" value={selectedLayer.shadowOffsetX || 0} onChange={(e) => updateLayer(selectedLayer.id, { shadowOffsetX: parseFloat(e.target.value) })} title="Offset X" className="h-1 bg-zinc-300 rounded appearance-none" />
-                                                 <input type="color" value={selectedLayer.shadowColor} onChange={(e) => updateLayer(selectedLayer.id, { shadowColor: e.target.value })} className="h-4 w-full rounded" />
-                                             </div>
-                                         )}
-                                     </div>
-                                </div>
-                             )}
-
                              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-4">
                                 <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2"><Zap className="w-4 h-4" /> Global VFX</h4>
                                 <div>
@@ -753,7 +675,7 @@ export const EditSceneModal: React.FC<{
                              <div className="flex gap-4">
                                  <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl flex flex-col items-center justify-center gap-2 text-zinc-500 hover:text-indigo-500 hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all">
                                      <div className="flex gap-1"><Upload className="w-6 h-6" /><Video className="w-6 h-6" /></div>
-                                     <span className="text-xs font-bold">Upload Imagem ou Vídeo</span>
+                                     <span className="text-xs font-bold">Trocar Mídia Principal</span>
                                      <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,video/*" />
                                  </button>
                                  <button onClick={handleRegenerateVisual} disabled={isRegeneratingVisual} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50">
@@ -795,13 +717,75 @@ export const EditSceneModal: React.FC<{
                                      <textarea value={localScene.visualPrompt} onChange={(e) => setLocalScene({...localScene, visualPrompt: e.target.value})} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none h-24" />
                                  </div>
                              </div>
+
+                             {/* MULTIPLE LAYERS MANAGEMENT */}
+                             <div className="space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Camadas Visuais (Múltiplas Imagens/Vídeos)</label>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => layerInputRef.current?.click()} className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 shadow-md"><Plus className="w-3 h-3"/> Adicionar Imagem/Vídeo</button>
+                                        <button onClick={handleAddTextLayer} className="text-[10px] bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1"><Type className="w-3 h-3"/> Texto</button>
+                                        <input type="file" ref={layerInputRef} onChange={handleAddLayer} className="hidden" accept="image/*,video/*" />
+                                    </div>
+                                </div>
+                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
+                                    {localScene.layers && localScene.layers.length > 0 ? (
+                                        localScene.layers.map((layer, idx) => (
+                                            <div key={layer.id} onClick={() => setSelectedLayerId(layer.id)} className={`flex items-center justify-between p-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors ${selectedLayerId === layer.id ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
+                                                <div className="flex items-center gap-3">
+                                                    {layer.type === 'image' && <ImagePlus className="w-4 h-4 text-emerald-500" />}
+                                                    {layer.type === 'video' && <Video className="w-4 h-4 text-blue-500" />}
+                                                    {layer.type === 'text' && <Type className="w-4 h-4 text-amber-500" />}
+                                                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 truncate w-24">{layer.name}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <button onClick={(e) => {e.stopPropagation(); moveLayer(idx, 'down')}} className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white"><MoveUp className="w-3 h-3" /></button>
+                                                    <button onClick={(e) => {e.stopPropagation(); moveLayer(idx, 'up')}} className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white"><MoveDown className="w-3 h-3" /></button>
+                                                    <button onClick={(e) => {e.stopPropagation(); removeLayer(layer.id)}} className="p-1 text-zinc-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : ( <div className="p-4 text-center text-xs text-zinc-500">Nenhuma camada extra.</div> )}
+                                </div>
+                             </div>
+
+                             {selectedLayer && (
+                                <div className="bg-zinc-100 dark:bg-zinc-900/50 rounded-xl p-4 border border-zinc-200 dark:border-zinc-800 space-y-4">
+                                     <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2 mb-2">
+                                         <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase">Propriedades: {selectedLayer.name}</h4>
+                                     </div>
+                                     <div className="grid grid-cols-2 gap-4">
+                                         <div>
+                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Posição X</label>
+                                             <input type="range" min="0" max="1" step="0.01" value={selectedLayer.x} onChange={(e) => updateLayer(selectedLayer.id, { x: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                         </div>
+                                         <div>
+                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Posição Y</label>
+                                             <input type="range" min="0" max="1" step="0.01" value={selectedLayer.y} onChange={(e) => updateLayer(selectedLayer.id, { y: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                         </div>
+                                         <div>
+                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Escala</label>
+                                             <input type="range" min="0.1" max="3" step="0.1" value={selectedLayer.scale} onChange={(e) => updateLayer(selectedLayer.id, { scale: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                         </div>
+                                         <div>
+                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Rotação</label>
+                                             <input type="range" min="-180" max="180" step="1" value={selectedLayer.rotation} onChange={(e) => updateLayer(selectedLayer.id, { rotation: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                         </div>
+                                         <div>
+                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Opacidade</label>
+                                             <input type="range" min="0" max="1" step="0.05" value={selectedLayer.opacity} onChange={(e) => updateLayer(selectedLayer.id, { opacity: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                         </div>
+                                     </div>
+                                </div>
+                             )}
                          </div>
                     )}
 
                     {activeTab === 'audio' && (
                          <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                             {/* Background Music Section */}
                              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-4">
-                                <div className="flex justify-between items-center"><h4 className="font-bold text-sm text-zinc-900 dark:text-white flex items-center gap-2"><Music2 className="w-4 h-4 text-pink-500" /> {t[lang].sceneSoundtrack}</h4></div>
+                                <div className="flex justify-between items-center"><h4 className="font-bold text-sm text-zinc-900 dark:text-white flex items-center gap-2"><Music2 className="w-4 h-4 text-pink-500" /> {t[lang].sceneSoundtrack} (Música de Fundo)</h4></div>
                                 <div className="space-y-3">
                                     <label className="text-xs font-bold text-zinc-500 uppercase block">{t[lang].behavior}</label>
                                     <div className="grid grid-cols-3 gap-2">
@@ -835,6 +819,40 @@ export const EditSceneModal: React.FC<{
                                         <div className="flex justify-between text-xs mb-1"><span className="text-zinc-500 font-bold uppercase">{t[lang].musicVolume}</span><span>{Math.round(musicVolume * 100)}%</span></div>
                                         <input type="range" min="0" max="1" step="0.05" value={musicVolume} onChange={(e) => setMusicVolume(parseFloat(e.target.value))} className="w-full h-1 bg-zinc-200 dark:bg-zinc-800 rounded appearance-none accent-pink-500" />
                                     </div>
+                                )}
+                             </div>
+
+                             {/* SFX LAYERS */}
+                             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-4">
+                                <div className="flex justify-between items-center border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                                    <h4 className="font-bold text-sm text-zinc-900 dark:text-white flex items-center gap-2"><Speaker className="w-4 h-4 text-emerald-500" /> Efeitos Sonoros (SFX)</h4>
+                                    <button onClick={() => sfxInputRef.current?.click()} className="text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1"><Plus className="w-3 h-3"/> Adicionar Áudio</button>
+                                    <input type="file" ref={sfxInputRef} onChange={handleAddAudioLayer} className="hidden" accept="audio/*" />
+                                </div>
+                                
+                                {localScene.audioLayers && localScene.audioLayers.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {localScene.audioLayers.map((layer) => (
+                                            <div key={layer.id} className="bg-zinc-50 dark:bg-zinc-950 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                                <div className="flex justify-between items-center mb-2">
+                                                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 truncate w-32">{layer.name}</span>
+                                                    <button onClick={() => handleRemoveAudioLayer(layer.id)} className="text-red-500 hover:text-red-600"><Trash2 className="w-3 h-3" /></button>
+                                                </div>
+                                                <div className="grid grid-cols-2 gap-4">
+                                                    <div>
+                                                        <label className="text-[9px] text-zinc-500 uppercase font-bold block mb-1">Volume</label>
+                                                        <input type="range" min="0" max="1" step="0.1" value={layer.volume} onChange={(e) => updateAudioLayer(layer.id, { volume: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[9px] text-zinc-500 uppercase font-bold block mb-1">Delay (Início)</label>
+                                                        <input type="number" min="0" step="0.1" value={layer.startTime} onChange={(e) => updateAudioLayer(layer.id, { startTime: parseFloat(e.target.value) })} className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center p-4 text-xs text-zinc-500 italic">Nenhum efeito sonoro adicionado.</div>
                                 )}
                              </div>
                          </div>

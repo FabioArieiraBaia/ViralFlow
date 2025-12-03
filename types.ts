@@ -148,6 +148,15 @@ export interface SceneMusicConfig {
   volume: number; // 0.0 to 1.0
 }
 
+export interface AudioLayer {
+  id: string;
+  name: string;
+  url: string;
+  volume: number; // 0.0 to 1.0
+  startTime: number; // Delay in seconds relative to scene start
+  type: 'sfx' | 'voiceover';
+}
+
 export interface Keyframe {
   id: string;
   time: number; // 0.0 to 1.0 (relative to scene duration)
@@ -246,6 +255,8 @@ export interface Scene {
   
   // New Layer System
   layers?: LayerConfig[]; 
+  audioLayers?: AudioLayer[]; // NEW: Multiple audio tracks (SFX) per scene
+  
   overlay?: OverlayConfig; // Legacy support (converted to layer 0)
   
   transition?: VideoTransition; // PRO Feature: Specific transition to next scene
