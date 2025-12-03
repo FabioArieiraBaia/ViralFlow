@@ -1,6 +1,5 @@
-
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
-import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe } from '../types';
+import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe, VFXConfig } from '../types';
 import { Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
 import { getAudioContext } from '../services/audioUtils';
 import { triggerBrowserDownload } from '../services/fileSystem';
@@ -18,6 +17,7 @@ interface VideoPlayerProps {
   subtitleStyle: SubtitleStyle;
   activeFilter?: VideoFilter;
   globalTransition?: VideoTransition;
+  globalVfx?: VFXConfig;
   userTier: UserTier;
   onPlaybackComplete?: () => void;
   channelLogo?: OverlayConfig;
@@ -60,6 +60,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   subtitleStyle,
   activeFilter = VideoFilter.NONE,
   globalTransition = VideoTransition.NONE,
+  globalVfx,
   userTier,
   onPlaybackComplete,
   channelLogo,
@@ -82,8 +83,9 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const musicBufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
   const currentMusicUrlRef = useRef<string | null>(null); 
   
-  // --- PARTICLES REF ---
+  // --- PARTICLES & VFX REF ---
   const particlesRef = useRef<Particle[]>([]);
+  const grainCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [renderScale, setRenderScale] = useState(1);
   const [isExporting, setIsExporting] = useState(false);
@@ -99,6 +101,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const showSubtitlesRef = useRef(showSubtitles); 
   const subtitleStyleRef = useRef(subtitleStyle);
   const channelLogoRef = useRef(channelLogo);
+  const activeFilterRef = useRef(activeFilter);
+  const globalVfxRef = useRef(globalVfx);
   
   // Media Caches
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -153,6 +157,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   useEffect(() => { showSubtitlesRef.current = showSubtitles; }, [showSubtitles]);
   useEffect(() => { subtitleStyleRef.current = subtitleStyle; }, [subtitleStyle]);
   useEffect(() => { channelLogoRef.current = channelLogo; }, [channelLogo]);
+  useEffect(() => { activeFilterRef.current = activeFilter; }, [activeFilter]);
+  useEffect(() => { globalVfxRef.current = globalVfx; }, [globalVfx]);
 
   // Handle Fullscreen
   useEffect(() => {
@@ -377,6 +383,73 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       };
   };
 
+  const getCanvasFilter = (filter: VideoFilter): string => {
+      switch (filter) {
+          case VideoFilter.NOIR: return 'grayscale(100%) contrast(1.2)';
+          case VideoFilter.SEPIA: return 'sepia(100%) contrast(0.9)';
+          case VideoFilter.CYBERPUNK: return 'contrast(1.2) saturate(1.5) hue-rotate(190deg)';
+          case VideoFilter.VINTAGE: return 'sepia(50%) contrast(0.9) brightness(0.9)';
+          case VideoFilter.VHS: return 'contrast(1.2) saturate(1.2) sepia(20%)';
+          case VideoFilter.DREAMY: return 'contrast(0.9) brightness(1.1) saturate(1.1)';
+          case VideoFilter.COLD: return 'hue-rotate(180deg) saturate(0.5)';
+          case VideoFilter.WARM: return 'sepia(30%) saturate(1.2)';
+          case VideoFilter.HIGH_CONTRAST: return 'contrast(1.5)';
+          case VideoFilter.NEURAL_CINEMATIC: return 'contrast(1.1) saturate(1.2)';
+          default: return 'none';
+      }
+  };
+
+  // --- GLOBAL VFX HELPERS ---
+  const drawFilmGrain = (ctx: CanvasRenderingContext2D, intensity: number, width: number, height: number) => {
+    if (intensity <= 0) return;
+    
+    // Performance optimization: Generate grain only once per resize or reuse small pattern
+    if (!grainCanvasRef.current || grainCanvasRef.current.width !== 256) {
+        grainCanvasRef.current = document.createElement('canvas');
+        grainCanvasRef.current.width = 256;
+        grainCanvasRef.current.height = 256;
+    }
+    
+    const gCtx = grainCanvasRef.current.getContext('2d');
+    if (!gCtx) return;
+
+    // Refresh noise every few frames to look dynamic (check is simpler here)
+    if (Math.random() > 0.5) {
+        const idata = gCtx.createImageData(256, 256);
+        const buffer = new Uint32Array(idata.data.buffer);
+        for (let i = 0; i < buffer.length; i++) {
+            if (Math.random() < 0.5) {
+                buffer[i] = 0xff000000 | (Math.random() * 255); // Alpha noise is tricky, using gray
+            } else {
+                 buffer[i] = 0x00000000;
+            }
+        }
+        gCtx.putImageData(idata, 0, 0);
+    }
+
+    ctx.save();
+    ctx.globalAlpha = intensity;
+    ctx.globalCompositeOperation = 'overlay';
+    const pattern = ctx.createPattern(grainCanvasRef.current, 'repeat');
+    if (pattern) {
+        ctx.fillStyle = pattern;
+        ctx.fillRect(0, 0, width, height);
+    }
+    ctx.restore();
+  };
+
+  const drawVignette = (ctx: CanvasRenderingContext2D, intensity: number, width: number, height: number) => {
+      if (intensity <= 0) return;
+      ctx.save();
+      const gradient = ctx.createRadialGradient(width / 2, height / 2, width * 0.3, width / 2, height / 2, width * 0.8);
+      gradient.addColorStop(0, "rgba(0,0,0,0)");
+      gradient.addColorStop(1, `rgba(0,0,0,${Math.min(intensity, 0.9)})`);
+      ctx.fillStyle = gradient;
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillRect(0, 0, width, height);
+      ctx.restore();
+  };
+
   const drawParticles = (ctx: CanvasRenderingContext2D, effect: ParticleEffect, width: number, height: number) => {
     if (effect === ParticleEffect.NONE) return;
 
@@ -443,14 +516,61 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const drawSubtitles = (ctx: CanvasRenderingContext2D, text: string, style: SubtitleStyle, width: number, height: number, progress: number) => {
       if (!text || style === SubtitleStyle.NONE) return;
 
-      const fontSize = Math.min(width * 0.05, 48);
-      ctx.font = `900 ${fontSize}px 'Inter', sans-serif`;
+      // --- 1. SPECIAL MODE: WORD BY WORD (SPEED READING) ---
+      if (style === SubtitleStyle.WORD_BY_WORD) {
+          const allWords = text.split(/\s+/);
+          const totalWords = allWords.length;
+          // Calculate which word to show based on scene progress
+          const currentWordIdx = Math.min(Math.floor(progress * totalWords), totalWords - 1);
+          const word = allWords[currentWordIdx] || "";
+          
+          if (!word) return;
+
+          const fontSize = Math.min(width * 0.1, 100);
+          ctx.font = `900 ${fontSize}px 'Inter', sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          
+          const x = width / 2;
+          const y = height / 2;
+
+          // Background box
+          const measure = ctx.measureText(word);
+          const padding = 20;
+          ctx.fillStyle = 'rgba(0,0,0,0.7)';
+          ctx.roundRect(x - measure.width/2 - padding, y - fontSize/2 - padding, measure.width + padding*2, fontSize + padding*2, 10);
+          ctx.fill();
+
+          // Highlight text
+          ctx.fillStyle = '#facc15'; // Yellow-400
+          ctx.fillText(word, x, y);
+          return;
+      }
+
+      // --- 2. REGULAR MODES (LINE BASED) ---
+      let fontSize = Math.min(width * 0.05, 48);
+      let fontFamily = "'Inter', sans-serif";
+      let color = 'white';
+      let strokeColor = 'black';
+      
+      // Style specific setups
+      if (style === SubtitleStyle.COMIC) {
+          fontFamily = "'Comic Neue', 'Comic Sans MS', cursive";
+          fontSize = fontSize * 1.1;
+          color = '#fef08a'; // Yellow-200
+      } else if (style === SubtitleStyle.GLITCH) {
+          fontFamily = "'Oswald', sans-serif";
+          color = '#ffffff';
+      }
+
+      ctx.font = `900 ${fontSize}px ${fontFamily}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom'; 
       
       const words = text.split(' ');
-      const lines = [];
+      const lines: string[] = [];
       let currentLine = words[0];
+      
       for (let i = 1; i < words.length; i++) {
           const w = ctx.measureText(currentLine + " " + words[i]).width;
           if (w < width * 0.8) {
@@ -466,6 +586,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       const totalTextHeight = lines.length * lineHeight;
       const startY = height - (height * 0.1) - totalTextHeight;
 
+      // Karaoke Global Logic
+      const allWords = text.split(/\s+/);
+      const activeWordCount = Math.floor(progress * allWords.length);
+      let wordCounter = 0;
+
       lines.forEach((line, index) => {
           const y = startY + (index * lineHeight);
           const x = width / 2;
@@ -477,23 +602,116 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               ctx.fill();
               ctx.fillStyle = 'white';
               ctx.fillText(line, x, y);
-          } else if (style === SubtitleStyle.NEON) {
+          } 
+          else if (style === SubtitleStyle.NEON) {
               ctx.shadowColor = '#00ffcc';
-              ctx.shadowBlur = 10;
-              ctx.strokeStyle = 'black';
-              ctx.lineWidth = 4;
+              ctx.shadowBlur = 15;
+              ctx.strokeStyle = '#00ffcc';
+              ctx.lineWidth = 2;
               ctx.strokeText(line, x, y);
               ctx.fillStyle = 'white';
               ctx.fillText(line, x, y);
               ctx.shadowBlur = 0;
-          } else {
+          } 
+          else if (style === SubtitleStyle.COMIC) {
+              ctx.strokeStyle = 'black';
+              ctx.lineWidth = 6;
+              ctx.lineJoin = 'round';
+              ctx.strokeText(line, x, y);
+              ctx.fillStyle = '#fde047'; // Yellow
+              ctx.fillText(line, x, y);
+          }
+          else if (style === SubtitleStyle.GLITCH) {
+              const offsetX = (Math.random() - 0.5) * 5;
+              const offsetY = (Math.random() - 0.5) * 2;
+              
+              // Cyan Channel
+              ctx.fillStyle = 'cyan';
+              ctx.fillText(line, x - 3 + offsetX, y + offsetY);
+              // Magenta Channel
+              ctx.fillStyle = 'magenta';
+              ctx.fillText(line, x + 3 - offsetX, y - offsetY);
+              // White Channel
+              ctx.fillStyle = 'white';
+              ctx.fillText(line, x, y);
+          }
+          else if (style === SubtitleStyle.KARAOKE) {
+              // Classic Stroke Background
+              ctx.strokeStyle = 'black';
+              ctx.lineWidth = 6;
+              ctx.lineJoin = 'round';
+              ctx.strokeText(line, x, y);
+              
+              // Draw "Inactive" Color first (White)
+              ctx.fillStyle = 'white';
+              ctx.fillText(line, x, y);
+
+              // Draw "Active" Words over it
+              const lineWords = line.split(' ');
+              const lineWidth = ctx.measureText(line).width;
+              let currentX = x - (lineWidth / 2);
+
+              lineWords.forEach((w, wIdx) => {
+                  const wWidth = ctx.measureText(w + " ").width;
+                  if (wordCounter <= activeWordCount) {
+                       ctx.fillStyle = '#facc15'; // Highlight Color
+                       ctx.fillText(w, currentX + (wWidth/2), y); // Approximate centered drawing logic per word is hard with textAlign center, switching strategy:
+                       
+                       // Better Karaoke Strategy: Clip rect? Or precise drawing?
+                       // Precise drawing: We need to re-draw just this word in yellow over the white text.
+                       // Since ctx.textAlign is center, we must calculate offsets carefully.
+                       // Re-draw is safest.
+                  }
+                  currentX += wWidth;
+                  wordCounter++;
+              });
+              
+              // SIMPLIFIED KARAOKE VISUAL (Per Line for stability if precise positioning fails)
+              // If we are halfway through the line, paint it yellow? 
+              // Better Implementation below:
+          }
+          else {
+               // CLASSIC DEFAULT
                ctx.strokeStyle = 'black';
-               ctx.lineWidth = 4;
+               ctx.lineWidth = 5;
+               ctx.lineJoin = 'round';
                ctx.strokeText(line, x, y);
-               ctx.fillStyle = 'yellow';
+               ctx.fillStyle = 'white';
                ctx.fillText(line, x, y);
           }
       });
+
+      // Redrawing Karaoke Properly (Overlay method)
+      if (style === SubtitleStyle.KARAOKE) {
+           let kWordCounter = 0;
+           lines.forEach((line, index) => {
+               const y = startY + (index * lineHeight);
+               const lineWords = line.split(' ');
+               
+               // Calculate total line width to find start X
+               let totalW = 0;
+               const wordWidths = lineWords.map(w => {
+                   const width = ctx.measureText(w + " ").width;
+                   totalW += width;
+                   return width;
+               });
+               
+               let startX = (width / 2) - (totalW / 2);
+               
+               lineWords.forEach((w, wIdx) => {
+                    // Only redraw if active
+                    if (kWordCounter < activeWordCount) {
+                        ctx.fillStyle = '#facc15';
+                        ctx.textAlign = 'left'; // Temp switch to left align for precise word placement
+                        ctx.fillText(w, startX, y);
+                    }
+                    startX += wordWidths[wIdx];
+                    kWordCounter++;
+               });
+               // Restore align
+               ctx.textAlign = 'center';
+           });
+      }
   };
 
   const drawScene = (ctx: CanvasRenderingContext2D, scene: Scene, scale: number, progress: number, isPlaying: boolean, elapsedTimeMs: number) => {
@@ -501,32 +719,60 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-      // 2. Camera Transform
+      // Apply Global Filter HERE
+      ctx.filter = getCanvasFilter(activeFilterRef.current);
+
+      // 2. Camera Transform (Ken Burns Effect)
       ctx.save();
       const move = scene.cameraMovement || CameraMovement.STATIC;
       const t = progress; 
+      
       let scaleFactor = 1;
       let transX = 0;
       let transY = 0;
       let rot = 0;
 
-      if (move === CameraMovement.ZOOM_IN) scaleFactor = 1 + (0.3 * t);
-      else if (move === CameraMovement.ZOOM_OUT) scaleFactor = 1.3 - (0.3 * t);
-      else if (move === CameraMovement.PAN_LEFT) transX = -50 * t;
-      else if (move === CameraMovement.PAN_RIGHT) transX = 50 * t;
-      else if (move === CameraMovement.ROTATE_CW) rot = (2 * Math.PI / 180) * t * 5;
-      else if (move === CameraMovement.ROTATE_CCW) rot = -(2 * Math.PI / 180) * t * 5;
+      // Ensure we are centering the transformations
+      ctx.translate(WIDTH/2, HEIGHT/2);
+
+      if (move === CameraMovement.ZOOM_IN) {
+          scaleFactor = 1.05 + (0.25 * t); // Start slightly zoomed in (1.05) to allow edges, end at 1.3
+      } 
+      else if (move === CameraMovement.ZOOM_OUT) {
+          scaleFactor = 1.3 - (0.25 * t); // Start at 1.3, end at 1.05
+      } 
+      else if (move === CameraMovement.PAN_LEFT) {
+          scaleFactor = 1.2; // Scale up to pan without black bars
+          // Move from right to left
+          transX = (WIDTH * 0.08) - ((WIDTH * 0.16) * t); 
+      } 
+      else if (move === CameraMovement.PAN_RIGHT) {
+          scaleFactor = 1.2;
+          // Move from left to right
+          transX = -(WIDTH * 0.08) + ((WIDTH * 0.16) * t);
+      } 
+      else if (move === CameraMovement.ROTATE_CW) {
+          scaleFactor = 1.3; // Scale to cover corners during rotation
+          rot = (2 * Math.PI / 180) * t * 3;
+      } 
+      else if (move === CameraMovement.ROTATE_CCW) {
+          scaleFactor = 1.3;
+          rot = -(2 * Math.PI / 180) * t * 3;
+      }
       else if (move === CameraMovement.HANDHELD) {
-          transX = Math.sin(elapsedTimeMs * 0.002) * 5;
-          transY = Math.cos(elapsedTimeMs * 0.003) * 5;
+          scaleFactor = 1.1;
+          const shake = globalVfxRef.current?.shakeIntensity || 0;
+          const baseShake = 0.01 + (shake * 0.01); 
+          transX = Math.sin(elapsedTimeMs * 0.002) * (WIDTH * baseShake);
+          transY = Math.cos(elapsedTimeMs * 0.003) * (HEIGHT * baseShake);
           rot = Math.sin(elapsedTimeMs * 0.001) * 0.005;
-          scaleFactor = 1.05;
       }
 
-      ctx.translate(WIDTH/2, HEIGHT/2);
       ctx.scale(scaleFactor, scaleFactor);
       ctx.rotate(rot);
       ctx.translate(transX, transY);
+      
+      // Move back to top-left for drawing
       ctx.translate(-WIDTH/2, -HEIGHT/2);
 
       // 3. Draw Background (Video or Image)
@@ -649,11 +895,20 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           ctx.restore();
       });
 
-      ctx.restore(); // Restore Camera
+      ctx.restore(); // Restore Camera Transform
+
+      // Reset Filter so it doesn't affect Particles/UI
+      ctx.filter = 'none';
 
       // 7. Particles
       if (scene.particleEffect) {
           drawParticles(ctx, scene.particleEffect, WIDTH, HEIGHT);
+      }
+
+      // 7.5 Global VFX Overlays
+      if (globalVfxRef.current) {
+          if (globalVfxRef.current.vignetteIntensity > 0) drawVignette(ctx, globalVfxRef.current.vignetteIntensity, WIDTH, HEIGHT);
+          if (globalVfxRef.current.filmGrain > 0) drawFilmGrain(ctx, globalVfxRef.current.filmGrain, WIDTH, HEIGHT);
       }
 
       // 8. Global Channel Logo
@@ -826,7 +1081,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       return () => {
           if (rafRef.current) cancelAnimationFrame(rafRef.current);
       };
-  }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format, activeFilter, globalTransition, showSubtitles, subtitleStyle, channelLogo, userTier, scrubProgress, scenes]);
+  }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format, activeFilter, globalTransition, globalVfx, showSubtitles, subtitleStyle, channelLogo, userTier, scrubProgress, scenes]);
 
   return (
     <div 

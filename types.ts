@@ -1,4 +1,5 @@
 
+
 export type Language = 'pt' | 'en' | 'es';
 export type Theme = 'light' | 'dark';
 
@@ -89,14 +90,14 @@ export enum VideoTransition {
 }
 
 export enum CameraMovement {
-  STATIC = 'Estático',
-  ZOOM_IN = 'Zoom In (Aproximar)',
-  ZOOM_OUT = 'Zoom Out (Afastar)',
-  PAN_LEFT = 'Panorâmica Esq.',
-  PAN_RIGHT = 'Panorâmica Dir.',
-  ROTATE_CW = 'Girar Horário',
-  ROTATE_CCW = 'Girar Anti-Horário',
-  HANDHELD = 'Câmera na Mão (Shake)'
+  STATIC = 'STATIC',
+  ZOOM_IN = 'ZOOM_IN',
+  ZOOM_OUT = 'ZOOM_OUT',
+  PAN_LEFT = 'PAN_LEFT',
+  PAN_RIGHT = 'PAN_RIGHT',
+  ROTATE_CW = 'ROTATE_CW',
+  ROTATE_CCW = 'ROTATE_CCW',
+  HANDHELD = 'HANDHELD'
 }
 
 export enum ParticleEffect {
@@ -300,4 +301,5 @@ export interface GeneratedScriptItem {
   speaker: string;
   text: string;
   visual_prompt: string;
+  cameraMovement?: string;
 }

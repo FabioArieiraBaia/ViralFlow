@@ -3,6 +3,7 @@
 
 
 
+
 import { GoogleGenAI, Modality } from "@google/genai";
 import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeneratedScriptItem, ViralMetadataResult } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
@@ -197,12 +198,15 @@ export const generateViralMetadata = async (
     context: string,
     checkCancelled?: () => boolean
 ): Promise<ViralMetadataResult> => {
+    // Safety truncate context to avoid token limits for metadata gen
+    const safeContext = context.length > 5000 ? context.substring(0, 5000) + "..." : context;
+
     return withRetry(async (ai) => {
         const prompt = `
         Act as a WORLD-CLASS YOUTUBE SEO EXPERT & COPYWRITER.
         
         Input Title: "${title}"
-        Context/Description: "${context}"
+        Context/Description: "${safeContext}"
 
         TASK:
         1. Generate 5 EXTREME CLICKBAIT / VIRAL TITLES (Must be impossible not to click, use caps for emphasis, emojis).
@@ -279,8 +283,6 @@ export const generateMovieOutline = async (
     }, checkCancelled);
 };
 
-// Removed Reviewer Agent to simplify flow and avoid JSON errors.
-
 export const generateVideoScript = async (
   topic: string, 
   style: VideoStyle, 
@@ -338,12 +340,15 @@ export const generateVideoScript = async (
     5. JSON ESCAPING: You MUST escape all double quotes inside the text fields. Example: "text": "He said \\"Hello\\"".
     6. KEYWORDS: Include 2-3 specific keywords at the end of visual_prompt for search engines.
     
+    CAMERA MOVEMENT:
+    Include a 'cameraMovement' field for each scene. Choose from: 'ZOOM_IN', 'ZOOM_OUT', 'PAN_LEFT', 'PAN_RIGHT', 'STATIC', 'ROTATE_CW', 'HANDHELD'. Avoid STATIC for high energy videos.
+
     CRITICAL: The "visual_prompt" field MUST ALWAYS BE IN ENGLISH, even if the "text" is in another language. This is crucial for the image generator.
     
     SPECIAL STYLE INSTRUCTIONS:
     ${extraStyleInstructions}
 
-    Output ONLY valid JSON array: [{ "speaker": "Name", "text": "Dialogue (${targetLanguage})", "visual_prompt": "ENGLISH DESCRIPTION OF THE SCENE" }]
+    Output ONLY valid JSON array: [{ "speaker": "Name", "text": "Dialogue (${targetLanguage})", "visual_prompt": "ENGLISH DESCRIPTION OF THE SCENE", "cameraMovement": "ZOOM_IN" }]
     Language for Text/Dialogue: ${targetLanguage}.
     Language for Visual Prompts: ENGLISH ONLY.`;
 
@@ -426,12 +431,13 @@ export const generateVideoScript = async (
     return items.map((item: any) => ({
        speaker: item.speaker || "Narrator",
        text: item.text || item.dialogue || item.script || "",
-       visual_prompt: item.visual_prompt || item.visualPrompt || item.image_prompt || item.imageDescription || `Cinematic scene about ${topic}`
+       visual_prompt: item.visual_prompt || item.visualPrompt || item.image_prompt || item.imageDescription || `Cinematic scene about ${topic}`,
+       cameraMovement: item.cameraMovement || item.camera_movement || undefined
     }));
   }, checkCancelled);
 };
 
-// ... (rest of the file including generateSpeech, generateSceneImage, etc. remains the same)
+// ... (rest of the file remains the same)
 
 export const generateSpeech = async (
     text: string, 

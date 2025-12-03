@@ -1,8 +1,7 @@
 
-
 import React, { useState, useRef, useEffect } from 'react';
-import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle } from '../types';
-import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft } from 'lucide-react';
+import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle, CameraMovement } from '../types';
+import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 
 // VOICE OPTIONS CONSTANT (Reused here for the modal)
@@ -594,6 +593,26 @@ export const EditSceneModal: React.FC<{
                                     <option value={VideoTransition.WIPE}>Wipe</option>
                                 </select>
                                 <p className="text-[10px] text-zinc-500">Define como esta cena transita para a próxima.</p>
+                             </div>
+
+                             {/* Camera Movement Selector */}
+                             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-3">
+                                <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2"><Camera className="w-4 h-4" /> Movimento de Câmera (Ken Burns)</h4>
+                                <select 
+                                    value={localScene.cameraMovement || CameraMovement.STATIC} 
+                                    onChange={(e) => setLocalScene({...localScene, cameraMovement: e.target.value as CameraMovement})}
+                                    className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white outline-none"
+                                >
+                                    <option value={CameraMovement.STATIC}>Estático (Sem Movimento)</option>
+                                    <option value={CameraMovement.ZOOM_IN}>Zoom In (Aproximar)</option>
+                                    <option value={CameraMovement.ZOOM_OUT}>Zoom Out (Afastar)</option>
+                                    <option value={CameraMovement.PAN_LEFT}>Panorâmica Esq. (Deslizar)</option>
+                                    <option value={CameraMovement.PAN_RIGHT}>Panorâmica Dir. (Deslizar)</option>
+                                    <option value={CameraMovement.ROTATE_CW}>Girar Horário (Leve)</option>
+                                    <option value={CameraMovement.ROTATE_CCW}>Girar Anti-Horário (Leve)</option>
+                                    <option value={CameraMovement.HANDHELD}>Câmera na Mão (Shake)</option>
+                                </select>
+                                <p className="text-[10px] text-zinc-500">Simula movimento em imagens estáticas.</p>
                              </div>
 
                              <div className="space-y-3">

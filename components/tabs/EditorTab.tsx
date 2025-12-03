@@ -1,14 +1,13 @@
-
 import React, { useRef, useState } from 'react';
 import VideoPlayer, { VideoPlayerRef } from '../VideoPlayer';
 import { 
   Scene, VideoFormat, VideoFilter, VideoTransition, SubtitleStyle, UserTier, OverlayConfig, 
-  Language, MusicAction, ImageProvider, GeminiModel, PollinationsModel
+  Language, MusicAction, ImageProvider, GeminiModel, PollinationsModel, VFXConfig
 } from '../../types';
 import { 
   Palette, Music, Zap, Download, Smartphone, Monitor, Music2, ImagePlus, 
   RefreshCcw, Layers, ImagePlus as ImageIcon, Volume2, Trash2, CheckSquare, 
-  Square as SquareIcon, MicOff, Edit2, Plus, Crown, Lock, Save 
+  Square as SquareIcon, MicOff, Edit2, Plus, Crown, Lock, Save, Film 
 } from 'lucide-react';
 import { translations } from '../../services/translations';
 import { Loader2, AlertCircle } from 'lucide-react';
@@ -34,6 +33,8 @@ interface EditorTabProps {
   setActiveFilter: (v: VideoFilter) => void;
   globalTransition: VideoTransition;
   setGlobalTransition: (v: VideoTransition) => void;
+  globalVfx: VFXConfig;
+  setGlobalVfx: (v: VFXConfig) => void;
   userTier: UserTier;
   channelLogo: OverlayConfig | undefined;
   setChannelLogo: (v: OverlayConfig | undefined) => void;
@@ -103,6 +104,7 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                         subtitleStyle={props.subtitleStyle}
                         activeFilter={props.activeFilter}
                         globalTransition={props.globalTransition}
+                        globalVfx={props.globalVfx}
                         userTier={props.userTier}
                         onPlaybackComplete={() => props.setIsPlaying(false)}
                         channelLogo={props.channelLogo}
@@ -165,6 +167,25 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                                             {Object.values(SubtitleStyle).map(s => <option key={s} value={s}>{s}</option>)}
                                         </select>
                                     )}
+                                </div>
+                                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase mb-3 block flex items-center gap-1"><Film className="w-3 h-3"/> Global VFX (Efeitos de Filme)</label>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                                <span>Vinheta (Borda Escura)</span>
+                                                <span>{Math.round(props.globalVfx.vignetteIntensity * 100)}%</span>
+                                            </div>
+                                            <input type="range" min="0" max="1" step="0.1" value={props.globalVfx.vignetteIntensity} onChange={(e) => props.setGlobalVfx({...props.globalVfx, vignetteIntensity: parseFloat(e.target.value)})} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                                <span>Granulação de Filme (Film Grain)</span>
+                                                <span>{Math.round(props.globalVfx.filmGrain * 100)}%</span>
+                                            </div>
+                                            <input type="range" min="0" max="0.5" step="0.05" value={props.globalVfx.filmGrain} onChange={(e) => props.setGlobalVfx({...props.globalVfx, filmGrain: parseFloat(e.target.value)})} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         )}
