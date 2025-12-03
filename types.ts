@@ -1,5 +1,6 @@
 
 
+
 export type Language = 'pt' | 'en' | 'es';
 export type Theme = 'light' | 'dark';
 
@@ -67,6 +68,16 @@ export enum VideoFilter {
   NEURAL_CINEMATIC = '🧠 Neural Cinematic (Audio-Reactive)'
 }
 
+export enum ColorGradingPreset {
+  NONE = 'Nenhum',
+  TEAL_ORANGE = 'Teal & Orange (Cinema)',
+  MATRIX = 'Matrix (Verde Tech)',
+  DRAMATIC_BW = 'Dramático P&B',
+  GOLDEN_HOUR = 'Golden Hour (Quente)',
+  FADED_FILM = 'Filme Desbotado',
+  CYBER_NEON = 'Cyber Neon (Roxo/Azul)'
+}
+
 export enum VideoTransition {
   NONE = 'Corte Seco (Cut)',
   FADE = 'Fade / Dissolver',
@@ -79,13 +90,30 @@ export enum VideoTransition {
   AUTO = '🤖 IA Auto (Aleatório)'
 }
 
+export enum CameraMovement {
+  STATIC = 'Estático',
+  ZOOM_IN = 'Zoom In (Aproximar)',
+  ZOOM_OUT = 'Zoom Out (Afastar)',
+  PAN_LEFT = 'Panorâmica Esq.',
+  PAN_RIGHT = 'Panorâmica Dir.',
+  ROTATE_CW = 'Girar Horário',
+  ROTATE_CCW = 'Girar Anti-Horário',
+  HANDHELD = 'Câmera na Mão (Shake)'
+}
+
 export enum ParticleEffect {
   NONE = 'Nenhum',
   SNOW = 'Neve',
   RAIN = 'Chuva',
   EMBERS = 'Brasas (Fogo)',
   CONFETTI = 'Confete',
-  DUST = 'Poeira Flutuante'
+  DUST = 'Poeira Flutuante',
+  // Specific 3D Object Types
+  FLOATING_HEARTS = '3D Corações (Amor)',
+  FLOATING_LIKES = '3D Likes (Social)',
+  FLOATING_STARS = '3D Estrelas (Mágica)',
+  FLOATING_MUSIC = '3D Notas (Música)',
+  FLOATING_MONEY = '3D Dinheiro (Business)'
 }
 
 export enum MusicAction {
@@ -121,11 +149,51 @@ export interface SceneMusicConfig {
   volume: number; // 0.0 to 1.0
 }
 
+export interface LayerConfig {
+  id: string;
+  type: 'image' | 'text' | 'video'; 
+  // Common properties
+  name: string;
+  x: number; // 0.0 to 1.0
+  y: number; // 0.0 to 1.0
+  scale: number; // 0.1 to 5.0
+  rotation: number; // degrees
+  opacity: number; // 0.0 to 1.0
+  blendMode?: GlobalCompositeOperation;
+  
+  // Shadow Effects
+  shadowColor?: string;
+  shadowBlur?: number;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
+
+  // Image/Video specific
+  url?: string;
+  
+  // Text specific
+  text?: string;
+  fontSize?: number;
+  fontColor?: string;
+  fontFamily?: string;
+  fontWeight?: string; // 'bold' | 'normal'
+  textShadow?: boolean;
+}
+
+// Deprecated overlay config kept for migration if needed, but we prefer LayerConfig[]
 export interface OverlayConfig {
   url: string;
-  x: number; // 0.0 to 1.0 (percentage of width)
-  y: number; // 0.0 to 1.0 (percentage of height)
-  scale: number; // 0.1 to 5.0
+  x: number; 
+  y: number; 
+  scale: number; 
+  opacity?: number; 
+}
+
+export interface VFXConfig {
+  shakeIntensity: number; // 0 to 10
+  chromaticAberration: number; // 0 to 10
+  bloomIntensity: number; // 0 to 1
+  vignetteIntensity: number; // 0 to 1
+  filmGrain: number; // 0 to 1
 }
 
 export interface Scene {
@@ -133,7 +201,7 @@ export interface Scene {
   speaker: string; 
   text: string;
   visualPrompt: string;
-  durationEstimate: number;
+  durationEstimate: number; // Seconds (Float)
   assignedVoice?: string; // Voz persistente do personagem (Elenco)
   
   // Generated Assets
@@ -147,10 +215,17 @@ export interface Scene {
   audioBuffer?: AudioBuffer;
   
   // Effects & Post-Processing
+  cameraMovement?: CameraMovement;
   particleEffect?: ParticleEffect;
   musicConfig?: SceneMusicConfig;
-  overlay?: OverlayConfig; // PRO Feature: Per-scene image overlay
+  
+  // New Layer System
+  layers?: LayerConfig[]; 
+  overlay?: OverlayConfig; // Legacy support (converted to layer 0)
+  
   transition?: VideoTransition; // PRO Feature: Specific transition to next scene
+  vfxConfig?: VFXConfig; // NEW: Advanced VFX per scene
+  colorGrading?: ColorGradingPreset; // NEW: Cinematic Filters
 
   isGeneratingImage: boolean;
   isGeneratingAudio: boolean;
@@ -161,6 +236,12 @@ export interface VideoMetadata {
   title: string;
   description: string;
   tags: string[];
+}
+
+export interface ViralMetadataResult {
+  titles: string[];
+  description: string;
+  tags: string; // Comma separated string for copy-paste
 }
 
 export interface ProjectState {

@@ -1,6 +1,9 @@
+
+
+
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
-import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ParticleEffect, MusicAction, OverlayConfig, VideoTransition } from '../types';
-import { Play, Pause, SkipBack, SkipForward, Circle, Loader2 } from 'lucide-react';
+import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ColorGradingPreset, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement } from '../types';
+import { Play, Pause, SkipBack, SkipForward, Loader2, Maximize2, Minimize2 } from 'lucide-react';
 import { getAudioContext } from '../services/audioUtils';
 import { triggerBrowserDownload } from '../services/fileSystem';
 
@@ -36,8 +39,12 @@ interface Particle {
   vy: number;
   size: number;
   color: string;
+  alpha: number;
   life: number;
-  maxLife: number;
+  decay: number;
+  type: ParticleEffect;
+  rotation?: number;
+  rotationSpeed?: number;
 }
 
 const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
@@ -59,6 +66,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   onUpdateChannelLogo,
   onUpdateSceneOverlay
 }, ref) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
   // --- AUDIO GRAPH REFS ---
@@ -71,11 +79,15 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const musicSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const musicGainRef = useRef<GainNode | null>(null);
   const musicBufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
-  const currentMusicUrlRef = useRef<string | null>(null); // NEW: Tracks currently playing music
+  const currentMusicUrlRef = useRef<string | null>(null); 
   
+  // --- PARTICLES REF ---
+  const particlesRef = useRef<Particle[]>([]);
+
   const [renderScale, setRenderScale] = useState(1);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Dimensions
   const WIDTH = (format === VideoFormat.PORTRAIT ? 720 : 1280) * renderScale;
@@ -87,14 +99,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const subtitleStyleRef = useRef(subtitleStyle);
   const activeFilterRef = useRef(activeFilter);
   const globalTransitionRef = useRef(globalTransition);
+  const channelLogoRef = useRef(channelLogo);
   
   // Media Caches
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
   const videoCacheRef = useRef<Map<string, HTMLVideoElement>>(new Map());
 
-  const particlesRef = useRef<Particle[]>([]);
-  const channelLogoRef = useRef(channelLogo);
-  
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isRecordingRef = useRef(false);
@@ -150,6 +160,24 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   useEffect(() => { globalTransitionRef.current = globalTransition; }, [globalTransition]);
   useEffect(() => { channelLogoRef.current = channelLogo; }, [channelLogo]);
 
+  // Handle Fullscreen Events explicitly to avoid "player missing" bug
+  useEffect(() => {
+      const handleFsChange = () => {
+          setIsFullscreen(!!document.fullscreenElement);
+      };
+      document.addEventListener('fullscreenchange', handleFsChange);
+      return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+      if (!containerRef.current) return;
+      if (!document.fullscreenElement) {
+          containerRef.current.requestFullscreen().catch(console.error);
+      } else {
+          document.exitFullscreen().catch(console.error);
+      }
+  };
+
   // Handle Music Volume
   useEffect(() => {
       if (musicGainRef.current) {
@@ -168,8 +196,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               }
               return;
           }
-          
-          // Don't reload if it's the same URL playing
           if (currentMusicUrlRef.current === bgMusicUrl && isPlaying) return;
 
           let buffer = musicBufferCacheRef.current.get(bgMusicUrl);
@@ -184,7 +210,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                   return;
               }
           }
-          
           if (isPlaying) playMusic(buffer, bgMusicUrl);
       };
       loadMusic();
@@ -192,12 +217,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
   const playMusic = (buffer: AudioBuffer, url: string) => {
       const ctx = getAudioContext();
-      
-      // CHECK: If same URL is already playing, do nothing
-      if (currentMusicUrlRef.current === url && musicSourceRef.current) {
-          // Already playing this track
-          return;
-      }
+      if (currentMusicUrlRef.current === url && musicSourceRef.current) return;
 
       if (musicSourceRef.current) {
            try { musicSourceRef.current.stop(); } catch(e){}
@@ -236,64 +256,48 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return;
 
-      // Handle Resize
       canvas.width = WIDTH;
       canvas.height = HEIGHT;
 
-      // Start Loop
       let sceneStartTime = performance.now();
       let currentIdx = currentSceneIndex;
       let hasStartedAudio = false;
 
-      // Reset audio if we just started playing
+      // Initialize Particles if needed
+      particlesRef.current = [];
+
       if (isPlaying) {
           const buffer = bgMusicUrl ? musicBufferCacheRef.current.get(bgMusicUrl) : null;
           if (buffer && bgMusicUrl) playMusic(buffer, bgMusicUrl);
           sceneStartTime = performance.now();
           startTimeRef.current = sceneStartTime;
       } else {
-          // Stop speech if paused, but keep music state if we want resume? No, requirement says stop.
           if (speechSourceRef.current) { try{speechSourceRef.current.stop();}catch(e){} speechSourceRef.current = null; }
-          
-          // PAUSE LOGIC: We stop music here for simplicity as per original requirement, 
-          // but user asked for global music to continue. 
-          // If we stop here, it restarts on play. Ideally we'd use suspend/resume on context or track offset.
-          // For now, ensuring playMusic checks currentUrl prevents restart on scene change, which was the main bug.
-          if (musicSourceRef.current) { 
-             try{musicSourceRef.current.stop();}catch(e){} 
-             musicSourceRef.current = null; 
-             currentMusicUrlRef.current = null;
-          }
+          if (musicSourceRef.current) { try{musicSourceRef.current.stop();}catch(e){} musicSourceRef.current = null; currentMusicUrlRef.current = null; }
           hasStartedAudio = false;
-          
-          // Pause all videos
           videoCacheRef.current.forEach(v => v.pause());
       }
 
       const render = (time: number) => {
-          // Get Audio Data for Reactivity
           if (analyserRef.current) {
-              // Cast to any to avoid "Uint8Array<ArrayBufferLike> vs Uint8Array<ArrayBuffer>" mismatch
               analyserRef.current.getByteFrequencyData(audioDataArrayRef.current as any);
           }
-          // Calculate average volume (0-255)
-          const avgVolume = audioDataArrayRef.current.reduce((a, b) => a + b, 0) / audioDataArrayRef.current.length;
           const bassVolume = audioDataArrayRef.current.slice(0, 10).reduce((a,b) => a+b, 0) / 10;
 
-          // FORCE RESET TRANSFORM AT START OF FRAME
+          // Clear
           ctx.setTransform(1, 0, 0, 1, 0, 0); 
-          ctx.filter = 'none'; // Reset filter
+          ctx.filter = 'none';
           ctx.globalAlpha = 1;
           ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
           // Render Logic
           if (!isPlaying && !isRecordingRef.current) {
-              // STATIC RENDER (EDIT MODE) - Sem movimentos
+              // EDIT MODE
               if (scenesRef.current[currentSceneIndex]) {
-                 drawScene(ctx, scenesRef.current[currentSceneIndex], 1, 0, false, 0); 
+                 drawScene(ctx, scenesRef.current[currentSceneIndex], 1, 0, false, 0, 0); 
               }
           } else {
-              // PLAYBACK RENDER
+              // PLAYBACK MODE
               const scene = scenesRef.current[currentIdx];
               if (!scene) {
                    setIsPlaying(false);
@@ -301,63 +305,55 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                    return;
               }
 
-              // Duration Logic
-              const durationMs = (scene.audioBuffer?.duration || scene.durationEstimate) * 1000;
+              const targetDurationSec = scene.durationEstimate > 0 ? scene.durationEstimate : 5;
+              const durationMs = targetDurationSec * 1000;
               const elapsed = time - sceneStartTime;
               const progress = Math.min(elapsed / durationMs, 1.0);
 
-              // Update Export Progress
               if (isRecordingRef.current) {
                   const totalProgress = ((currentIdx + progress) / scenesRef.current.length) * 100;
                   setExportProgress(Math.min(Math.round(totalProgress), 99));
               }
 
-              // Audio Trigger
               if (!hasStartedAudio && scene.audioBuffer) {
                    playSpeech(scene.audioBuffer);
                    hasStartedAudio = true;
               }
 
-              // Draw Current Scene with Ken Burns
-              drawScene(ctx, scene, 1, progress, true, bassVolume);
+              drawScene(ctx, scene, 1, progress, true, bassVolume, elapsed);
 
               // Transitions
               const timeLeft = durationMs - elapsed;
               const transitionDuration = 800; // ms
               
               if (timeLeft < transitionDuration && scenesRef.current[currentIdx + 1]) {
-                   // Draw Next Scene underneath/over based on effect
                    const nextScene = scenesRef.current[currentIdx + 1];
                    const transProgress = 1 - (timeLeft / transitionDuration);
                    const type = scene.transition || globalTransitionRef.current;
-                   
                    drawTransition(ctx, type, nextScene, transProgress, bassVolume);
               }
 
-              // Scene Advance
               if (elapsed >= durationMs) {
                   if (currentIdx < scenesRef.current.length - 1) {
                       currentIdx++;
                       setCurrentSceneIndex(currentIdx);
                       sceneStartTime = time;
                       hasStartedAudio = false;
+                      particlesRef.current = []; // Clear particles on scene change
                   } else {
                       setIsPlaying(false);
                       setIsExporting(false);
                       setExportProgress(100);
-                      
-                      // AUTO STOP RECORDING IF ACTIVE
                       if (isRecordingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
                           mediaRecorderRef.current.stop();
                       }
-
                       if (onPlaybackComplete) onPlaybackComplete();
                   }
               }
           }
 
-          // Draw Overlays (Logo, etc) - Always Draw
-          drawOverlays(ctx, currentIdx);
+          // Global Overlays
+          drawOverlays(ctx);
 
           if (isPlaying || isRecordingRef.current) {
               rafRef.current = requestAnimationFrame(render);
@@ -365,13 +361,145 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       };
 
       rafRef.current = requestAnimationFrame(render);
+      return () => cancelAnimationFrame(rafRef.current);
+  }, [isPlaying, currentSceneIndex, scenes, renderScale, format, isExporting, isFullscreen]); // Added isFullscreen dependency
 
-      return () => {
-          cancelAnimationFrame(rafRef.current);
-      };
-  }, [isPlaying, currentSceneIndex, scenes, renderScale, format, isExporting]); 
+  const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, type: ParticleEffect) => {
+      if (type === ParticleEffect.NONE) return;
 
-  // --- DRAWING HELPERS ---
+      const isFloatingObject = type === ParticleEffect.FLOATING_HEARTS || 
+                               type === ParticleEffect.FLOATING_LIKES ||
+                               type === ParticleEffect.FLOATING_STARS ||
+                               type === ParticleEffect.FLOATING_MONEY ||
+                               type === ParticleEffect.FLOATING_MUSIC;
+
+      // SPAWNING
+      const maxParticles = isFloatingObject ? 20 : 100;
+      if (particlesRef.current.length < maxParticles) {
+          if (Math.random() < 0.2) { // Emission rate
+              let p: Particle = {
+                  x: Math.random() * WIDTH,
+                  y: type === ParticleEffect.EMBERS ? HEIGHT + 10 : -10,
+                  vx: (Math.random() - 0.5) * 2,
+                  vy: 0,
+                  size: 0,
+                  color: '#fff',
+                  alpha: 1,
+                  life: 1,
+                  decay: 0.005 + Math.random() * 0.01,
+                  type: type,
+                  rotation: Math.random() * 360,
+                  rotationSpeed: (Math.random() - 0.5) * 5
+              };
+
+              if (type === ParticleEffect.SNOW) {
+                  p.vy = 1 + Math.random() * 2;
+                  p.size = 2 + Math.random() * 3;
+                  p.color = 'rgba(255,255,255,0.8)';
+              } else if (type === ParticleEffect.RAIN) {
+                  p.vy = 15 + Math.random() * 10;
+                  p.vx = (Math.random() - 0.5) * 1;
+                  p.size = 1; // Width
+                  p.color = 'rgba(150,180,255,0.6)';
+              } else if (type === ParticleEffect.EMBERS) {
+                  p.vy = -(1 + Math.random() * 2);
+                  p.size = 2 + Math.random() * 4;
+                  p.color = Math.random() > 0.5 ? '#ffaa00' : '#ff4400';
+                  p.decay = 0.01 + Math.random() * 0.02;
+              } else if (type === ParticleEffect.CONFETTI) {
+                  p.y = -10;
+                  p.vy = 3 + Math.random() * 4;
+                  p.vx = (Math.random() - 0.5) * 5;
+                  p.size = 5 + Math.random() * 5;
+                  const colors = ['#f00', '#0f0', '#00f', '#ff0', '#0ff', '#f0f'];
+                  p.color = colors[Math.floor(Math.random() * colors.length)];
+              } else if (type === ParticleEffect.DUST) {
+                  p.x = Math.random() * WIDTH;
+                  p.y = Math.random() * HEIGHT;
+                  p.vx = (Math.random() - 0.5) * 0.5;
+                  p.vy = (Math.random() - 0.5) * 0.5;
+                  p.size = 1 + Math.random() * 2;
+                  p.color = 'rgba(200,200,200,0.3)';
+                  p.alpha = Math.random() * 0.5;
+              } else if (isFloatingObject) {
+                  p.x = Math.random() * WIDTH;
+                  p.y = HEIGHT + 20;
+                  p.vy = -(1 + Math.random() * 2);
+                  p.size = 20 + Math.random() * 30;
+                  p.alpha = 1;
+                  
+                  let icons: string[] = ['⭐'];
+                  if (type === ParticleEffect.FLOATING_HEARTS) icons = ['❤️', '💖', '💘', '💝', '💕'];
+                  else if (type === ParticleEffect.FLOATING_LIKES) icons = ['👍', '👍🏻', '👍🏿', '🔥', '💯'];
+                  else if (type === ParticleEffect.FLOATING_STARS) icons = ['⭐', '✨', '🌟', '💫'];
+                  else if (type === ParticleEffect.FLOATING_MUSIC) icons = ['🎵', '🎶', '🎼', '🎹'];
+                  else if (type === ParticleEffect.FLOATING_MONEY) icons = ['💵', '💰', '🤑', '💎'];
+
+                  p.color = icons[Math.floor(Math.random() * icons.length)];
+              }
+
+              particlesRef.current.push(p);
+          }
+      }
+
+      // UPDATE & DRAW
+      ctx.save();
+      for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+          const p = particlesRef.current[i];
+          
+          p.x += p.vx;
+          p.y += p.vy;
+          p.life -= p.decay;
+
+          if (p.rotation !== undefined && p.rotationSpeed) {
+              p.rotation += p.rotationSpeed;
+          }
+
+          if (p.type === ParticleEffect.SNOW) {
+              p.x += Math.sin(p.y * 0.01) * 0.5; // Sway
+          } else if (p.type === ParticleEffect.EMBERS) {
+              p.size *= 0.98;
+          }
+
+          // Kill logic
+          if (p.life <= 0 || (p.y > HEIGHT + 20 && p.type !== ParticleEffect.EMBERS && !isFloatingObject) || (p.y < -50 && isFloatingObject)) {
+              particlesRef.current.splice(i, 1);
+              continue;
+          }
+
+          ctx.globalAlpha = p.alpha * p.life;
+          
+          if (isFloatingObject) {
+             ctx.translate(p.x, p.y);
+             ctx.rotate(p.rotation! * Math.PI / 180);
+             ctx.font = `${p.size}px serif`;
+             ctx.textAlign = 'center';
+             ctx.textBaseline = 'middle';
+             ctx.fillText(p.color, 0, 0); // p.color is emoji
+             ctx.setTransform(1, 0, 0, 1, 0, 0);
+          } else {
+            ctx.fillStyle = p.color;
+            if (p.type === ParticleEffect.RAIN) {
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x + p.vx, p.y + (p.vy * 2)); // Stretch based on velocity
+                ctx.strokeStyle = p.color;
+                ctx.lineWidth = p.size;
+                ctx.stroke();
+            } else if (p.type === ParticleEffect.CONFETTI) {
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.life * 10);
+                ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
+                ctx.setTransform(1, 0, 0, 1, 0, 0); 
+            } else {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+          }
+      }
+      ctx.restore();
+  };
 
   const getFilterStyle = (filter: VideoFilter) => {
       switch (filter) {
@@ -388,225 +516,373 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
   };
 
-  const drawScene = (ctx: CanvasRenderingContext2D, scene: Scene, opacity: number, progress: number, animate: boolean, audioIntensity: number) => {
+  const drawScene = (ctx: CanvasRenderingContext2D, scene: Scene, opacity: number, progress: number, animate: boolean, audioIntensity: number, elapsedTimeMs: number) => {
       ctx.save();
       ctx.globalAlpha = opacity;
 
-      // GET MEDIA (Video or Image)
+      // 1. Camera Movement Logic
+      let scale = 1;
+      let tx = 0;
+      let ty = 0;
+      let rotation = 0;
+
+      // HANDHELD SHAKE (Applied before rotation/scale)
+      if (scene.cameraMovement === CameraMovement.HANDHELD || (scene.vfxConfig && scene.vfxConfig.shakeIntensity > 0 && animate)) {
+          const intensity = (scene.vfxConfig?.shakeIntensity || 1) * 2 * renderScale;
+          // Smooth sine wave based shake instead of random noise
+          const shakeX = Math.sin(elapsedTimeMs * 0.002) * intensity + Math.cos(elapsedTimeMs * 0.005) * (intensity * 0.5);
+          const shakeY = Math.cos(elapsedTimeMs * 0.003) * intensity + Math.sin(elapsedTimeMs * 0.007) * (intensity * 0.5);
+          ctx.translate(shakeX, shakeY);
+      }
+
+      // 2. Base Media
       let mediaElement: HTMLImageElement | HTMLVideoElement | null = null;
-      
-      // Force 'video' check
       if (scene.mediaType === 'video' && scene.videoUrl) {
            mediaElement = getVideo(scene.videoUrl);
-           // If it's a video and we are animating (playing), ensure it's playing
            if (mediaElement instanceof HTMLVideoElement) {
-               if (animate && mediaElement.paused) {
-                   mediaElement.play().catch(() => {}); 
-               } else if (!animate) {
-                   mediaElement.pause(); // Pause in edit mode
-               }
+               if (animate && mediaElement.paused) mediaElement.play().catch(() => {}); 
+               else if (!animate) mediaElement.pause();
            }
       } else {
            mediaElement = getImage(scene.imageUrl);
       }
 
-      // 1. APPLY CANVAS FILTERS BEFORE DRAWING
+      // Apply Canvas Filters
       if (activeFilterRef.current !== VideoFilter.NONE && activeFilterRef.current !== VideoFilter.NEURAL_CINEMATIC) {
           ctx.filter = getFilterStyle(activeFilterRef.current);
       }
 
-      if (mediaElement) {
-          // Ken Burns Effect (Apply to Videos too, but maybe subtler)
-          let scale = 1;
-          let tx = 0;
-          let ty = 0;
+      // Bloom
+      if (scene.vfxConfig && scene.vfxConfig.bloomIntensity > 0) {
+          const bloom = scene.vfxConfig.bloomIntensity;
+          const currentFilter = ctx.filter === 'none' ? '' : ctx.filter;
+          ctx.filter = `${currentFilter} brightness(${100 + bloom * 30}%) saturate(${100 + bloom * 20}%)`;
+      }
 
+      if (mediaElement) {
           if (animate) {
-              // Deterministic movement based on scene ID hash
-              const seed = scene.id.charCodeAt(scene.id.length - 1) % 4; 
-              const moveAmount = 0.05 * progress; // 5% movement
-              scale = 1.1 + (0.1 * progress); // Slight zoom in
-              
-              if (seed === 0) { tx = -moveAmount * WIDTH; ty = -moveAmount * HEIGHT; }
-              if (seed === 1) { tx = moveAmount * WIDTH; ty = -moveAmount * HEIGHT; }
-              if (seed === 2) { scale = 1.2 - (0.1 * progress); } // Zoom out
-              
-              // Audio Reactivity (Subtle bump on beat)
+              const moveType = scene.cameraMovement || CameraMovement.STATIC;
+              const moveAmount = 0.1 * progress; // 10% movement over scene duration
+
+              switch(moveType) {
+                  case CameraMovement.ZOOM_IN:
+                      scale = 1 + moveAmount; // 1.0 -> 1.1
+                      break;
+                  case CameraMovement.ZOOM_OUT:
+                      scale = 1.1 - moveAmount; // 1.1 -> 1.0
+                      break;
+                  case CameraMovement.PAN_LEFT:
+                      scale = 1.1; 
+                      tx = -moveAmount * WIDTH; 
+                      break;
+                  case CameraMovement.PAN_RIGHT:
+                      scale = 1.1;
+                      tx = moveAmount * WIDTH; 
+                      break;
+                  case CameraMovement.ROTATE_CW:
+                      scale = 1.2; // Zoom in to avoid black corners
+                      rotation = moveAmount * 20; // Rotate up to 2 degrees
+                      break;
+                   case CameraMovement.ROTATE_CCW:
+                      scale = 1.2;
+                      rotation = -moveAmount * 20;
+                      break;
+                  case CameraMovement.STATIC:
+                  default:
+                      scale = 1;
+              }
+
+              // Audio Reactive Bump
               if (activeFilterRef.current === VideoFilter.NEURAL_CINEMATIC && audioIntensity > 150) {
                    const bump = (audioIntensity - 150) / 1000;
                    scale += bump;
               }
           }
 
-          // Draw Image/Video Cover
-          drawImageCover(ctx, mediaElement, 0, 0, WIDTH, HEIGHT, scale, tx, ty);
+          // Apply Rotation if needed
+          if (rotation !== 0) {
+              ctx.translate(WIDTH/2, HEIGHT/2);
+              ctx.rotate(rotation * Math.PI / 180);
+              ctx.translate(-WIDTH/2, -HEIGHT/2);
+          }
+
+          // Chromatic Aberration
+          if (scene.vfxConfig && scene.vfxConfig.chromaticAberration > 0) {
+              const offset = scene.vfxConfig.chromaticAberration * 3 * renderScale;
+              ctx.globalCompositeOperation = 'screen';
+              
+              ctx.save();
+              ctx.translate(offset, 0);
+              ctx.restore();
+              
+              ctx.globalCompositeOperation = 'source-over';
+              drawImageCover(ctx, mediaElement, 0, 0, WIDTH, HEIGHT, scale, tx, ty);
+
+              if (Math.random() < 0.1 * scene.vfxConfig.chromaticAberration) {
+                   const y = Math.random() * HEIGHT;
+                   const h = Math.random() * 50;
+                   const shift = (Math.random() - 0.5) * 50;
+                   try { ctx.drawImage(canvasRef.current!, 0, y, WIDTH, h, shift, y, WIDTH, h); } catch(e) {}
+              }
+          } else {
+              drawImageCover(ctx, mediaElement, 0, 0, WIDTH, HEIGHT, scale, tx, ty);
+          }
+
       } else {
           ctx.fillStyle = "#111";
           ctx.fillRect(0, 0, WIDTH, HEIGHT);
-          
-          if (scene.isGeneratingImage) {
-               ctx.fillStyle = "#333";
-               ctx.font = `bold ${WIDTH * 0.04}px Arial`;
-               ctx.textAlign = "center";
-               ctx.fillText("Carregando mídia...", WIDTH/2, HEIGHT/2);
-          }
       }
 
-      // RESET FILTER for other elements
       ctx.filter = 'none';
 
-      // 2. APPLY POST-PROCESS OVERLAYS (Texture, Noise, Tint)
+      // 3. Post-Process
       if (activeFilterRef.current === VideoFilter.NEURAL_CINEMATIC) {
           drawNeuralCinematicEffect(ctx, audioIntensity);
       } else if (activeFilterRef.current !== VideoFilter.NONE) {
           applyOverlayEffects(ctx, activeFilterRef.current);
       }
 
-      // 3. Subtitles
+      // 4. Color Grading (Cinematic LUTs Simulation)
+      if (scene.colorGrading && scene.colorGrading !== ColorGradingPreset.NONE) {
+          drawColorGrading(ctx, scene.colorGrading);
+      }
+      
+      // 5. Particles
+      if (animate && scene.particleEffect && scene.particleEffect !== ParticleEffect.NONE) {
+          updateAndDrawParticles(ctx, scene.particleEffect);
+      } else if (scene.particleEffect && scene.particleEffect !== ParticleEffect.NONE) {
+          // Static draw (preview mode)
+          updateAndDrawParticles(ctx, scene.particleEffect);
+      }
+
+      // 6. Advanced VFX (Vignette)
+      if (scene.vfxConfig) {
+          if (scene.vfxConfig.vignetteIntensity > 0) {
+              const grad = ctx.createRadialGradient(WIDTH/2, HEIGHT/2, WIDTH * 0.3, WIDTH/2, HEIGHT/2, WIDTH * 0.9);
+              grad.addColorStop(0, 'rgba(0,0,0,0)');
+              grad.addColorStop(1, `rgba(0,0,0,${scene.vfxConfig.vignetteIntensity * 0.8})`);
+              ctx.globalCompositeOperation = 'source-over';
+              ctx.fillStyle = grad;
+              ctx.fillRect(0, 0, WIDTH, HEIGHT);
+          }
+      }
+
+      // 7. LAYERS (Multi-Layer System: Images, Videos, Text)
+      if (scene.layers && scene.layers.length > 0) {
+          scene.layers.forEach(layer => drawLayer(ctx, layer, elapsedTimeMs, animate));
+      } else if (scene.overlay) {
+          // Legacy support
+          drawLayer(ctx, { 
+              id: 'legacy', type: 'image', url: scene.overlay.url, name: 'Overlay', 
+              x: scene.overlay.x, y: scene.overlay.y, 
+              scale: scene.overlay.scale, opacity: scene.overlay.opacity ?? 1, rotation: 0 
+          }, elapsedTimeMs, animate);
+      }
+
+      // 8. Subtitles
       if (showSubtitlesRef.current && scene.text) {
           drawSubtitles(ctx, scene.text, subtitleStyleRef.current, progress);
       }
       
-      // 4. Scene Overlay (Image)
-      if (scene.overlay) {
-          drawOverlayImage(ctx, scene.overlay);
+      ctx.restore();
+  };
+
+  const drawColorGrading = (ctx: CanvasRenderingContext2D, preset: ColorGradingPreset) => {
+      ctx.save();
+      
+      if (preset === ColorGradingPreset.TEAL_ORANGE) {
+          ctx.globalCompositeOperation = 'overlay';
+          ctx.fillStyle = 'rgba(0, 255, 255, 0.2)';
+          ctx.fillRect(0, 0, WIDTH, HEIGHT);
+          ctx.globalCompositeOperation = 'soft-light';
+          ctx.fillStyle = 'rgba(255, 160, 0, 0.3)';
+          ctx.fillRect(0, 0, WIDTH, HEIGHT);
+      }
+      else if (preset === ColorGradingPreset.MATRIX) {
+          ctx.globalCompositeOperation = 'overlay';
+          ctx.fillStyle = 'rgba(0, 255, 100, 0.2)';
+          ctx.fillRect(0, 0, WIDTH, HEIGHT);
+          ctx.globalCompositeOperation = 'multiply';
+          ctx.fillStyle = 'rgba(0, 50, 20, 0.3)';
+          ctx.fillRect(0, 0, WIDTH, HEIGHT);
+      }
+      else if (preset === ColorGradingPreset.DRAMATIC_BW) {
+           ctx.globalCompositeOperation = 'color';
+           ctx.fillStyle = '#000';
+           ctx.fillRect(0,0,WIDTH,HEIGHT);
+           ctx.globalCompositeOperation = 'overlay';
+           ctx.fillStyle = 'rgba(0,0,0,0.5)'; // High Contrast
+           ctx.fillRect(0,0,WIDTH,HEIGHT);
+      }
+      else if (preset === ColorGradingPreset.GOLDEN_HOUR) {
+          ctx.globalCompositeOperation = 'overlay';
+          ctx.fillStyle = 'rgba(255, 200, 0, 0.2)';
+          ctx.fillRect(0,0,WIDTH,HEIGHT);
+          const grad = ctx.createLinearGradient(0,0,0,HEIGHT);
+          grad.addColorStop(0, 'rgba(255, 150, 0, 0.2)');
+          grad.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.globalCompositeOperation = 'screen';
+          ctx.fillStyle = grad;
+          ctx.fillRect(0,0,WIDTH,HEIGHT);
+      }
+      else if (preset === ColorGradingPreset.CYBER_NEON) {
+          ctx.globalCompositeOperation = 'overlay';
+          ctx.fillStyle = 'rgba(255, 0, 255, 0.2)'; // Magenta
+          ctx.fillRect(0,0,WIDTH,HEIGHT);
+          ctx.globalCompositeOperation = 'screen';
+          ctx.fillStyle = 'rgba(0, 255, 255, 0.1)'; // Cyan
+          ctx.fillRect(0,0,WIDTH,HEIGHT);
       }
 
+      ctx.restore();
+  }
+
+  const drawLayer = (ctx: CanvasRenderingContext2D, layer: LayerConfig, elapsedTimeMs: number, animate: boolean) => {
+      ctx.save();
+      const x = layer.x * WIDTH;
+      const y = layer.y * HEIGHT;
+      
+      ctx.translate(x, y);
+      ctx.rotate((layer.rotation * Math.PI) / 180);
+      ctx.scale(layer.scale, layer.scale);
+
+      ctx.globalAlpha = layer.opacity;
+      if (layer.blendMode) ctx.globalCompositeOperation = layer.blendMode;
+
+      // Shadow Effects - Applied BEFORE drawing content
+      if (layer.shadowColor) {
+          ctx.shadowColor = layer.shadowColor;
+          ctx.shadowBlur = (layer.shadowBlur || 0) * renderScale;
+          ctx.shadowOffsetX = (layer.shadowOffsetX || 0) * renderScale;
+          ctx.shadowOffsetY = (layer.shadowOffsetY || 0) * renderScale;
+      } else {
+          ctx.shadowColor = 'transparent';
+      }
+
+      if (layer.type === 'text' && layer.text) {
+          const fontSize = (layer.fontSize || 50) * renderScale;
+          const fontFamily = layer.fontFamily || 'Inter';
+          const fontWeight = layer.fontWeight || 'bold';
+          ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}"`;
+          ctx.fillStyle = layer.fontColor || '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          
+          if (layer.textShadow) {
+              // Override manual shadows for text defaults if checked
+              ctx.shadowColor = 'rgba(0,0,0,0.8)';
+              ctx.shadowBlur = 4 * renderScale;
+              ctx.shadowOffsetX = 2 * renderScale;
+              ctx.shadowOffsetY = 2 * renderScale;
+          }
+          
+          ctx.fillText(layer.text, 0, 0);
+      } else {
+          // IMAGE or VIDEO LAYER
+          let media: HTMLImageElement | HTMLVideoElement | null = null;
+          
+          if (layer.type === 'video' && layer.url) {
+              media = getVideo(layer.url);
+              if (media instanceof HTMLVideoElement) {
+                   // Video Layer Sync Logic
+                   if (animate) {
+                       const videoTime = (elapsedTimeMs / 1000) % media.duration;
+                       if (Math.abs(media.currentTime - videoTime) > 0.3) {
+                           media.currentTime = videoTime;
+                       }
+                       if (media.paused) media.play().catch(()=>{});
+                   } else {
+                       media.currentTime = 0; // Preview at start
+                       media.pause();
+                   }
+              }
+          } else if (layer.url) {
+              media = getImage(layer.url);
+          }
+
+          if(media) {
+              const baseSize = WIDTH * 0.2; 
+              // Determine Aspect Ratio
+              let width = 0, height = 0;
+              if (media instanceof HTMLVideoElement) {
+                  width = media.videoWidth; height = media.videoHeight;
+              } else {
+                  width = media.width; height = media.height;
+              }
+
+              if (width > 0 && height > 0) {
+                  const aspect = width / height;
+                  let drawW, drawH;
+                  if(aspect > 1) { drawW = baseSize; drawH = baseSize / aspect; }
+                  else { drawH = baseSize; drawW = baseSize * aspect; }
+                  
+                  ctx.drawImage(media, -drawW/2, -drawH/2, drawW, drawH);
+              }
+          }
+      }
+      
+      ctx.shadowColor = 'transparent'; // Reset shadow
       ctx.restore();
   };
 
   const drawNeuralCinematicEffect = (ctx: CanvasRenderingContext2D, audioIntensity: number) => {
-      const time = performance.now();
-      
-      // 1. ANAMORPHIC FLARES (Audio Reactive)
-      const flareIntensity = Math.max(0, (audioIntensity - 100) / 255); // 0.0 to 0.6
+      const flareIntensity = Math.max(0, (audioIntensity - 100) / 255); 
       if (flareIntensity > 0.1) {
           ctx.globalCompositeOperation = 'screen';
           const gradient = ctx.createLinearGradient(0, 0, WIDTH, 0);
           gradient.addColorStop(0, 'rgba(0, 100, 255, 0)');
           gradient.addColorStop(0.5, `rgba(100, 200, 255, ${flareIntensity * 0.5})`);
           gradient.addColorStop(1, 'rgba(0, 100, 255, 0)');
-          
-          const flareY = HEIGHT * 0.3 + Math.sin(time * 0.001) * 100;
-          const flareH = HEIGHT * (0.02 + flareIntensity * 0.1);
-          
           ctx.fillStyle = gradient;
-          ctx.fillRect(0, flareY, WIDTH, flareH);
+          ctx.fillRect(0, HEIGHT * 0.3, WIDTH, HEIGHT * 0.05);
       }
-
-      // 2. FILM GRAIN
       ctx.globalCompositeOperation = 'overlay';
-      ctx.fillStyle = `rgba(0,0,0, ${0.1 + (Math.random() * 0.1)})`;
-      
-      // 3. CHROMATIC ABERRATION SIMULATION (Edge tint)
-      if (audioIntensity > 50) {
-          ctx.globalCompositeOperation = 'screen';
-          ctx.fillStyle = `rgba(255, 0, 0, 0.05)`;
-          ctx.fillRect(-2, 0, WIDTH, HEIGHT);
-          ctx.fillStyle = `rgba(0, 255, 255, 0.05)`;
-          ctx.fillRect(2, 0, WIDTH, HEIGHT);
-      }
-
-      // 4. LETTERBOX
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'black';
-      const letterboxHeight = HEIGHT * 0.12; 
-      ctx.fillRect(0, 0, WIDTH, letterboxHeight);
-      ctx.fillRect(0, HEIGHT - letterboxHeight, WIDTH, letterboxHeight);
+      ctx.fillStyle = `rgba(0,0,0, 0.15)`;
+      ctx.fillRect(0,0,WIDTH,HEIGHT);
   };
 
   const applyOverlayEffects = (ctx: CanvasRenderingContext2D, filter: VideoFilter) => {
-      ctx.save();
-      
-      if (filter === VideoFilter.VHS) {
+       ctx.save();
+       if (filter === VideoFilter.VHS) {
           ctx.fillStyle = 'rgba(0,0,0,0.1)';
           for(let y=0; y<HEIGHT; y+=4) ctx.fillRect(0, y, WIDTH, 1);
-          ctx.globalCompositeOperation = 'overlay';
-          ctx.fillStyle = 'rgba(0, 50, 255, 0.1)';
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      } 
-      else if (filter === VideoFilter.VINTAGE) {
-           if (Math.random() > 0.9) {
-              ctx.fillStyle = 'rgba(255,255,255,0.3)';
-              const x = Math.random() * WIDTH;
-              const y = Math.random() * HEIGHT;
-              ctx.fillRect(x, y, 2 * renderScale, 2 * renderScale);
-           }
-           const grad = ctx.createRadialGradient(WIDTH/2, HEIGHT/2, WIDTH/3, WIDTH/2, HEIGHT/2, WIDTH);
-           grad.addColorStop(0, 'rgba(0,0,0,0)');
-           grad.addColorStop(1, 'rgba(60,30,0,0.3)');
-           ctx.fillStyle = grad;
-           ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      }
-      else if (filter === VideoFilter.CYBERPUNK) {
-          ctx.globalCompositeOperation = 'screen';
-          ctx.fillStyle = 'rgba(0, 255, 255, 0.05)';
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      }
-      else if (filter === VideoFilter.COLD) {
-          ctx.globalCompositeOperation = 'overlay';
-          ctx.fillStyle = 'rgba(0, 100, 255, 0.2)';
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      }
-      else if (filter === VideoFilter.WARM) {
-          ctx.globalCompositeOperation = 'overlay';
-          ctx.fillStyle = 'rgba(255, 150, 0, 0.15)';
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      }
-      else if (filter === VideoFilter.NOIR) {
-          const grad = ctx.createRadialGradient(WIDTH/2, HEIGHT/2, WIDTH/3, WIDTH/2, HEIGHT/2, WIDTH);
-          grad.addColorStop(0, 'rgba(0,0,0,0)');
-          grad.addColorStop(1, 'rgba(0,0,0,0.6)');
-          ctx.globalCompositeOperation = 'source-over';
-          ctx.fillStyle = grad;
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      }
-
-      ctx.restore();
+       }
+       ctx.restore();
   };
 
   const drawTransition = (ctx: CanvasRenderingContext2D, type: VideoTransition, nextScene: Scene, progress: number, audioIntensity: number) => {
-      // Draw next scene on top with effect
       ctx.save();
-      
       if (type === VideoTransition.FADE || type === VideoTransition.AUTO) {
           ctx.globalAlpha = progress;
-          drawScene(ctx, nextScene, 1, 0, true, audioIntensity); // Start next scene animation
+          drawScene(ctx, nextScene, 1, 0, true, audioIntensity, 0); 
       } else if (type === VideoTransition.SLIDE) {
           const xOffset = WIDTH * (1 - progress);
           ctx.translate(xOffset, 0);
-          drawScene(ctx, nextScene, 1, 0, true, audioIntensity);
+          drawScene(ctx, nextScene, 1, 0, true, audioIntensity, 0);
       } else if (type === VideoTransition.WIPE) {
           ctx.beginPath();
           ctx.rect(0, 0, WIDTH * progress, HEIGHT);
           ctx.clip();
-          drawScene(ctx, nextScene, 1, 0, true, audioIntensity);
+          drawScene(ctx, nextScene, 1, 0, true, audioIntensity, 0);
       } else if (type === VideoTransition.ZOOM) {
           const scale = 0.5 + (0.5 * progress);
           ctx.translate(WIDTH/2, HEIGHT/2);
           ctx.scale(scale, scale);
           ctx.translate(-WIDTH/2, -HEIGHT/2);
           ctx.globalAlpha = progress;
-          drawScene(ctx, nextScene, 1, 0, true, audioIntensity);
+          drawScene(ctx, nextScene, 1, 0, true, audioIntensity, 0);
       }
-
       ctx.restore();
   };
 
   const drawImageCover = (ctx: CanvasRenderingContext2D, img: HTMLImageElement | HTMLVideoElement, x: number, y: number, w: number, h: number, scale: number = 1, tx: number = 0, ty: number = 0) => {
       const imgWidth = img instanceof HTMLVideoElement ? img.videoWidth : img.width;
       const imgHeight = img instanceof HTMLVideoElement ? img.videoHeight : img.height;
-      
-      // Safety check for empty video elements
       if (imgWidth === 0 || imgHeight === 0) return;
 
       const imgRatio = imgWidth / imgHeight;
       const winRatio = w / h;
-      
-      let nw = w;
-      let nh = h;
-      let nx = 0;
-      let ny = 0;
+      let nw = w, nh = h, nx = 0, ny = 0;
 
       if (imgRatio > winRatio) {
           nh = h;
@@ -618,143 +894,84 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           ny = (h - nh) / 2;
       }
 
-      // Apply Ken Burns transform to the rect
       ctx.save();
       ctx.translate(w/2, h/2);
       ctx.scale(scale, scale);
       ctx.translate(tx, ty);
       ctx.translate(-w/2, -h/2);
-      
       ctx.drawImage(img, nx, ny, nw, nh);
       ctx.restore();
   };
 
+  // Improved Subtitles
   const drawSubtitles = (ctx: CanvasRenderingContext2D, text: string, style: SubtitleStyle, progress: number) => {
-       const fontSize = WIDTH * 0.05;
-       ctx.font = `bold ${fontSize}px "Inter", sans-serif`;
-       ctx.textAlign = 'center';
-       ctx.textBaseline = 'middle';
+       const SAFE_ZONE_WIDTH_PERCENT = 0.85; 
+       let fontSize = WIDTH * 0.05;
        
+       ctx.font = `900 ${fontSize}px "Inter", sans-serif`;
+       const maxWidth = WIDTH * SAFE_ZONE_WIDTH_PERCENT;
        const x = WIDTH / 2;
-       const y = HEIGHT * 0.85;
-       const padding = fontSize * 0.5;
+       
+       const words = text.split(' ');
+       let lines: string[] = [];
+       const calculateLines = (currentFontSize: number) => {
+           ctx.font = `900 ${currentFontSize}px "Inter", sans-serif`;
+           const resLines = [];
+           let line = "";
+           for(let w of words) {
+               const testLine = line + w + " ";
+               const metrics = ctx.measureText(testLine);
+               if (metrics.width > maxWidth && line !== "") {
+                   resLines.push(line.trim());
+                   line = w + " ";
+               } else { line = testLine; }
+           }
+           resLines.push(line.trim());
+           return resLines;
+       };
 
-       // --- WORD BY WORD MODE ---
+       lines = calculateLines(fontSize);
+       if (lines.length > 2) { fontSize = fontSize * 0.75; lines = calculateLines(fontSize); }
+       
+       const lineHeight = fontSize * 1.25;
+       const totalBlockHeight = lines.length * lineHeight;
+       const bottomAnchor = HEIGHT * (1 - 0.08);
+       const startY = bottomAnchor - totalBlockHeight + (lineHeight * 0.5);
+
        if (style === SubtitleStyle.WORD_BY_WORD) {
-           const words = text.split(' ');
            const wordIdx = Math.floor(progress * words.length);
            const currentWord = words[Math.min(wordIdx, words.length - 1)] || "";
-           
            ctx.shadowColor = 'rgba(0,0,0,0.8)';
-           ctx.shadowBlur = 4;
-           ctx.fillStyle = '#fbbf24'; // Amber
+           ctx.shadowBlur = 10;
+           ctx.fillStyle = '#fbbf24'; 
            ctx.strokeStyle = '#000';
-           ctx.lineWidth = 4;
-           ctx.strokeText(currentWord, x, y);
-           ctx.fillText(currentWord, x, y);
+           ctx.lineWidth = fontSize * 0.1;
+           ctx.strokeText(currentWord, x, HEIGHT * 0.85);
+           ctx.fillText(currentWord, x, HEIGHT * 0.85);
            ctx.shadowBlur = 0;
            return;
        }
-       
-       // --- TEXT WRAPPING ---
-       const words = text.split(' ');
-       let line = "";
-       const lines = [];
-       for(let w of words) {
-           if ((line + w).length > 30) { lines.push(line.trim()); line = w + " "; }
-           else { line += w + " "; }
-       }
-       lines.push(line.trim());
 
        lines.forEach((l, i) => {
-           const ly = y + (i * fontSize * 1.2);
-           const metrics = ctx.measureText(l);
-           const textW = metrics.width;
-           const bgW = textW + padding * 2;
-           const bgH = fontSize + padding;
-
-           // --- STYLES IMPLEMENTATION ---
+           const ly = startY + (i * lineHeight);
+           // Style Rendering (Same as before but ensures proper render)
            if (style === SubtitleStyle.MODERN) {
-               ctx.fillStyle = 'rgba(0,0,0,0.8)';
-               ctx.beginPath();
-               ctx.roundRect(x - bgW/2, ly - bgH/2, bgW, bgH, 8);
-               ctx.fill();
+               const metrics = ctx.measureText(l);
+               const bgW = metrics.width + (fontSize * 0.5);
+               const bgH = fontSize * 1.1;
+               ctx.fillStyle = 'rgba(0,0,0,0.7)';
+               ctx.beginPath(); ctx.roundRect(x - bgW/2, ly - bgH/2, bgW, bgH, 8); ctx.fill();
                ctx.fillStyle = '#fff';
-               ctx.fillText(l, x, ly);
-           
-           } else if (style === SubtitleStyle.CLASSIC) {
-               ctx.fillStyle = 'rgba(0,0,0,0.5)';
-               ctx.fillRect(x - bgW/2, ly - bgH/2, bgW, bgH);
-               ctx.strokeStyle = '#000';
-               ctx.lineWidth = fontSize * 0.08;
-               ctx.strokeText(l, x, ly);
-               ctx.fillStyle = '#fbbf24';
-               ctx.fillText(l, x, ly);
-
-           } else if (style === SubtitleStyle.NEON) {
-               ctx.shadowColor = '#00ffff';
-               ctx.shadowBlur = 20;
-               ctx.strokeStyle = '#00ffff';
-               ctx.lineWidth = 2;
-               ctx.strokeText(l, x, ly);
-               ctx.shadowBlur = 0;
-               ctx.fillStyle = '#fff';
-               ctx.fillText(l, x, ly);
-
-           } else if (style === SubtitleStyle.COMIC) {
-               ctx.fillStyle = '#000';
-               ctx.fillText(l, x + 3, ly + 3);
-               ctx.strokeStyle = '#000';
-               ctx.lineWidth = 6;
-               ctx.strokeText(l, x, ly);
-               ctx.fillStyle = '#fbbf24';
-               ctx.fillText(l, x, ly);
-
-           } else if (style === SubtitleStyle.GLITCH) {
-               const offsetX = (Math.random() - 0.5) * 4;
-               const offsetY = (Math.random() - 0.5) * 4;
-               ctx.globalCompositeOperation = 'lighten';
-               ctx.fillStyle = '#f0f';
-               ctx.fillText(l, x + offsetX, ly + offsetY);
-               ctx.fillStyle = '#0ff';
-               ctx.fillText(l, x - offsetX, ly - offsetY);
-               ctx.globalCompositeOperation = 'source-over';
-               ctx.fillStyle = '#fff';
-               ctx.fillText(l, x, ly);
-
-           } else if (style === SubtitleStyle.KARAOKE) {
-               ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
-               ctx.fillText(l, x, ly);
-               const totalLines = lines.length;
-               const lineDuration = 1 / totalLines;
-               const startProgress = i * lineDuration;
-               const endProgress = (i + 1) * lineDuration;
-               let lineProgress = 0;
-               if (progress >= endProgress) lineProgress = 1;
-               else if (progress <= startProgress) lineProgress = 0;
-               else lineProgress = (progress - startProgress) / lineDuration;
-
-               if (lineProgress > 0) {
-                   ctx.save();
-                   const startX = x - textW/2;
-                   const fillW = textW * lineProgress;
-                   ctx.beginPath();
-                   ctx.rect(startX, ly - fontSize, fillW, fontSize * 2);
-                   ctx.clip();
-                   ctx.shadowColor = '#6366f1';
-                   ctx.shadowBlur = 10;
-                   ctx.fillStyle = '#fff';
-                   ctx.fillText(l, x, ly);
-                   ctx.shadowBlur = 0;
-                   ctx.restore();
-               }
            } else {
-               ctx.shadowColor = 'black';
-               ctx.shadowBlur = 4;
-               ctx.fillStyle = '#fff';
-               ctx.fillText(l, x, ly);
-               ctx.shadowBlur = 0;
+               ctx.strokeStyle = '#000';
+               ctx.lineWidth = fontSize * 0.15;
+               ctx.lineJoin = 'round';
+               ctx.strokeText(l, x, ly);
+               ctx.fillStyle = style === SubtitleStyle.NEON ? '#00ffff' : '#fbbf24';
            }
+           ctx.textAlign = 'center';
+           ctx.textBaseline = 'middle';
+           ctx.fillText(l, x, ly);
        });
   };
 
@@ -776,104 +993,61 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       vid.loop = true;
       vid.playsInline = true;
       vid.crossOrigin = "anonymous";
-      // Auto start, but render loop controls playback too
-      vid.play().catch(e => console.warn("Video play interrupted", e)); 
+      // Auto-load without playing immediately to save resources until render
+      vid.load();
       videoCacheRef.current.set(url, vid);
       return vid;
   };
   
-  const drawOverlayImage = (ctx: CanvasRenderingContext2D, config: OverlayConfig) => {
-      const img = getImage(config.url);
-      if(!img) return;
-
-      const baseSize = WIDTH * 0.2;
-      const aspect = img.width / img.height;
-      let drawW, drawH;
-      if(aspect > 1) { drawW = baseSize * config.scale; drawH = (baseSize / aspect) * config.scale; }
-      else { drawH = baseSize * config.scale; drawW = (baseSize * aspect) * config.scale; }
-
-      const x = config.x * WIDTH;
-      const y = config.y * HEIGHT;
-      ctx.drawImage(img, x - drawW/2, y - drawH/2, drawW, drawH);
-  };
-
-  const drawOverlays = (ctx: CanvasRenderingContext2D, frameIdx: number) => {
+  const drawOverlays = (ctx: CanvasRenderingContext2D) => {
      if (channelLogoRef.current) {
-         drawOverlayImage(ctx, channelLogoRef.current);
+         drawLayer(ctx, { 
+             id: 'logo', type: 'image', url: channelLogoRef.current.url, name: 'Logo',
+             x: channelLogoRef.current.x, y: channelLogoRef.current.y, 
+             scale: channelLogoRef.current.scale, opacity: channelLogoRef.current.opacity ?? 1, rotation: 0
+         }, 0, false);
      }
   };
 
   useImperativeHandle(ref, () => ({
       startRecording: (hq) => {
           if (isRecordingRef.current) return;
-          console.log("Iniciando gravação...");
-          
-          setIsExporting(true); // UI Feedback
+          setIsExporting(true);
           setExportProgress(0);
-          
-          // 1. Configurar
           setCurrentSceneIndex(0);
           setIsPlaying(true);
           setRenderScale(hq ? 2 : 1);
-          
-          // 2. Aguardar Canvas e Estado
           setTimeout(() => {
               if (!canvasRef.current || !destNodeRef.current) return;
-              
               const canvasStream = canvasRef.current.captureStream(30);
               const audioStream = destNodeRef.current.stream;
-              
-              // Combinar Tracks
-              const combinedStream = new MediaStream([
-                  ...canvasStream.getVideoTracks(),
-                  ...audioStream.getAudioTracks()
-              ]);
-              
-              // Selecionar Codec
+              const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioStream.getAudioTracks()]);
               let mimeType = 'video/webm;codecs=vp9';
-              if (!MediaRecorder.isTypeSupported(mimeType)) {
-                  mimeType = 'video/webm;codecs=vp8';
-                  if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
-              }
+              if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
               
               chunksRef.current = [];
-              const recorder = new MediaRecorder(combinedStream, {
-                  mimeType,
-                  videoBitsPerSecond: hq ? 8000000 : 2500000
-              });
-              
-              recorder.ondataavailable = (e) => {
-                  if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
-              };
-              
+              const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: hq ? 8000000 : 2500000 });
+              recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
               recorder.onstop = () => {
                   const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-                  triggerBrowserDownload(blob, `viralflow_export_${Date.now()}.webm`);
+                  triggerBrowserDownload(blob, `viralflow_${Date.now()}.webm`);
                   isRecordingRef.current = false;
-                  setIsExporting(false); // Hide UI
-                  setRenderScale(1); // Reset
+                  setIsExporting(false);
+                  setRenderScale(1);
               };
-              
               recorder.start();
               mediaRecorderRef.current = recorder;
               isRecordingRef.current = true;
           }, 500);
       },
       stopRecording: () => {
-          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-              mediaRecorderRef.current.stop();
-          }
+          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
       }
   }));
 
   return (
-    <div className="relative w-full aspect-video bg-black rounded-lg overflow-hidden shadow-2xl group border border-zinc-800">
-      <canvas 
-        ref={canvasRef} 
-        className="w-full h-full object-contain"
-      />
-      
-      {/* EXPORT OVERLAY */}
+    <div ref={containerRef} className={`relative w-full bg-black rounded-lg overflow-hidden shadow-2xl group border border-zinc-800 ${isFullscreen ? 'fixed inset-0 z-[100] h-screen w-screen border-none rounded-none' : 'aspect-video'}`}>
+      <canvas ref={canvasRef} className="w-full h-full object-contain" />
       {isExporting && (
           <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
               <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
@@ -884,26 +1058,22 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               </div>
           </div>
       )}
-      
-      {/* Controls Overlay */}
       {!isExporting && (
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-6 pointer-events-none">
+             <div className="absolute top-4 right-4 pointer-events-auto">
+                 <button onClick={toggleFullscreen} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white backdrop-blur-md transition-colors">
+                     {isFullscreen ? <Minimize2 className="w-5 h-5"/> : <Maximize2 className="w-5 h-5"/>}
+                 </button>
+             </div>
+             
              <div className="pointer-events-auto flex items-center justify-center gap-6">
-                <button onClick={() => {
-                    if(currentSceneIndex > 0) setCurrentSceneIndex(currentSceneIndex - 1);
-                }} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all"><SkipBack className="w-6 h-6" /></button>
-                
+                <button onClick={() => { if(currentSceneIndex > 0) setCurrentSceneIndex(currentSceneIndex - 1); }} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all"><SkipBack className="w-6 h-6" /></button>
                 <button onClick={() => setIsPlaying(!isPlaying)} className="p-4 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/30 transition-all scale-100 hover:scale-110 active:scale-95">
                     {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
                 </button>
-
-                <button onClick={() => {
-                    if(currentSceneIndex < scenes.length - 1) setCurrentSceneIndex(currentSceneIndex + 1);
-                }} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all"><SkipForward className="w-6 h-6" /></button>
+                <button onClick={() => { if(currentSceneIndex < scenes.length - 1) setCurrentSceneIndex(currentSceneIndex + 1); }} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all"><SkipForward className="w-6 h-6" /></button>
              </div>
-             <div className="text-center mt-4 text-xs font-mono text-zinc-400">
-                CENA {currentSceneIndex + 1} / {scenes.length}
-             </div>
+             <div className="text-center mt-4 text-xs font-mono text-zinc-400">CENA {currentSceneIndex + 1} / {scenes.length}</div>
         </div>
       )}
     </div>

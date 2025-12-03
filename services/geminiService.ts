@@ -1,5 +1,8 @@
+
+
+
 import { GoogleGenAI, Modality } from "@google/genai";
-import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeneratedScriptItem } from "../types";
+import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeneratedScriptItem, ViralMetadataResult } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
 import { getProjectDir, saveBase64File } from "./fileSystem";
 
@@ -187,6 +190,42 @@ function robustJsonParse(text: string): any {
 
 // --- GEMINI GENERATORS ---
 
+export const generateViralMetadata = async (
+    title: string,
+    context: string,
+    checkCancelled?: () => boolean
+): Promise<ViralMetadataResult> => {
+    return withRetry(async (ai) => {
+        const prompt = `
+        Act as a WORLD-CLASS YOUTUBE SEO EXPERT & COPYWRITER.
+        
+        Input Title: "${title}"
+        Context/Description: "${context}"
+
+        TASK:
+        1. Generate 5 EXTREME CLICKBAIT / VIRAL TITLES (Must be impossible not to click, use caps for emphasis, emojis).
+        2. Write a DESCRIPTION using the AIDA framework (Attention, Interest, Desire, Action). First 2 lines must be catchy.
+        3. Generate 30 HIGH-VOLUME VIRAL TAGS, comma-separated (ready to copy-paste).
+
+        OUTPUT JSON STRICTLY:
+        {
+          "titles": ["Title 1", "Title 2", ...],
+          "description": "Full description text...",
+          "tags": "tag1, tag2, tag3, ..."
+        }
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+
+        if (!response.text) throw new Error("No metadata generated");
+        return robustJsonParse(response.text);
+    }, checkCancelled);
+};
+
 // PRO FEATURE: MOVIE PIPELINE OUTLINE
 export const generateMovieOutline = async (
     topic: string, 
@@ -297,11 +336,14 @@ export const generateVideoScript = async (
     5. JSON ESCAPING: You MUST escape all double quotes inside the text fields. Example: "text": "He said \\"Hello\\"".
     6. KEYWORDS: Include 2-3 specific keywords at the end of visual_prompt for search engines.
     
+    CRITICAL: The "visual_prompt" field MUST ALWAYS BE IN ENGLISH, even if the "text" is in another language. This is crucial for the image generator.
+    
     SPECIAL STYLE INSTRUCTIONS:
     ${extraStyleInstructions}
 
-    Output ONLY valid JSON array: [{ "speaker": "Name", "text": "Dialogue", "visual_prompt": "CAMERA_ANGLE + Action description" }]
-    Language: ${targetLanguage}.`;
+    Output ONLY valid JSON array: [{ "speaker": "Name", "text": "Dialogue (${targetLanguage})", "visual_prompt": "ENGLISH DESCRIPTION OF THE SCENE" }]
+    Language for Text/Dialogue: ${targetLanguage}.
+    Language for Visual Prompts: ENGLISH ONLY.`;
 
     let prompt = `Create a script about: "${topic}".
     Target Duration: ${durationMinutes} minutes (approx ${totalWords} words).
@@ -347,7 +389,7 @@ export const generateVideoScript = async (
         
         TARGET LENGTH: This specific chapter MUST be approximately 4 to 6 minutes long. Write approximately 500-600 words for this chapter.
         INSTRUCTION: Dive deep into the details. Use dialogue, examples, and slow-paced storytelling. Do not rush.
-        Visuals: Use slow, cinematic, detailed camera movements in prompts.
+        Visuals: Use slow, cinematic, detailed camera movements in prompts (IN ENGLISH).
         
         REMEMBER: ESCAPE ALL DOUBLE QUOTES INSIDE STRINGS.`;
     }
@@ -455,17 +497,24 @@ const searchPexelsVideo = async (query: string, format: VideoFormat, checkCancel
     const pexelsKey = getPexelsKey();
     if (!pexelsKey) throw new Error("Chave Pexels não configurada.");
 
-    // Extract key terms from visual prompt for better search
-    const simplifiedQuery = query.split(',').slice(-3).join(' ') // Get last 3 keywords often used
-        .replace(/camera angle|shot|cinematic|style|no text|photorealistic/gi, '')
-        .trim();
+    // Extract key terms from visual prompt for better search and remove stop words
+    const stopWords = ['a', 'an', 'the', 'in', 'on', 'at', 'of', 'for', 'to', 'with', 'by', 'is', 'are', 'was', 'were', 'scene', 'showing', 'show', 'view', 'angle', 'shot', 'cinematic', 'style', 'no', 'text', 'photorealistic', 'camera', 'close-up', 'wide', 'drone', 'macro', 'pov', '4k', 'hd'];
+    
+    const simplifiedQuery = query
+        .toLowerCase()
+        .replace(/[^\w\s]/g, '') // remove punctuation
+        .split(' ')
+        .filter(word => !stopWords.includes(word) && word.length > 2)
+        .slice(0, 5) // Take first 5 relevant words (Pexels handles short queries better)
+        .join(' ') 
+        || query.split(',')[0]; // Fallback to first part of prompt
     
     const orientation = format === VideoFormat.PORTRAIT ? 'portrait' : 'landscape';
     
     // Random page to ensure variety if regenerating
     const randomPage = Math.floor(Math.random() * 5) + 1;
     
-    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(simplifiedQuery || query)}&orientation=${orientation}&size=medium&per_page=1&page=${randomPage}`;
+    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(simplifiedQuery)}&orientation=${orientation}&size=medium&per_page=1&page=${randomPage}`;
     
     const response = await fetch(url, {
         headers: { Authorization: pexelsKey }
