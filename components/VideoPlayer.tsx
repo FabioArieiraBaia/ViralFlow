@@ -1,9 +1,7 @@
 
-
-
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
-import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, ColorGradingPreset, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement } from '../types';
-import { Play, Pause, SkipBack, SkipForward, Loader2, Maximize2, Minimize2 } from 'lucide-react';
+import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe } from '../types';
+import { Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
 import { getAudioContext } from '../services/audioUtils';
 import { triggerBrowserDownload } from '../services/fileSystem';
 
@@ -25,6 +23,7 @@ interface VideoPlayerProps {
   channelLogo?: OverlayConfig;
   onUpdateChannelLogo?: (config: OverlayConfig) => void;
   onUpdateSceneOverlay?: (sceneId: string, config: OverlayConfig) => void;
+  scrubProgress?: number; // 0.0 to 1.0 for manual seeking in editor
 }
 
 export interface VideoPlayerRef {
@@ -45,6 +44,7 @@ interface Particle {
   type: ParticleEffect;
   rotation?: number;
   rotationSpeed?: number;
+  emoji?: string;
 }
 
 const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
@@ -64,7 +64,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   onPlaybackComplete,
   channelLogo,
   onUpdateChannelLogo,
-  onUpdateSceneOverlay
+  onUpdateSceneOverlay,
+  scrubProgress = 0
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -97,8 +98,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const scenesRef = useRef<Scene[]>(scenes);
   const showSubtitlesRef = useRef(showSubtitles); 
   const subtitleStyleRef = useRef(subtitleStyle);
-  const activeFilterRef = useRef(activeFilter);
-  const globalTransitionRef = useRef(globalTransition);
   const channelLogoRef = useRef(channelLogo);
   
   // Media Caches
@@ -111,8 +110,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   
   const startTimeRef = useRef<number>(0);
   const rafRef = useRef<number>(0);
-  
-  // Audio Analysis Data
   const audioDataArrayRef = useRef<Uint8Array>(new Uint8Array(0));
 
   // Init Audio Context once
@@ -141,7 +138,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           analyserRef.current.connect(destNodeRef.current);
       }
       
-      // Cleanup video elements on unmount
       return () => {
           videoCacheRef.current.forEach(v => {
               v.pause();
@@ -152,30 +148,33 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       };
   }, []);
 
-  // Update Refs
+  // Sync Refs
   useEffect(() => { scenesRef.current = scenes; }, [scenes]);
   useEffect(() => { showSubtitlesRef.current = showSubtitles; }, [showSubtitles]);
   useEffect(() => { subtitleStyleRef.current = subtitleStyle; }, [subtitleStyle]);
-  useEffect(() => { activeFilterRef.current = activeFilter; }, [activeFilter]);
-  useEffect(() => { globalTransitionRef.current = globalTransition; }, [globalTransition]);
   useEffect(() => { channelLogoRef.current = channelLogo; }, [channelLogo]);
 
-  // Handle Fullscreen Events explicitly to avoid "player missing" bug
+  // Handle Fullscreen
   useEffect(() => {
-      const handleFsChange = () => {
-          setIsFullscreen(!!document.fullscreenElement);
-      };
+      const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
       document.addEventListener('fullscreenchange', handleFsChange);
       return () => document.removeEventListener('fullscreenchange', handleFsChange);
   }, []);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = (e: React.MouseEvent) => {
+      e.stopPropagation();
       if (!containerRef.current) return;
       if (!document.fullscreenElement) {
           containerRef.current.requestFullscreen().catch(console.error);
       } else {
           document.exitFullscreen().catch(console.error);
       }
+  };
+
+  const togglePlay = (e?: React.MouseEvent) => {
+      if (e) e.stopPropagation();
+      if (isExporting) return;
+      setIsPlaying(!isPlaying);
   };
 
   // Handle Music Volume
@@ -210,7 +209,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                   return;
               }
           }
-          if (isPlaying) playMusic(buffer, bgMusicUrl);
+          if (isPlaying && buffer) playMusic(buffer, bgMusicUrl);
       };
       loadMusic();
   }, [bgMusicUrl, isPlaying]);
@@ -249,7 +248,416 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       speechSourceRef.current.start(0);
   };
 
-  // --- RENDERING ENGINE ---
+  // --- RECORDING IMPLEMENTATION ---
+  useImperativeHandle(ref, () => ({
+    startRecording: (highQuality = false) => {
+        setIsExporting(true);
+        setExportProgress(0);
+        isRecordingRef.current = true;
+        setCurrentSceneIndex(0);
+        setRenderScale(highQuality ? 2 : 1); 
+        startTimeRef.current = performance.now();
+        setIsPlaying(true);
+
+        const canvas = canvasRef.current;
+        const dest = destNodeRef.current;
+        if(!canvas || !dest) return;
+
+        const stream = canvas.captureStream(30); 
+        const audioTrack = dest.stream.getAudioTracks()[0];
+        if(audioTrack) stream.addTrack(audioTrack);
+
+        mediaRecorderRef.current = new MediaRecorder(stream, {
+            mimeType: 'video/webm;codecs=vp9',
+            videoBitsPerSecond: highQuality ? 8000000 : 2500000 
+        });
+
+        chunksRef.current = [];
+        mediaRecorderRef.current.ondataavailable = (e) => {
+            if(e.data.size > 0) chunksRef.current.push(e.data);
+        };
+
+        mediaRecorderRef.current.onstop = () => {
+            const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+            triggerBrowserDownload(blob, `viralflow_video_${Date.now()}.webm`);
+            setIsExporting(false);
+            setRenderScale(1);
+            isRecordingRef.current = false;
+        };
+
+        mediaRecorderRef.current.start();
+    },
+    stopRecording: () => {
+        if(mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+    }
+  }));
+
+  const lerp = (start: number, end: number, t: number) => start * (1 - t) + end * t;
+
+  const getVideoElement = (url: string): HTMLVideoElement => {
+      let v = videoCacheRef.current.get(url);
+      if (!v) {
+          console.log('[VideoPlayer] Init video element:', url);
+          v = document.createElement('video');
+          v.src = url;
+          v.muted = true;
+          v.playsInline = true;
+          v.loop = true;
+          v.crossOrigin = "anonymous";
+          videoCacheRef.current.set(url, v);
+          v.load();
+      }
+      // Ensure it's ready to be drawn
+      if (v.readyState === 0) v.load();
+      return v;
+  };
+
+  const getInterpolatedLayer = (layer: LayerConfig, progress: number): LayerConfig => {
+      if (!layer.keyframes || layer.keyframes.length === 0) return layer;
+      const sortedKeys = [...layer.keyframes].sort((a, b) => a.time - b.time);
+      
+      let prevKey: Keyframe = { id: 'start', time: 0, x: layer.x, y: layer.y, scale: layer.scale, rotation: layer.rotation, opacity: layer.opacity };
+      let nextKey: Keyframe | null = null;
+
+      for (let i = 0; i < sortedKeys.length; i++) {
+          if (sortedKeys[i].time >= progress) {
+              nextKey = sortedKeys[i];
+              if (i > 0) prevKey = sortedKeys[i - 1];
+              else if (sortedKeys[i].time > 0) {
+                 prevKey = { id: 'base', time: 0, x: layer.x, y: layer.y, scale: layer.scale, rotation: layer.rotation, opacity: layer.opacity };
+              }
+              break;
+          }
+          prevKey = sortedKeys[i];
+      }
+
+      if (!nextKey) {
+          const lastKey = sortedKeys[sortedKeys.length - 1];
+          return { ...layer, x: lastKey.x, y: lastKey.y, scale: lastKey.scale, rotation: lastKey.rotation, opacity: lastKey.opacity };
+      }
+
+      const duration = nextKey.time - prevKey.time;
+      if (duration <= 0.0001) return { ...layer, x: nextKey.x, y: nextKey.y, scale: nextKey.scale, rotation: nextKey.rotation, opacity: nextKey.opacity };
+      
+      const t = (progress - prevKey.time) / duration;
+      const easedT = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+      return {
+          ...layer,
+          x: lerp(prevKey.x, nextKey.x, easedT),
+          y: lerp(prevKey.y, nextKey.y, easedT),
+          scale: lerp(prevKey.scale, nextKey.scale, easedT),
+          rotation: lerp(prevKey.rotation, nextKey.rotation, easedT),
+          opacity: lerp(prevKey.opacity, nextKey.opacity, easedT)
+      };
+  };
+
+  const drawParticles = (ctx: CanvasRenderingContext2D, effect: ParticleEffect, width: number, height: number) => {
+    if (effect === ParticleEffect.NONE) return;
+
+    if (particlesRef.current.length < 50) {
+        let typeObj = { color: 'white', size: 2, speed: 1, emoji: '' };
+        switch (effect) {
+            case ParticleEffect.SNOW: typeObj = { color: 'white', size: 3, speed: 2, emoji: '' }; break;
+            case ParticleEffect.RAIN: typeObj = { color: '#a5d8ff', size: 2, speed: 15, emoji: '' }; break;
+            case ParticleEffect.EMBERS: typeObj = { color: '#ff6b6b', size: 4, speed: -2, emoji: '' }; break;
+            case ParticleEffect.FLOATING_HEARTS: typeObj = { color: '', size: 30, speed: -1, emoji: '❤️' }; break;
+            case ParticleEffect.FLOATING_LIKES: typeObj = { color: '', size: 30, speed: -1, emoji: '👍' }; break;
+            case ParticleEffect.FLOATING_MONEY: typeObj = { color: '', size: 30, speed: -1, emoji: '💸' }; break;
+            case ParticleEffect.FLOATING_STARS: typeObj = { color: '', size: 30, speed: -1, emoji: '⭐' }; break;
+            case ParticleEffect.FLOATING_MUSIC: typeObj = { color: '', size: 30, speed: -1, emoji: '🎵' }; break;
+        }
+
+        particlesRef.current.push({
+            x: Math.random() * width,
+            y: typeObj.speed > 0 ? -10 : height + 10,
+            vx: (Math.random() - 0.5) * 2,
+            vy: typeObj.speed * (Math.random() * 0.5 + 0.8),
+            size: typeObj.size * (Math.random() * 0.5 + 0.5),
+            color: typeObj.color,
+            alpha: 1,
+            life: 100,
+            decay: 0.5,
+            type: effect,
+            emoji: typeObj.emoji
+        });
+    }
+
+    for (let i = particlesRef.current.length - 1; i >= 0; i--) {
+        const p = particlesRef.current[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+
+        if (p.y > height + 20 || p.y < -20 || p.life <= 0) {
+            particlesRef.current.splice(i, 1);
+            continue;
+        }
+
+        ctx.globalAlpha = p.alpha * (p.life / 100);
+        if (p.emoji) {
+             ctx.font = `${p.size}px Arial`;
+             ctx.fillText(p.emoji, p.x, p.y);
+        } else if (p.type === ParticleEffect.RAIN) {
+             ctx.strokeStyle = p.color;
+             ctx.lineWidth = 1;
+             ctx.beginPath();
+             ctx.moveTo(p.x, p.y);
+             ctx.lineTo(p.x + p.vx, p.y + p.vy * 4);
+             ctx.stroke();
+        } else {
+             ctx.fillStyle = p.color;
+             ctx.beginPath();
+             ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+             ctx.fill();
+        }
+    }
+    ctx.globalAlpha = 1;
+  };
+
+  const drawSubtitles = (ctx: CanvasRenderingContext2D, text: string, style: SubtitleStyle, width: number, height: number, progress: number) => {
+      if (!text || style === SubtitleStyle.NONE) return;
+
+      const fontSize = Math.min(width * 0.05, 48);
+      ctx.font = `900 ${fontSize}px 'Inter', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom'; // Draw from bottom up to avoid cut off
+      
+      const words = text.split(' ');
+      const lines = [];
+      let currentLine = words[0];
+      for (let i = 1; i < words.length; i++) {
+          const w = ctx.measureText(currentLine + " " + words[i]).width;
+          if (w < width * 0.8) {
+              currentLine += " " + words[i];
+          } else {
+              lines.push(currentLine);
+              currentLine = words[i];
+          }
+      }
+      lines.push(currentLine);
+
+      const lineHeight = fontSize * 1.3;
+      const totalTextHeight = lines.length * lineHeight;
+      // Safe area from bottom (10% of height)
+      const startY = height - (height * 0.1) - totalTextHeight;
+
+      lines.forEach((line, index) => {
+          const y = startY + (index * lineHeight);
+          const x = width / 2;
+          
+          if (style === SubtitleStyle.MODERN) {
+              const bgWidth = ctx.measureText(line).width + 40;
+              ctx.fillStyle = 'rgba(0,0,0,0.7)';
+              ctx.roundRect(x - bgWidth/2, y - fontSize, bgWidth, fontSize + 10, 10);
+              ctx.fill();
+              ctx.fillStyle = 'white';
+              ctx.fillText(line, x, y);
+          } else if (style === SubtitleStyle.NEON) {
+              ctx.shadowColor = '#00ffcc';
+              ctx.shadowBlur = 10;
+              ctx.strokeStyle = 'black';
+              ctx.lineWidth = 4;
+              ctx.strokeText(line, x, y);
+              ctx.fillStyle = 'white';
+              ctx.fillText(line, x, y);
+              ctx.shadowBlur = 0;
+          } else {
+               ctx.strokeStyle = 'black';
+               ctx.lineWidth = 4;
+               ctx.strokeText(line, x, y);
+               ctx.fillStyle = 'yellow';
+               ctx.fillText(line, x, y);
+          }
+      });
+  };
+
+  const drawScene = (ctx: CanvasRenderingContext2D, scene: Scene, scale: number, progress: number, isPlaying: boolean, elapsedTimeMs: number) => {
+      // 1. Background Fill
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      // 2. Camera Transform
+      ctx.save();
+      const move = scene.cameraMovement || CameraMovement.STATIC;
+      const t = progress; 
+      let scaleFactor = 1;
+      let transX = 0;
+      let transY = 0;
+      let rot = 0;
+
+      if (move === CameraMovement.ZOOM_IN) scaleFactor = 1 + (0.3 * t);
+      else if (move === CameraMovement.ZOOM_OUT) scaleFactor = 1.3 - (0.3 * t);
+      else if (move === CameraMovement.PAN_LEFT) transX = -50 * t;
+      else if (move === CameraMovement.PAN_RIGHT) transX = 50 * t;
+      else if (move === CameraMovement.ROTATE_CW) rot = (2 * Math.PI / 180) * t * 5;
+      else if (move === CameraMovement.ROTATE_CCW) rot = -(2 * Math.PI / 180) * t * 5;
+      else if (move === CameraMovement.HANDHELD) {
+          transX = Math.sin(elapsedTimeMs * 0.002) * 5;
+          transY = Math.cos(elapsedTimeMs * 0.003) * 5;
+          rot = Math.sin(elapsedTimeMs * 0.001) * 0.005;
+          scaleFactor = 1.05;
+      }
+
+      ctx.translate(WIDTH/2, HEIGHT/2);
+      ctx.scale(scaleFactor, scaleFactor);
+      ctx.rotate(rot);
+      ctx.translate(transX, transY);
+      ctx.translate(-WIDTH/2, -HEIGHT/2);
+
+      // 3. Draw Background (Video or Image)
+      if (scene.mediaType === 'video' && scene.videoUrl) {
+           const v = getVideoElement(scene.videoUrl);
+           
+           if (isPlaying && v.paused) {
+                v.play().catch(e => console.warn("BG Play fail", e));
+           } else if (!isPlaying && !v.paused) {
+                v.pause();
+           }
+
+           if (v.readyState >= 2) { 
+               // Background Trimming / Looping logic
+               // If user wants specific cut for background, assume full length or define logic
+               // For now, background just loops naturally.
+               const vidRatio = v.videoWidth / v.videoHeight;
+               const canvasRatio = WIDTH / HEIGHT;
+               let drawW = WIDTH, drawH = HEIGHT, offsetX = 0, offsetY = 0;
+
+               if (vidRatio > canvasRatio) {
+                   drawH = HEIGHT;
+                   drawW = HEIGHT * vidRatio;
+                   offsetX = (WIDTH - drawW) / 2;
+               } else {
+                   drawW = WIDTH;
+                   drawH = WIDTH / vidRatio;
+                   offsetY = (HEIGHT - drawH) / 2;
+               }
+               ctx.drawImage(v, offsetX, offsetY, drawW, drawH);
+           }
+      } else {
+           const img = scene.imageUrl ? imageCacheRef.current.get(scene.imageUrl) : null;
+           if (!img && scene.imageUrl && !imageCacheRef.current.has(scene.imageUrl)) {
+               const i = new Image(); i.crossOrigin = "anonymous"; i.src = scene.imageUrl; i.onload = () => imageCacheRef.current.set(scene.imageUrl!, i);
+           }
+           if (img) {
+              const imgRatio = img.width / img.height;
+              const canvasRatio = WIDTH / HEIGHT;
+              let drawW = WIDTH, drawH = HEIGHT, offsetX = 0, offsetY = 0;
+              if (imgRatio > canvasRatio) { drawH = HEIGHT; drawW = HEIGHT * imgRatio; offsetX = (WIDTH - drawW) / 2; } 
+              else { drawW = WIDTH; drawH = WIDTH / imgRatio; offsetY = (HEIGHT - drawH) / 2; }
+              ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+           }
+      }
+
+      // 4. Draw Layers
+      const layers = scene.layers || [];
+      const legacyOverlay = scene.overlay ? { ...scene.overlay, id: 'legacy', type: 'image' as const, name: 'Overlay' } : null;
+      const allLayers = legacyOverlay && layers.length === 0 ? [legacyOverlay] : layers;
+
+      allLayers.forEach(baseLayer => {
+          const layer = getInterpolatedLayer(baseLayer, progress);
+          
+          ctx.save();
+          const lx = layer.x * WIDTH;
+          const ly = layer.y * HEIGHT;
+          
+          ctx.translate(lx, ly);
+          ctx.rotate((layer.rotation * Math.PI) / 180);
+          ctx.scale(layer.scale, layer.scale);
+          ctx.globalAlpha = layer.opacity;
+          ctx.globalCompositeOperation = layer.blendMode || 'source-over';
+
+          if (layer.shadowColor && layer.type !== 'text') {
+              ctx.shadowColor = layer.shadowColor;
+              ctx.shadowBlur = layer.shadowBlur || 0;
+              ctx.shadowOffsetX = layer.shadowOffsetX || 0;
+              ctx.shadowOffsetY = layer.shadowOffsetY || 0;
+          }
+
+          if (layer.type === 'text' && layer.text) {
+              ctx.font = `${layer.fontWeight || 'bold'} ${layer.fontSize || 50}px '${layer.fontFamily || 'Inter'}'`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              
+              if (layer.textShadow) {
+                   ctx.lineJoin = "round";
+                   ctx.lineWidth = 4;
+                   ctx.strokeStyle = "black";
+                   ctx.strokeText(layer.text, 0, 0);
+              }
+              ctx.fillStyle = layer.fontColor || '#ffffff';
+              ctx.fillText(layer.text, 0, 0);
+          } 
+          else if (layer.type === 'image' && layer.url) {
+              const lImg = imageCacheRef.current.get(layer.url);
+              if (!lImg && !imageCacheRef.current.has(layer.url)) {
+                  const i = new Image(); i.src = layer.url; i.onload = () => imageCacheRef.current.set(layer.url!, i);
+              }
+              if (lImg) ctx.drawImage(lImg, -lImg.width/2, -lImg.height/2);
+          }
+          else if (layer.type === 'video' && layer.url) {
+               const v = getVideoElement(layer.url);
+               if (v.readyState >= 2) {
+                   // --- TRIMMING LOGIC ---
+                   const trimStart = layer.trimStart || 0;
+                   const trimEnd = layer.trimEnd || v.duration;
+                   const loopDuration = trimEnd - trimStart;
+
+                   if (loopDuration > 0) {
+                       // Calculate expected time based on global accumulated time
+                       const expectedTime = trimStart + (elapsedTimeMs / 1000) % loopDuration;
+                       
+                       // Only seek if drift is significant to avoid stutter (0.3s tolerance)
+                       if (Math.abs(v.currentTime - expectedTime) > 0.3) {
+                           v.currentTime = expectedTime;
+                       }
+                   }
+
+                   if (isPlaying && v.paused) v.play().catch(e=>{});
+                   else if (!isPlaying && !v.paused) v.pause();
+
+                   const aspect = v.videoWidth / v.videoHeight;
+                   const baseW = 400;
+                   const baseH = 400 / aspect;
+                   ctx.drawImage(v, -baseW/2, -baseH/2, baseW, baseH);
+               }
+          }
+          ctx.restore();
+      });
+
+      ctx.restore(); // Restore Camera
+
+      // 7. Particles
+      if (scene.particleEffect) {
+          drawParticles(ctx, scene.particleEffect, WIDTH, HEIGHT);
+      }
+
+      // 8. Global Channel Logo
+      if (channelLogoRef.current) {
+          const logo = channelLogoRef.current;
+          const lImg = imageCacheRef.current.get(logo.url);
+          if (!lImg && !imageCacheRef.current.has(logo.url)) {
+                const i = new Image(); i.src = logo.url; i.onload = () => imageCacheRef.current.set(logo.url, i);
+          }
+          if (lImg) {
+              ctx.save();
+              ctx.globalAlpha = logo.opacity ?? 1;
+              const w = lImg.width * (logo.scale || 0.2);
+              const h = lImg.height * (logo.scale || 0.2);
+              ctx.drawImage(lImg, logo.x * WIDTH, logo.y * HEIGHT, w, h);
+              ctx.restore();
+          }
+      }
+
+      // 9. Subtitles
+      if (showSubtitlesRef.current && scene.text) {
+          drawSubtitles(ctx, scene.text, subtitleStyleRef.current, WIDTH, HEIGHT, progress);
+      }
+  };
+
+  // --- MAIN RENDER LOOP ---
   useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -263,7 +671,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       let currentIdx = currentSceneIndex;
       let hasStartedAudio = false;
 
-      // Initialize Particles if needed
       particlesRef.current = [];
 
       if (isPlaying) {
@@ -272,6 +679,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           sceneStartTime = performance.now();
           startTimeRef.current = sceneStartTime;
       } else {
+          // Pause logic
           if (speechSourceRef.current) { try{speechSourceRef.current.stop();}catch(e){} speechSourceRef.current = null; }
           if (musicSourceRef.current) { try{musicSourceRef.current.stop();}catch(e){} musicSourceRef.current = null; currentMusicUrlRef.current = null; }
           hasStartedAudio = false;
@@ -279,25 +687,23 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
 
       const render = (time: number) => {
-          if (analyserRef.current) {
-              analyserRef.current.getByteFrequencyData(audioDataArrayRef.current as any);
-          }
-          const bassVolume = audioDataArrayRef.current.slice(0, 10).reduce((a,b) => a+b, 0) / 10;
+          if (analyserRef.current) analyserRef.current.getByteFrequencyData(audioDataArrayRef.current as any);
 
-          // Clear
           ctx.setTransform(1, 0, 0, 1, 0, 0); 
           ctx.filter = 'none';
           ctx.globalAlpha = 1;
           ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
-          // Render Logic
           if (!isPlaying && !isRecordingRef.current) {
-              // EDIT MODE
+              // EDITOR PREVIEW
               if (scenesRef.current[currentSceneIndex]) {
-                 drawScene(ctx, scenesRef.current[currentSceneIndex], 1, 0, false, 0, 0); 
+                 const scene = scenesRef.current[currentSceneIndex];
+                 const durationMs = (scene.durationEstimate || 5) * 1000;
+                 const simulatedElapsed = scrubProgress * durationMs;
+                 drawScene(ctx, scene, 1, scrubProgress, false, simulatedElapsed); 
               }
           } else {
-              // PLAYBACK MODE
+              // PLAYBACK
               const scene = scenesRef.current[currentIdx];
               if (!scene) {
                    setIsPlaying(false);
@@ -320,18 +726,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                    hasStartedAudio = true;
               }
 
-              drawScene(ctx, scene, 1, progress, true, bassVolume, elapsed);
-
-              // Transitions
-              const timeLeft = durationMs - elapsed;
-              const transitionDuration = 800; // ms
-              
-              if (timeLeft < transitionDuration && scenesRef.current[currentIdx + 1]) {
-                   const nextScene = scenesRef.current[currentIdx + 1];
-                   const transProgress = 1 - (timeLeft / transitionDuration);
-                   const type = scene.transition || globalTransitionRef.current;
-                   drawTransition(ctx, type, nextScene, transProgress, bassVolume);
-              }
+              drawScene(ctx, scene, 1, progress, true, elapsed);
 
               if (elapsed >= durationMs) {
                   if (currentIdx < scenesRef.current.length - 1) {
@@ -339,746 +734,52 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                       setCurrentSceneIndex(currentIdx);
                       sceneStartTime = time;
                       hasStartedAudio = false;
-                      particlesRef.current = []; // Clear particles on scene change
+                      particlesRef.current = [];
                   } else {
                       setIsPlaying(false);
-                      setIsExporting(false);
-                      setExportProgress(100);
-                      if (isRecordingRef.current && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                          mediaRecorderRef.current.stop();
-                      }
                       if (onPlaybackComplete) onPlaybackComplete();
                   }
               }
-          }
-
-          // Global Overlays
-          drawOverlays(ctx);
-
-          if (isPlaying || isRecordingRef.current) {
               rafRef.current = requestAnimationFrame(render);
           }
       };
 
       rafRef.current = requestAnimationFrame(render);
-      return () => cancelAnimationFrame(rafRef.current);
-  }, [isPlaying, currentSceneIndex, scenes, renderScale, format, isExporting, isFullscreen]); // Added isFullscreen dependency
 
-  const updateAndDrawParticles = (ctx: CanvasRenderingContext2D, type: ParticleEffect) => {
-      if (type === ParticleEffect.NONE) return;
-
-      const isFloatingObject = type === ParticleEffect.FLOATING_HEARTS || 
-                               type === ParticleEffect.FLOATING_LIKES ||
-                               type === ParticleEffect.FLOATING_STARS ||
-                               type === ParticleEffect.FLOATING_MONEY ||
-                               type === ParticleEffect.FLOATING_MUSIC;
-
-      // SPAWNING
-      const maxParticles = isFloatingObject ? 20 : 100;
-      if (particlesRef.current.length < maxParticles) {
-          if (Math.random() < 0.2) { // Emission rate
-              let p: Particle = {
-                  x: Math.random() * WIDTH,
-                  y: type === ParticleEffect.EMBERS ? HEIGHT + 10 : -10,
-                  vx: (Math.random() - 0.5) * 2,
-                  vy: 0,
-                  size: 0,
-                  color: '#fff',
-                  alpha: 1,
-                  life: 1,
-                  decay: 0.005 + Math.random() * 0.01,
-                  type: type,
-                  rotation: Math.random() * 360,
-                  rotationSpeed: (Math.random() - 0.5) * 5
-              };
-
-              if (type === ParticleEffect.SNOW) {
-                  p.vy = 1 + Math.random() * 2;
-                  p.size = 2 + Math.random() * 3;
-                  p.color = 'rgba(255,255,255,0.8)';
-              } else if (type === ParticleEffect.RAIN) {
-                  p.vy = 15 + Math.random() * 10;
-                  p.vx = (Math.random() - 0.5) * 1;
-                  p.size = 1; // Width
-                  p.color = 'rgba(150,180,255,0.6)';
-              } else if (type === ParticleEffect.EMBERS) {
-                  p.vy = -(1 + Math.random() * 2);
-                  p.size = 2 + Math.random() * 4;
-                  p.color = Math.random() > 0.5 ? '#ffaa00' : '#ff4400';
-                  p.decay = 0.01 + Math.random() * 0.02;
-              } else if (type === ParticleEffect.CONFETTI) {
-                  p.y = -10;
-                  p.vy = 3 + Math.random() * 4;
-                  p.vx = (Math.random() - 0.5) * 5;
-                  p.size = 5 + Math.random() * 5;
-                  const colors = ['#f00', '#0f0', '#00f', '#ff0', '#0ff', '#f0f'];
-                  p.color = colors[Math.floor(Math.random() * colors.length)];
-              } else if (type === ParticleEffect.DUST) {
-                  p.x = Math.random() * WIDTH;
-                  p.y = Math.random() * HEIGHT;
-                  p.vx = (Math.random() - 0.5) * 0.5;
-                  p.vy = (Math.random() - 0.5) * 0.5;
-                  p.size = 1 + Math.random() * 2;
-                  p.color = 'rgba(200,200,200,0.3)';
-                  p.alpha = Math.random() * 0.5;
-              } else if (isFloatingObject) {
-                  p.x = Math.random() * WIDTH;
-                  p.y = HEIGHT + 20;
-                  p.vy = -(1 + Math.random() * 2);
-                  p.size = 20 + Math.random() * 30;
-                  p.alpha = 1;
-                  
-                  let icons: string[] = ['⭐'];
-                  if (type === ParticleEffect.FLOATING_HEARTS) icons = ['❤️', '💖', '💘', '💝', '💕'];
-                  else if (type === ParticleEffect.FLOATING_LIKES) icons = ['👍', '👍🏻', '👍🏿', '🔥', '💯'];
-                  else if (type === ParticleEffect.FLOATING_STARS) icons = ['⭐', '✨', '🌟', '💫'];
-                  else if (type === ParticleEffect.FLOATING_MUSIC) icons = ['🎵', '🎶', '🎼', '🎹'];
-                  else if (type === ParticleEffect.FLOATING_MONEY) icons = ['💵', '💰', '🤑', '💎'];
-
-                  p.color = icons[Math.floor(Math.random() * icons.length)];
-              }
-
-              particlesRef.current.push(p);
-          }
-      }
-
-      // UPDATE & DRAW
-      ctx.save();
-      for (let i = particlesRef.current.length - 1; i >= 0; i--) {
-          const p = particlesRef.current[i];
-          
-          p.x += p.vx;
-          p.y += p.vy;
-          p.life -= p.decay;
-
-          if (p.rotation !== undefined && p.rotationSpeed) {
-              p.rotation += p.rotationSpeed;
-          }
-
-          if (p.type === ParticleEffect.SNOW) {
-              p.x += Math.sin(p.y * 0.01) * 0.5; // Sway
-          } else if (p.type === ParticleEffect.EMBERS) {
-              p.size *= 0.98;
-          }
-
-          // Kill logic
-          if (p.life <= 0 || (p.y > HEIGHT + 20 && p.type !== ParticleEffect.EMBERS && !isFloatingObject) || (p.y < -50 && isFloatingObject)) {
-              particlesRef.current.splice(i, 1);
-              continue;
-          }
-
-          ctx.globalAlpha = p.alpha * p.life;
-          
-          if (isFloatingObject) {
-             ctx.translate(p.x, p.y);
-             ctx.rotate(p.rotation! * Math.PI / 180);
-             ctx.font = `${p.size}px serif`;
-             ctx.textAlign = 'center';
-             ctx.textBaseline = 'middle';
-             ctx.fillText(p.color, 0, 0); // p.color is emoji
-             ctx.setTransform(1, 0, 0, 1, 0, 0);
-          } else {
-            ctx.fillStyle = p.color;
-            if (p.type === ParticleEffect.RAIN) {
-                ctx.beginPath();
-                ctx.moveTo(p.x, p.y);
-                ctx.lineTo(p.x + p.vx, p.y + (p.vy * 2)); // Stretch based on velocity
-                ctx.strokeStyle = p.color;
-                ctx.lineWidth = p.size;
-                ctx.stroke();
-            } else if (p.type === ParticleEffect.CONFETTI) {
-                ctx.translate(p.x, p.y);
-                ctx.rotate(p.life * 10);
-                ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size);
-                ctx.setTransform(1, 0, 0, 1, 0, 0); 
-            } else {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-          }
-      }
-      ctx.restore();
-  };
-
-  const getFilterStyle = (filter: VideoFilter) => {
-      switch (filter) {
-          case VideoFilter.NOIR: return 'grayscale(100%) contrast(120%)';
-          case VideoFilter.VINTAGE: return 'sepia(50%) contrast(110%) brightness(90%)';
-          case VideoFilter.VHS: return 'contrast(120%) saturate(120%)';
-          case VideoFilter.CYBERPUNK: return 'saturate(150%) contrast(110%) hue-rotate(-10deg)';
-          case VideoFilter.DREAMY: return 'blur(0.5px) brightness(110%) saturate(110%)';
-          case VideoFilter.SEPIA: return 'sepia(100%)';
-          case VideoFilter.HIGH_CONTRAST: return 'contrast(150%)';
-          case VideoFilter.COLD: return 'saturate(80%) hue-rotate(180deg)';
-          case VideoFilter.WARM: return 'saturate(120%)'; 
-          default: return 'none';
-      }
-  };
-
-  const drawScene = (ctx: CanvasRenderingContext2D, scene: Scene, opacity: number, progress: number, animate: boolean, audioIntensity: number, elapsedTimeMs: number) => {
-      ctx.save();
-      ctx.globalAlpha = opacity;
-
-      // 1. Camera Movement Logic
-      let scale = 1;
-      let tx = 0;
-      let ty = 0;
-      let rotation = 0;
-
-      // HANDHELD SHAKE (Applied before rotation/scale)
-      if (scene.cameraMovement === CameraMovement.HANDHELD || (scene.vfxConfig && scene.vfxConfig.shakeIntensity > 0 && animate)) {
-          const intensity = (scene.vfxConfig?.shakeIntensity || 1) * 2 * renderScale;
-          // Smooth sine wave based shake instead of random noise
-          const shakeX = Math.sin(elapsedTimeMs * 0.002) * intensity + Math.cos(elapsedTimeMs * 0.005) * (intensity * 0.5);
-          const shakeY = Math.cos(elapsedTimeMs * 0.003) * intensity + Math.sin(elapsedTimeMs * 0.007) * (intensity * 0.5);
-          ctx.translate(shakeX, shakeY);
-      }
-
-      // 2. Base Media
-      let mediaElement: HTMLImageElement | HTMLVideoElement | null = null;
-      if (scene.mediaType === 'video' && scene.videoUrl) {
-           mediaElement = getVideo(scene.videoUrl);
-           if (mediaElement instanceof HTMLVideoElement) {
-               if (animate && mediaElement.paused) mediaElement.play().catch(() => {}); 
-               else if (!animate) mediaElement.pause();
-           }
-      } else {
-           mediaElement = getImage(scene.imageUrl);
-      }
-
-      // Apply Canvas Filters
-      if (activeFilterRef.current !== VideoFilter.NONE && activeFilterRef.current !== VideoFilter.NEURAL_CINEMATIC) {
-          ctx.filter = getFilterStyle(activeFilterRef.current);
-      }
-
-      // Bloom
-      if (scene.vfxConfig && scene.vfxConfig.bloomIntensity > 0) {
-          const bloom = scene.vfxConfig.bloomIntensity;
-          const currentFilter = ctx.filter === 'none' ? '' : ctx.filter;
-          ctx.filter = `${currentFilter} brightness(${100 + bloom * 30}%) saturate(${100 + bloom * 20}%)`;
-      }
-
-      if (mediaElement) {
-          if (animate) {
-              const moveType = scene.cameraMovement || CameraMovement.STATIC;
-              const moveAmount = 0.1 * progress; // 10% movement over scene duration
-
-              switch(moveType) {
-                  case CameraMovement.ZOOM_IN:
-                      scale = 1 + moveAmount; // 1.0 -> 1.1
-                      break;
-                  case CameraMovement.ZOOM_OUT:
-                      scale = 1.1 - moveAmount; // 1.1 -> 1.0
-                      break;
-                  case CameraMovement.PAN_LEFT:
-                      scale = 1.1; 
-                      tx = -moveAmount * WIDTH; 
-                      break;
-                  case CameraMovement.PAN_RIGHT:
-                      scale = 1.1;
-                      tx = moveAmount * WIDTH; 
-                      break;
-                  case CameraMovement.ROTATE_CW:
-                      scale = 1.2; // Zoom in to avoid black corners
-                      rotation = moveAmount * 20; // Rotate up to 2 degrees
-                      break;
-                   case CameraMovement.ROTATE_CCW:
-                      scale = 1.2;
-                      rotation = -moveAmount * 20;
-                      break;
-                  case CameraMovement.STATIC:
-                  default:
-                      scale = 1;
-              }
-
-              // Audio Reactive Bump
-              if (activeFilterRef.current === VideoFilter.NEURAL_CINEMATIC && audioIntensity > 150) {
-                   const bump = (audioIntensity - 150) / 1000;
-                   scale += bump;
-              }
-          }
-
-          // Apply Rotation if needed
-          if (rotation !== 0) {
-              ctx.translate(WIDTH/2, HEIGHT/2);
-              ctx.rotate(rotation * Math.PI / 180);
-              ctx.translate(-WIDTH/2, -HEIGHT/2);
-          }
-
-          // Chromatic Aberration
-          if (scene.vfxConfig && scene.vfxConfig.chromaticAberration > 0) {
-              const offset = scene.vfxConfig.chromaticAberration * 3 * renderScale;
-              ctx.globalCompositeOperation = 'screen';
-              
-              ctx.save();
-              ctx.translate(offset, 0);
-              ctx.restore();
-              
-              ctx.globalCompositeOperation = 'source-over';
-              drawImageCover(ctx, mediaElement, 0, 0, WIDTH, HEIGHT, scale, tx, ty);
-
-              if (Math.random() < 0.1 * scene.vfxConfig.chromaticAberration) {
-                   const y = Math.random() * HEIGHT;
-                   const h = Math.random() * 50;
-                   const shift = (Math.random() - 0.5) * 50;
-                   try { ctx.drawImage(canvasRef.current!, 0, y, WIDTH, h, shift, y, WIDTH, h); } catch(e) {}
-              }
-          } else {
-              drawImageCover(ctx, mediaElement, 0, 0, WIDTH, HEIGHT, scale, tx, ty);
-          }
-
-      } else {
-          ctx.fillStyle = "#111";
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      }
-
-      ctx.filter = 'none';
-
-      // 3. Post-Process
-      if (activeFilterRef.current === VideoFilter.NEURAL_CINEMATIC) {
-          drawNeuralCinematicEffect(ctx, audioIntensity);
-      } else if (activeFilterRef.current !== VideoFilter.NONE) {
-          applyOverlayEffects(ctx, activeFilterRef.current);
-      }
-
-      // 4. Color Grading (Cinematic LUTs Simulation)
-      if (scene.colorGrading && scene.colorGrading !== ColorGradingPreset.NONE) {
-          drawColorGrading(ctx, scene.colorGrading);
-      }
-      
-      // 5. Particles
-      if (animate && scene.particleEffect && scene.particleEffect !== ParticleEffect.NONE) {
-          updateAndDrawParticles(ctx, scene.particleEffect);
-      } else if (scene.particleEffect && scene.particleEffect !== ParticleEffect.NONE) {
-          // Static draw (preview mode)
-          updateAndDrawParticles(ctx, scene.particleEffect);
-      }
-
-      // 6. Advanced VFX (Vignette)
-      if (scene.vfxConfig) {
-          if (scene.vfxConfig.vignetteIntensity > 0) {
-              const grad = ctx.createRadialGradient(WIDTH/2, HEIGHT/2, WIDTH * 0.3, WIDTH/2, HEIGHT/2, WIDTH * 0.9);
-              grad.addColorStop(0, 'rgba(0,0,0,0)');
-              grad.addColorStop(1, `rgba(0,0,0,${scene.vfxConfig.vignetteIntensity * 0.8})`);
-              ctx.globalCompositeOperation = 'source-over';
-              ctx.fillStyle = grad;
-              ctx.fillRect(0, 0, WIDTH, HEIGHT);
-          }
-      }
-
-      // 7. LAYERS (Multi-Layer System: Images, Videos, Text)
-      if (scene.layers && scene.layers.length > 0) {
-          scene.layers.forEach(layer => drawLayer(ctx, layer, elapsedTimeMs, animate));
-      } else if (scene.overlay) {
-          // Legacy support
-          drawLayer(ctx, { 
-              id: 'legacy', type: 'image', url: scene.overlay.url, name: 'Overlay', 
-              x: scene.overlay.x, y: scene.overlay.y, 
-              scale: scene.overlay.scale, opacity: scene.overlay.opacity ?? 1, rotation: 0 
-          }, elapsedTimeMs, animate);
-      }
-
-      // 8. Subtitles
-      if (showSubtitlesRef.current && scene.text) {
-          drawSubtitles(ctx, scene.text, subtitleStyleRef.current, progress);
-      }
-      
-      ctx.restore();
-  };
-
-  const drawColorGrading = (ctx: CanvasRenderingContext2D, preset: ColorGradingPreset) => {
-      ctx.save();
-      
-      if (preset === ColorGradingPreset.TEAL_ORANGE) {
-          ctx.globalCompositeOperation = 'overlay';
-          ctx.fillStyle = 'rgba(0, 255, 255, 0.2)';
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-          ctx.globalCompositeOperation = 'soft-light';
-          ctx.fillStyle = 'rgba(255, 160, 0, 0.3)';
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      }
-      else if (preset === ColorGradingPreset.MATRIX) {
-          ctx.globalCompositeOperation = 'overlay';
-          ctx.fillStyle = 'rgba(0, 255, 100, 0.2)';
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-          ctx.globalCompositeOperation = 'multiply';
-          ctx.fillStyle = 'rgba(0, 50, 20, 0.3)';
-          ctx.fillRect(0, 0, WIDTH, HEIGHT);
-      }
-      else if (preset === ColorGradingPreset.DRAMATIC_BW) {
-           ctx.globalCompositeOperation = 'color';
-           ctx.fillStyle = '#000';
-           ctx.fillRect(0,0,WIDTH,HEIGHT);
-           ctx.globalCompositeOperation = 'overlay';
-           ctx.fillStyle = 'rgba(0,0,0,0.5)'; // High Contrast
-           ctx.fillRect(0,0,WIDTH,HEIGHT);
-      }
-      else if (preset === ColorGradingPreset.GOLDEN_HOUR) {
-          ctx.globalCompositeOperation = 'overlay';
-          ctx.fillStyle = 'rgba(255, 200, 0, 0.2)';
-          ctx.fillRect(0,0,WIDTH,HEIGHT);
-          const grad = ctx.createLinearGradient(0,0,0,HEIGHT);
-          grad.addColorStop(0, 'rgba(255, 150, 0, 0.2)');
-          grad.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.globalCompositeOperation = 'screen';
-          ctx.fillStyle = grad;
-          ctx.fillRect(0,0,WIDTH,HEIGHT);
-      }
-      else if (preset === ColorGradingPreset.CYBER_NEON) {
-          ctx.globalCompositeOperation = 'overlay';
-          ctx.fillStyle = 'rgba(255, 0, 255, 0.2)'; // Magenta
-          ctx.fillRect(0,0,WIDTH,HEIGHT);
-          ctx.globalCompositeOperation = 'screen';
-          ctx.fillStyle = 'rgba(0, 255, 255, 0.1)'; // Cyan
-          ctx.fillRect(0,0,WIDTH,HEIGHT);
-      }
-
-      ctx.restore();
-  }
-
-  const drawLayer = (ctx: CanvasRenderingContext2D, layer: LayerConfig, elapsedTimeMs: number, animate: boolean) => {
-      ctx.save();
-      const x = layer.x * WIDTH;
-      const y = layer.y * HEIGHT;
-      
-      ctx.translate(x, y);
-      ctx.rotate((layer.rotation * Math.PI) / 180);
-      ctx.scale(layer.scale, layer.scale);
-
-      ctx.globalAlpha = layer.opacity;
-      if (layer.blendMode) ctx.globalCompositeOperation = layer.blendMode;
-
-      // Shadow Effects - Applied BEFORE drawing content
-      if (layer.shadowColor) {
-          ctx.shadowColor = layer.shadowColor;
-          ctx.shadowBlur = (layer.shadowBlur || 0) * renderScale;
-          ctx.shadowOffsetX = (layer.shadowOffsetX || 0) * renderScale;
-          ctx.shadowOffsetY = (layer.shadowOffsetY || 0) * renderScale;
-      } else {
-          ctx.shadowColor = 'transparent';
-      }
-
-      if (layer.type === 'text' && layer.text) {
-          const fontSize = (layer.fontSize || 50) * renderScale;
-          const fontFamily = layer.fontFamily || 'Inter';
-          const fontWeight = layer.fontWeight || 'bold';
-          ctx.font = `${fontWeight} ${fontSize}px "${fontFamily}"`;
-          ctx.fillStyle = layer.fontColor || '#ffffff';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          
-          if (layer.textShadow) {
-              // Override manual shadows for text defaults if checked
-              ctx.shadowColor = 'rgba(0,0,0,0.8)';
-              ctx.shadowBlur = 4 * renderScale;
-              ctx.shadowOffsetX = 2 * renderScale;
-              ctx.shadowOffsetY = 2 * renderScale;
-          }
-          
-          ctx.fillText(layer.text, 0, 0);
-      } else {
-          // IMAGE or VIDEO LAYER
-          let media: HTMLImageElement | HTMLVideoElement | null = null;
-          
-          if (layer.type === 'video' && layer.url) {
-              media = getVideo(layer.url);
-              if (media instanceof HTMLVideoElement) {
-                   // Video Layer Sync Logic
-                   if (animate) {
-                       const videoTime = (elapsedTimeMs / 1000) % media.duration;
-                       if (Math.abs(media.currentTime - videoTime) > 0.3) {
-                           media.currentTime = videoTime;
-                       }
-                       if (media.paused) media.play().catch(()=>{});
-                   } else {
-                       media.currentTime = 0; // Preview at start
-                       media.pause();
-                   }
-              }
-          } else if (layer.url) {
-              media = getImage(layer.url);
-          }
-
-          if(media) {
-              const baseSize = WIDTH * 0.2; 
-              // Determine Aspect Ratio
-              let width = 0, height = 0;
-              if (media instanceof HTMLVideoElement) {
-                  width = media.videoWidth; height = media.videoHeight;
-              } else {
-                  width = media.width; height = media.height;
-              }
-
-              if (width > 0 && height > 0) {
-                  const aspect = width / height;
-                  let drawW, drawH;
-                  if(aspect > 1) { drawW = baseSize; drawH = baseSize / aspect; }
-                  else { drawH = baseSize; drawW = baseSize * aspect; }
-                  
-                  ctx.drawImage(media, -drawW/2, -drawH/2, drawW, drawH);
-              }
-          }
-      }
-      
-      ctx.shadowColor = 'transparent'; // Reset shadow
-      ctx.restore();
-  };
-
-  const drawNeuralCinematicEffect = (ctx: CanvasRenderingContext2D, audioIntensity: number) => {
-      const flareIntensity = Math.max(0, (audioIntensity - 100) / 255); 
-      if (flareIntensity > 0.1) {
-          ctx.globalCompositeOperation = 'screen';
-          const gradient = ctx.createLinearGradient(0, 0, WIDTH, 0);
-          gradient.addColorStop(0, 'rgba(0, 100, 255, 0)');
-          gradient.addColorStop(0.5, `rgba(100, 200, 255, ${flareIntensity * 0.5})`);
-          gradient.addColorStop(1, 'rgba(0, 100, 255, 0)');
-          ctx.fillStyle = gradient;
-          ctx.fillRect(0, HEIGHT * 0.3, WIDTH, HEIGHT * 0.05);
-      }
-      ctx.globalCompositeOperation = 'overlay';
-      ctx.fillStyle = `rgba(0,0,0, 0.15)`;
-      ctx.fillRect(0,0,WIDTH,HEIGHT);
-  };
-
-  const applyOverlayEffects = (ctx: CanvasRenderingContext2D, filter: VideoFilter) => {
-       ctx.save();
-       if (filter === VideoFilter.VHS) {
-          ctx.fillStyle = 'rgba(0,0,0,0.1)';
-          for(let y=0; y<HEIGHT; y+=4) ctx.fillRect(0, y, WIDTH, 1);
-       }
-       ctx.restore();
-  };
-
-  const drawTransition = (ctx: CanvasRenderingContext2D, type: VideoTransition, nextScene: Scene, progress: number, audioIntensity: number) => {
-      ctx.save();
-      if (type === VideoTransition.FADE || type === VideoTransition.AUTO) {
-          ctx.globalAlpha = progress;
-          drawScene(ctx, nextScene, 1, 0, true, audioIntensity, 0); 
-      } else if (type === VideoTransition.SLIDE) {
-          const xOffset = WIDTH * (1 - progress);
-          ctx.translate(xOffset, 0);
-          drawScene(ctx, nextScene, 1, 0, true, audioIntensity, 0);
-      } else if (type === VideoTransition.WIPE) {
-          ctx.beginPath();
-          ctx.rect(0, 0, WIDTH * progress, HEIGHT);
-          ctx.clip();
-          drawScene(ctx, nextScene, 1, 0, true, audioIntensity, 0);
-      } else if (type === VideoTransition.ZOOM) {
-          const scale = 0.5 + (0.5 * progress);
-          ctx.translate(WIDTH/2, HEIGHT/2);
-          ctx.scale(scale, scale);
-          ctx.translate(-WIDTH/2, -HEIGHT/2);
-          ctx.globalAlpha = progress;
-          drawScene(ctx, nextScene, 1, 0, true, audioIntensity, 0);
-      }
-      ctx.restore();
-  };
-
-  const drawImageCover = (ctx: CanvasRenderingContext2D, img: HTMLImageElement | HTMLVideoElement, x: number, y: number, w: number, h: number, scale: number = 1, tx: number = 0, ty: number = 0) => {
-      const imgWidth = img instanceof HTMLVideoElement ? img.videoWidth : img.width;
-      const imgHeight = img instanceof HTMLVideoElement ? img.videoHeight : img.height;
-      if (imgWidth === 0 || imgHeight === 0) return;
-
-      const imgRatio = imgWidth / imgHeight;
-      const winRatio = w / h;
-      let nw = w, nh = h, nx = 0, ny = 0;
-
-      if (imgRatio > winRatio) {
-          nh = h;
-          nw = h * imgRatio;
-          nx = (w - nw) / 2;
-      } else {
-          nw = w;
-          nh = w / imgRatio;
-          ny = (h - nh) / 2;
-      }
-
-      ctx.save();
-      ctx.translate(w/2, h/2);
-      ctx.scale(scale, scale);
-      ctx.translate(tx, ty);
-      ctx.translate(-w/2, -h/2);
-      ctx.drawImage(img, nx, ny, nw, nh);
-      ctx.restore();
-  };
-
-  // Improved Subtitles
-  const drawSubtitles = (ctx: CanvasRenderingContext2D, text: string, style: SubtitleStyle, progress: number) => {
-       const SAFE_ZONE_WIDTH_PERCENT = 0.85; 
-       let fontSize = WIDTH * 0.05;
-       
-       ctx.font = `900 ${fontSize}px "Inter", sans-serif`;
-       const maxWidth = WIDTH * SAFE_ZONE_WIDTH_PERCENT;
-       const x = WIDTH / 2;
-       
-       const words = text.split(' ');
-       let lines: string[] = [];
-       const calculateLines = (currentFontSize: number) => {
-           ctx.font = `900 ${currentFontSize}px "Inter", sans-serif`;
-           const resLines = [];
-           let line = "";
-           for(let w of words) {
-               const testLine = line + w + " ";
-               const metrics = ctx.measureText(testLine);
-               if (metrics.width > maxWidth && line !== "") {
-                   resLines.push(line.trim());
-                   line = w + " ";
-               } else { line = testLine; }
-           }
-           resLines.push(line.trim());
-           return resLines;
-       };
-
-       lines = calculateLines(fontSize);
-       if (lines.length > 2) { fontSize = fontSize * 0.75; lines = calculateLines(fontSize); }
-       
-       const lineHeight = fontSize * 1.25;
-       const totalBlockHeight = lines.length * lineHeight;
-       const bottomAnchor = HEIGHT * (1 - 0.08);
-       const startY = bottomAnchor - totalBlockHeight + (lineHeight * 0.5);
-
-       if (style === SubtitleStyle.WORD_BY_WORD) {
-           const wordIdx = Math.floor(progress * words.length);
-           const currentWord = words[Math.min(wordIdx, words.length - 1)] || "";
-           ctx.shadowColor = 'rgba(0,0,0,0.8)';
-           ctx.shadowBlur = 10;
-           ctx.fillStyle = '#fbbf24'; 
-           ctx.strokeStyle = '#000';
-           ctx.lineWidth = fontSize * 0.1;
-           ctx.strokeText(currentWord, x, HEIGHT * 0.85);
-           ctx.fillText(currentWord, x, HEIGHT * 0.85);
-           ctx.shadowBlur = 0;
-           return;
-       }
-
-       lines.forEach((l, i) => {
-           const ly = startY + (i * lineHeight);
-           // Style Rendering (Same as before but ensures proper render)
-           if (style === SubtitleStyle.MODERN) {
-               const metrics = ctx.measureText(l);
-               const bgW = metrics.width + (fontSize * 0.5);
-               const bgH = fontSize * 1.1;
-               ctx.fillStyle = 'rgba(0,0,0,0.7)';
-               ctx.beginPath(); ctx.roundRect(x - bgW/2, ly - bgH/2, bgW, bgH, 8); ctx.fill();
-               ctx.fillStyle = '#fff';
-           } else {
-               ctx.strokeStyle = '#000';
-               ctx.lineWidth = fontSize * 0.15;
-               ctx.lineJoin = 'round';
-               ctx.strokeText(l, x, ly);
-               ctx.fillStyle = style === SubtitleStyle.NEON ? '#00ffff' : '#fbbf24';
-           }
-           ctx.textAlign = 'center';
-           ctx.textBaseline = 'middle';
-           ctx.fillText(l, x, ly);
-       });
-  };
-
-  const getImage = (url?: string) => {
-      if (!url) return null;
-      if (imageCacheRef.current.has(url)) return imageCacheRef.current.get(url)!;
-      const img = new Image();
-      img.src = url;
-      img.crossOrigin = "anonymous";
-      imageCacheRef.current.set(url, img);
-      return img;
-  };
-
-  const getVideo = (url: string) => {
-      if (videoCacheRef.current.has(url)) return videoCacheRef.current.get(url)!;
-      const vid = document.createElement('video');
-      vid.src = url;
-      vid.muted = true;
-      vid.loop = true;
-      vid.playsInline = true;
-      vid.crossOrigin = "anonymous";
-      // Auto-load without playing immediately to save resources until render
-      vid.load();
-      videoCacheRef.current.set(url, vid);
-      return vid;
-  };
-  
-  const drawOverlays = (ctx: CanvasRenderingContext2D) => {
-     if (channelLogoRef.current) {
-         drawLayer(ctx, { 
-             id: 'logo', type: 'image', url: channelLogoRef.current.url, name: 'Logo',
-             x: channelLogoRef.current.x, y: channelLogoRef.current.y, 
-             scale: channelLogoRef.current.scale, opacity: channelLogoRef.current.opacity ?? 1, rotation: 0
-         }, 0, false);
-     }
-  };
-
-  useImperativeHandle(ref, () => ({
-      startRecording: (hq) => {
-          if (isRecordingRef.current) return;
-          setIsExporting(true);
-          setExportProgress(0);
-          setCurrentSceneIndex(0);
-          setIsPlaying(true);
-          setRenderScale(hq ? 2 : 1);
-          setTimeout(() => {
-              if (!canvasRef.current || !destNodeRef.current) return;
-              const canvasStream = canvasRef.current.captureStream(30);
-              const audioStream = destNodeRef.current.stream;
-              const combinedStream = new MediaStream([...canvasStream.getVideoTracks(), ...audioStream.getAudioTracks()]);
-              let mimeType = 'video/webm;codecs=vp9';
-              if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
-              
-              chunksRef.current = [];
-              const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: hq ? 8000000 : 2500000 });
-              recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-              recorder.onstop = () => {
-                  const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-                  triggerBrowserDownload(blob, `viralflow_${Date.now()}.webm`);
-                  isRecordingRef.current = false;
-                  setIsExporting(false);
-                  setRenderScale(1);
-              };
-              recorder.start();
-              mediaRecorderRef.current = recorder;
-              isRecordingRef.current = true;
-          }, 500);
-      },
-      stopRecording: () => {
-          if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
-      }
-  }));
+      return () => {
+          if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      };
+  }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format, activeFilter, globalTransition, showSubtitles, subtitleStyle, channelLogo, userTier, scrubProgress, scenes]);
 
   return (
-    <div ref={containerRef} className={`relative w-full bg-black rounded-lg overflow-hidden shadow-2xl group border border-zinc-800 ${isFullscreen ? 'fixed inset-0 z-[100] h-screen w-screen border-none rounded-none' : 'aspect-video'}`}>
-      <canvas ref={canvasRef} className="w-full h-full object-contain" />
-      {isExporting && (
-          <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
-              <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mb-4" />
-              <h3 className="text-xl font-bold text-white">Renderizando Vídeo...</h3>
-              <p className="text-zinc-400 font-mono text-sm mt-2">{exportProgress}% Concluído</p>
-              <div className="w-64 h-2 bg-zinc-800 rounded-full mt-4 overflow-hidden">
-                  <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${exportProgress}%` }}></div>
-              </div>
-          </div>
-      )}
-      {!isExporting && (
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-6 pointer-events-none">
-             <div className="absolute top-4 right-4 pointer-events-auto">
-                 <button onClick={toggleFullscreen} className="p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white backdrop-blur-md transition-colors">
-                     {isFullscreen ? <Minimize2 className="w-5 h-5"/> : <Maximize2 className="w-5 h-5"/>}
-                 </button>
+    <div 
+        ref={containerRef} 
+        onClick={togglePlay}
+        className="relative w-full aspect-video bg-black overflow-hidden group border border-zinc-800 rounded-lg shadow-2xl cursor-pointer"
+    >
+        <canvas ref={canvasRef} className="w-full h-full object-contain pointer-events-none" />
+        
+        {isExporting && (
+            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
+                <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                <h3 className="text-white font-bold text-xl animate-pulse">Renderizando...</h3>
+                <p className="text-zinc-400 text-sm mt-2">{exportProgress}%</p>
+            </div>
+        )}
+
+        {!isPlaying && !isExporting && (
+             <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
+                 <div className="bg-black/50 p-4 rounded-full backdrop-blur-sm shadow-xl transform group-hover:scale-110 transition-transform">
+                     <Play className="w-10 h-10 text-white fill-white" />
+                 </div>
              </div>
-             
-             <div className="pointer-events-auto flex items-center justify-center gap-6">
-                <button onClick={() => { if(currentSceneIndex > 0) setCurrentSceneIndex(currentSceneIndex - 1); }} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all"><SkipBack className="w-6 h-6" /></button>
-                <button onClick={() => setIsPlaying(!isPlaying)} className="p-4 rounded-full bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/30 transition-all scale-100 hover:scale-110 active:scale-95">
-                    {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
-                </button>
-                <button onClick={() => { if(currentSceneIndex < scenes.length - 1) setCurrentSceneIndex(currentSceneIndex + 1); }} className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white backdrop-blur-md transition-all"><SkipForward className="w-6 h-6" /></button>
-             </div>
-             <div className="text-center mt-4 text-xs font-mono text-zinc-400">CENA {currentSceneIndex + 1} / {scenes.length}</div>
-        </div>
-      )}
+        )}
+
+        <button onClick={toggleFullscreen} className="absolute bottom-4 right-4 p-2 bg-black/50 hover:bg-black/80 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-40">
+            {isFullscreen ? <Minimize2 className="w-4 h-4"/> : <Maximize2 className="w-4 h-4"/>}
+        </button>
     </div>
   );
 });
 
-VideoPlayer.displayName = 'VideoPlayer';
 export default VideoPlayer;

@@ -1,6 +1,3 @@
-
-
-
 export type Language = 'pt' | 'en' | 'es';
 export type Theme = 'light' | 'dark';
 
@@ -149,6 +146,16 @@ export interface SceneMusicConfig {
   volume: number; // 0.0 to 1.0
 }
 
+export interface Keyframe {
+  id: string;
+  time: number; // 0.0 to 1.0 (relative to scene duration)
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+  opacity: number;
+}
+
 export interface LayerConfig {
   id: string;
   type: 'image' | 'text' | 'video'; 
@@ -161,6 +168,14 @@ export interface LayerConfig {
   opacity: number; // 0.0 to 1.0
   blendMode?: GlobalCompositeOperation;
   
+  // Animation
+  keyframes?: Keyframe[];
+
+  // Video Specific (Trimming)
+  trimStart?: number; // Start time in seconds
+  trimEnd?: number;   // End time in seconds
+  totalDuration?: number; // Original video duration (cached)
+
   // Shadow Effects
   shadowColor?: string;
   shadowBlur?: number;

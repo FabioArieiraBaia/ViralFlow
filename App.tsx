@@ -709,70 +709,72 @@ const App: React.FC = () => {
                                 </div>
                             )}
                         </div>
-                    </div>
-                )}
+                    )}
+                </div>
+            </div>
+        )}
 
-                {/* TAB: SETTINGS */}
-                {activeTab === 'settings' && (
-                    <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
-                        <div className="max-w-2xl mx-auto space-y-8">
-                             <h2 className="text-2xl font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Settings className="w-6 h-6" /> {translations[lang].settings}</h2>
-                             
-                             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
-                                 <div>
-                                     <h3 className="font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Key className="w-4 h-4 text-indigo-500" /> {translations[lang].keysTitle}</h3>
-                                     <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{translations[lang].keysDesc}</p>
-                                 </div>
-                                 <textarea value={manualKeys} onChange={(e) => updateKeys(e.target.value)} className="w-full h-32 bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-600 dark:text-zinc-300 outline-none focus:border-indigo-500 resize-none" placeholder="AIzaSy..." />
-                                 <div className="flex justify-between items-center">
-                                     <div className="flex items-center gap-2">
-                                         <div className={`w-2 h-2 rounded-full ${apiKeyCount > 0 ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-                                         <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{apiKeyCount} {translations[lang].activeKeys}</span>
-                                     </div>
-                                     <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">{translations[lang].getKey} <ChevronRight className="w-3 h-3" /></a>
-                                 </div>
+        {/* TAB: SETTINGS */}
+        {activeTab === 'settings' && (
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+                <div className="max-w-2xl mx-auto space-y-8">
+                     <h2 className="text-2xl font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Settings className="w-6 h-6" /> {translations[lang].settings}</h2>
+                     
+                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
+                         <div>
+                             <h3 className="font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Key className="w-4 h-4 text-indigo-500" /> {translations[lang].keysTitle}</h3>
+                             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{translations[lang].keysDesc}</p>
+                         </div>
+                         <textarea value={manualKeys} onChange={(e) => updateKeys(e.target.value)} className="w-full h-32 bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-600 dark:text-zinc-300 outline-none focus:border-indigo-500 resize-none" placeholder="AIzaSy..." />
+                         <div className="flex justify-between items-center">
+                             <div className="flex items-center gap-2">
+                                 <div className={`w-2 h-2 rounded-full ${apiKeyCount > 0 ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                                 <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{apiKeyCount} {translations[lang].activeKeys}</span>
                              </div>
+                             <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">{translations[lang].getKey} <ChevronRight className="w-3 h-3" /></a>
+                         </div>
+                     </div>
 
-                             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
-                                 <div>
-                                     <h3 className="font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Video className="w-4 h-4 text-emerald-500" /> {translations[lang].pexelsTitle}</h3>
-                                     <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{translations[lang].pexelsDesc}</p>
-                                 </div>
-                                 <input type="text" value={pexelsKey} onChange={(e) => updatePexelsKey(e.target.value)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-600 dark:text-zinc-300 outline-none focus:border-emerald-500" placeholder="Pexels API Key..." />
-                             </div>
-                             
-                             <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-xl p-4 flex gap-3">
-                                 <ShieldCheck className="w-5 h-5 text-amber-600 dark:text-amber-500 shrink-0" />
-                                 <div>
-                                     <h4 className="font-bold text-sm text-amber-800 dark:text-amber-400">{translations[lang].localSecurity}</h4>
-                                     <p className="text-xs text-amber-700 dark:text-amber-500/80 mt-1">{translations[lang].localSecDesc}</p>
-                                 </div>
-                             </div>
-                        </div>
-                    </div>
-                )}
+                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
+                         <div>
+                             <h3 className="font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Video className="w-4 h-4 text-emerald-500" /> {translations[lang].pexelsTitle}</h3>
+                             <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{translations[lang].pexelsDesc}</p>
+                         </div>
+                         <input type="text" value={pexelsKey} onChange={(e) => updatePexelsKey(e.target.value)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-600 dark:text-zinc-300 outline-none focus:border-emerald-500" placeholder="Pexels API Key..." />
+                     </div>
+                     
+                     <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/30 rounded-xl p-4 flex gap-3">
+                         <ShieldCheck className="w-5 h-5 text-amber-600 dark:text-amber-500 shrink-0" />
+                         <div>
+                             <h4 className="font-bold text-sm text-amber-800 dark:text-amber-400">{translations[lang].localSecurity}</h4>
+                             <p className="text-xs text-amber-700 dark:text-amber-500/80 mt-1">{translations[lang].localSecDesc}</p>
+                         </div>
+                     </div>
+                </div>
+            </div>
+        )}
 
-            </main>
+      </main>
 
-            {/* MODALS */}
-            {showWelcomeModal && <WelcomeModal onClose={handleCloseWelcome} lang={lang} t={translations} />}
-            {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} onUpgrade={handleUpgrade} lang={lang} t={translations} />}
-            {editingScene && (
-                <EditSceneModal 
-                    scene={editingScene} 
-                    onClose={() => setEditingScene(null)} 
-                    onSave={saveSceneUpdate} 
-                    onRegenerateAsset={handleSceneAssetRegeneration}
-                    onRegenerateAudio={handleSceneAudioRegeneration}
-                    lang={lang}
-                    userTier={userTier}
-                    format={format}
-                    t={translations}
-                />
-            )}
+      {/* MODALS */}
+      {showWelcomeModal && <WelcomeModal onClose={handleCloseWelcome} lang={lang} t={translations} />}
+      {showUpgradeModal && <UpgradeModal onClose={() => setShowUpgradeModal(false)} onUpgrade={handleUpgrade} lang={lang} t={translations} />}
+      {editingScene && (
+        <EditSceneModal 
+            scene={editingScene} 
+            onClose={() => setEditingScene(null)} 
+            onSave={saveSceneUpdate} 
+            onRegenerateAsset={handleSceneAssetRegeneration}
+            onRegenerateAudio={handleSceneAudioRegeneration}
+            lang={lang}
+            userTier={userTier}
+            format={format}
+            t={translations}
+        />
+      )}
 
-        </div>
-    );
+    </div>
+  );
 };
 
 export default App;
