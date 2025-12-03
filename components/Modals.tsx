@@ -1,7 +1,8 @@
 
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle } from '../types';
-import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic } from 'lucide-react';
+import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 
 // VOICE OPTIONS CONSTANT (Reused here for the modal)
@@ -217,6 +218,7 @@ export const EditSceneModal: React.FC<{
     const [activeTab, setActiveTab] = useState<'text'|'visual'|'audio'|'vfx'>('text');
     const [isRegeneratingVisual, setIsRegeneratingVisual] = useState(false);
     const [isRegeneratingAudio, setIsRegeneratingAudio] = useState(false);
+    const [audioGenStatus, setAudioGenStatus] = useState<'idle' | 'success' | 'error'>('idle');
     const [selectedProvider, setSelectedProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
     const [pollinationsModel, setPollinationsModel] = useState<PollinationsModel>('turbo');
     const [geminiModel, setGeminiModel] = useState<GeminiModel>('gemini-2.5-flash-image');
@@ -383,7 +385,6 @@ export const EditSceneModal: React.FC<{
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
-            console.log('[Modal] File selected:', file.name, file.type);
             const url = URL.createObjectURL(file);
             const isVideo = file.type.startsWith('video/');
             
@@ -395,7 +396,6 @@ export const EditSceneModal: React.FC<{
                     videoUrl: isVideo ? url : undefined,
                     mediaType: (isVideo ? 'video' : 'image') as 'image' | 'video'
                 };
-                console.log('[Modal] New Scene State:', newState);
                 return newState;
             });
         }
@@ -414,12 +414,27 @@ export const EditSceneModal: React.FC<{
 
     const handleRegenerateAudio = async () => {
         setIsRegeneratingAudio(true);
+        setAudioGenStatus('idle');
         try {
             const res = await onRegenerateAudio(localScene);
             if (res.success) {
-                setLocalScene(prev => ({ ...prev, audioUrl: res.url, audioBuffer: res.buffer }));
+                // When audio is regenerated, update scene duration estimate
+                const dur = res.buffer ? res.buffer.duration + 0.2 : localScene.durationEstimate;
+                setLocalScene(prev => ({ 
+                    ...prev, 
+                    audioUrl: res.url, 
+                    audioBuffer: res.buffer,
+                    durationEstimate: dur 
+                }));
+                setAudioGenStatus('success');
+                setTimeout(() => setAudioGenStatus('idle'), 3000);
+            } else {
+                setAudioGenStatus('error');
             }
-        } catch (e) { console.error(e); }
+        } catch (e) { 
+            console.error(e);
+            setAudioGenStatus('error');
+        }
         setIsRegeneratingAudio(false);
     };
 
@@ -476,7 +491,7 @@ export const EditSceneModal: React.FC<{
                             <button onClick={() => setIsPreviewPlaying(!isPreviewPlaying)} className="w-10 h-10 rounded-full bg-white text-black hover:scale-110 transition-transform flex items-center justify-center">
                                 {isPreviewPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current ml-1" />}
                             </button>
-                            <span className="text-xs font-mono text-zinc-400">{(currentFrameTime * localScene.durationEstimate).toFixed(1)}s / {localScene.durationEstimate}s</span>
+                            <span className="text-xs font-mono text-zinc-400">{(currentFrameTime * localScene.durationEstimate).toFixed(1)}s / {localScene.durationEstimate.toFixed(1)}s</span>
                          </div>
                          {selectedLayer && (
                              <div className="flex items-center gap-2">
@@ -527,10 +542,34 @@ export const EditSceneModal: React.FC<{
                                         {VOICE_OPTIONS.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
                                     </select>
                                 </div>
-                                <div className="pt-2">
-                                     <button onClick={handleRegenerateAudio} disabled={isRegeneratingAudio} className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50">
-                                        {isRegeneratingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
-                                        {isRegeneratingAudio ? "Gerando Voz..." : "Atualizar Áudio (Regenerar Voz)"}
+                                <div className="pt-2 flex flex-col gap-2">
+                                     <div className="flex items-center justify-between text-xs px-1">
+                                         <label className="font-bold text-zinc-500 uppercase">Status do Áudio:</label>
+                                         {localScene.audioUrl ? (
+                                             <span className="flex items-center gap-1 text-emerald-600 font-bold bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded"><Volume2 className="w-3 h-3" /> Áudio Presente ({(localScene.durationEstimate || 0).toFixed(1)}s)</span>
+                                         ) : (
+                                             <span className="flex items-center gap-1 text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded"><MicOff className="w-3 h-3" /> Sem Áudio</span>
+                                         )}
+                                     </div>
+
+                                     <button 
+                                        onClick={handleRegenerateAudio} 
+                                        disabled={isRegeneratingAudio} 
+                                        className={`w-full py-3 rounded-lg font-bold text-sm flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-md ${
+                                            audioGenStatus === 'success' ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 
+                                            audioGenStatus === 'error' ? 'bg-red-600 hover:bg-red-500 text-white' : 
+                                            'bg-zinc-800 hover:bg-zinc-700 text-white'
+                                        }`}
+                                     >
+                                        {isRegeneratingAudio ? <Loader2 className="w-4 h-4 animate-spin" /> : 
+                                         audioGenStatus === 'success' ? <CheckCircle2 className="w-4 h-4" /> : 
+                                         audioGenStatus === 'error' ? <AlertCircle className="w-4 h-4" /> : 
+                                         <Mic className="w-4 h-4" />}
+                                        
+                                        {isRegeneratingAudio ? "Gerando Voz..." : 
+                                         audioGenStatus === 'success' ? "Áudio Gerado com Sucesso!" : 
+                                         audioGenStatus === 'error' ? "Erro ao Gerar Áudio" : 
+                                         "Atualizar Áudio (Regenerar Voz)"}
                                      </button>
                                 </div>
                              </div>
@@ -539,6 +578,24 @@ export const EditSceneModal: React.FC<{
 
                     {activeTab === 'vfx' && (
                         <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                             {/* Transition Selector */}
+                             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-3">
+                                <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2"><ArrowRightLeft className="w-4 h-4" /> Transição de Saída</h4>
+                                <select 
+                                    value={localScene.transition || VideoTransition.AUTO} 
+                                    onChange={(e) => setLocalScene({...localScene, transition: e.target.value as VideoTransition})}
+                                    className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white outline-none"
+                                >
+                                    <option value={VideoTransition.AUTO}>Padrão (Global)</option>
+                                    <option value={VideoTransition.NONE}>Corte Seco (Cut)</option>
+                                    <option value={VideoTransition.FADE}>Dissolver (Fade)</option>
+                                    <option value={VideoTransition.SLIDE}>Deslizar (Slide)</option>
+                                    <option value={VideoTransition.ZOOM}>Zoom</option>
+                                    <option value={VideoTransition.WIPE}>Wipe</option>
+                                </select>
+                                <p className="text-[10px] text-zinc-500">Define como esta cena transita para a próxima.</p>
+                             </div>
+
                              <div className="space-y-3">
                                 <div className="flex items-center justify-between">
                                     <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Camadas (Layers)</label>

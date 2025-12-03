@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe } from '../types';
 import { Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
@@ -201,7 +202,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               try {
                   const resp = await fetch(bgMusicUrl);
                   const arrayBuffer = await resp.arrayBuffer();
-                  // Fix: Safely await decodeAudioData to handle browser compatibility issues
                   const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
                   if (decoded) {
                     buffer = decoded;
@@ -212,14 +212,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                   return;
               }
           }
-          // Fix: Ensure buffer is a valid AudioBuffer instance before playing
           if (isPlaying && buffer && buffer instanceof AudioBuffer) playMusic(buffer, bgMusicUrl);
       };
       loadMusic();
   }, [bgMusicUrl, isPlaying]);
 
   const playMusic = (buffer: AudioBuffer, url: string) => {
-      // Fix: Defensive check
       if (!buffer || !(buffer instanceof AudioBuffer)) return;
 
       const ctx = getAudioContext();
@@ -230,14 +228,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
 
       musicSourceRef.current = ctx.createBufferSource();
-      
       try {
         musicSourceRef.current.buffer = buffer;
       } catch (err) {
-        console.error("Failed to set music buffer", err);
         return;
       }
-
       musicSourceRef.current.loop = true;
       
       if (!musicGainRef.current) {
@@ -252,7 +247,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   };
 
   const playSpeech = (buffer: AudioBuffer) => {
-      // Fix: Defensive check
       if (!buffer || !(buffer instanceof AudioBuffer)) return;
 
       const ctx = getAudioContext();
@@ -260,14 +254,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
            try { speechSourceRef.current.stop(); } catch(e){}
       }
       speechSourceRef.current = ctx.createBufferSource();
-      
       try {
         speechSourceRef.current.buffer = buffer;
       } catch (err) {
-        console.error("Failed to set speech buffer", err);
         return;
       }
-
       speechSourceRef.current.connect(masterGainRef.current!);
       speechSourceRef.current.start(0);
   };
@@ -291,8 +282,16 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         const audioTrack = dest.stream.getAudioTracks()[0];
         if(audioTrack) stream.addTrack(audioTrack);
 
+        let mimeType = 'video/webm;codecs=vp9';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+             mimeType = 'video/webm;codecs=vp8';
+             if (!MediaRecorder.isTypeSupported(mimeType)) {
+                 mimeType = 'video/webm';
+             }
+        }
+
         mediaRecorderRef.current = new MediaRecorder(stream, {
-            mimeType: 'video/webm;codecs=vp9',
+            mimeType: mimeType,
             videoBitsPerSecond: highQuality ? 8000000 : 2500000 
         });
 
@@ -302,6 +301,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         };
 
         mediaRecorderRef.current.onstop = () => {
+            console.log("Recorder Stopped. Exporting Blob...");
             const blob = new Blob(chunksRef.current, { type: 'video/webm' });
             triggerBrowserDownload(blob, `viralflow_video_${Date.now()}.webm`);
             setIsExporting(false);
@@ -310,6 +310,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         };
 
         mediaRecorderRef.current.start();
+        console.log("Recording started...");
     },
     stopRecording: () => {
         if(mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -323,7 +324,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const getVideoElement = (url: string): HTMLVideoElement => {
       let v = videoCacheRef.current.get(url);
       if (!v) {
-          console.log('[VideoPlayer] Init video element:', url);
           v = document.createElement('video');
           v.src = url;
           v.muted = true;
@@ -333,7 +333,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           videoCacheRef.current.set(url, v);
           v.load();
       }
-      // Ensure it's ready to be drawn
       if (v.readyState === 0) v.load();
       return v;
   };
@@ -447,7 +446,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       const fontSize = Math.min(width * 0.05, 48);
       ctx.font = `900 ${fontSize}px 'Inter', sans-serif`;
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom'; // Draw from bottom up to avoid cut off
+      ctx.textBaseline = 'bottom'; 
       
       const words = text.split(' ');
       const lines = [];
@@ -465,7 +464,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
       const lineHeight = fontSize * 1.3;
       const totalTextHeight = lines.length * lineHeight;
-      // Safe area from bottom (10% of height)
       const startY = height - (height * 0.1) - totalTextHeight;
 
       lines.forEach((line, index) => {
@@ -542,9 +540,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
            }
 
            if (v.readyState >= 2) { 
-               // Background Trimming / Looping logic
-               // If user wants specific cut for background, assume full length or define logic
-               // For now, background just loops naturally.
                const vidRatio = v.videoWidth / v.videoHeight;
                const canvasRatio = WIDTH / HEIGHT;
                let drawW = WIDTH, drawH = HEIGHT, offsetX = 0, offsetY = 0;
@@ -631,16 +626,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           else if (layer.type === 'video' && layer.url) {
                const v = getVideoElement(layer.url);
                if (v.readyState >= 2) {
-                   // --- TRIMMING LOGIC ---
                    const trimStart = layer.trimStart || 0;
                    const trimEnd = layer.trimEnd || v.duration;
                    const loopDuration = trimEnd - trimStart;
 
                    if (loopDuration > 0) {
-                       // Calculate expected time based on global accumulated time
                        const expectedTime = trimStart + (elapsedTimeMs / 1000) % loopDuration;
-                       
-                       // Only seek if drift is significant to avoid stutter (0.3s tolerance)
                        if (Math.abs(v.currentTime - expectedTime) > 0.3) {
                            v.currentTime = expectedTime;
                        }
@@ -706,7 +697,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
       if (isPlaying) {
           const buffer = bgMusicUrl ? musicBufferCacheRef.current.get(bgMusicUrl) : null;
-          // Fix: ensure buffer is instance of AudioBuffer
           if (buffer && buffer instanceof AudioBuffer && bgMusicUrl) playMusic(buffer, bgMusicUrl);
           sceneStartTime = performance.now();
           startTimeRef.current = sceneStartTime;
@@ -735,7 +725,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                  drawScene(ctx, scene, 1, scrubProgress, false, simulatedElapsed); 
               }
           } else {
-              // PLAYBACK
+              // PLAYBACK WITH TRANSITIONS
               const scene = scenesRef.current[currentIdx];
               if (!scene) {
                    setIsPlaying(false);
@@ -743,25 +733,71 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                    return;
               }
 
-              const targetDurationSec = scene.durationEstimate > 0 ? scene.durationEstimate : 5;
+              // Audio Duration Override (Critical Fix)
+              const audioDur = scene.audioBuffer?.duration;
+              const targetDurationSec = scene.durationEstimate > 0 ? scene.durationEstimate : (audioDur || 5);
+              
               const durationMs = targetDurationSec * 1000;
               const elapsed = time - sceneStartTime;
               const progress = Math.min(elapsed / durationMs, 1.0);
 
-              if (isRecordingRef.current) {
-                  const totalProgress = ((currentIdx + progress) / scenesRef.current.length) * 100;
-                  setExportProgress(Math.min(Math.round(totalProgress), 99));
-              }
-
+              // 1. Trigger Audio
               if (!hasStartedAudio && scene.audioBuffer) {
-                   // Fix: Defensive check to ensure valid AudioBuffer
                    if (scene.audioBuffer instanceof AudioBuffer) {
                        playSpeech(scene.audioBuffer);
                        hasStartedAudio = true;
                    }
               }
 
-              drawScene(ctx, scene, 1, progress, true, elapsed);
+              // 2. Handle Transitions
+              const TRANSITION_DURATION = 1000; // 1 second transition
+              const timeRemaining = durationMs - elapsed;
+              const nextScene = scenesRef.current[currentIdx + 1];
+              
+              // Only draw transitions if we are near the end, have a next scene, and transition is not NONE
+              const activeTransition = scene.transition || globalTransition;
+              const inTransitionZone = timeRemaining < TRANSITION_DURATION && nextScene && activeTransition !== VideoTransition.NONE;
+
+              if (inTransitionZone) {
+                  // Draw Current Scene (Bottom Layer)
+                  drawScene(ctx, scene, 1, progress, true, elapsed);
+                  
+                  // Calculate Transition Progress (0.0 to 1.0)
+                  const t = 1 - (timeRemaining / TRANSITION_DURATION); // 0 start, 1 end
+                  
+                  ctx.save();
+                  // Apply Transition Effect to Next Scene
+                  if (activeTransition === VideoTransition.FADE) {
+                      ctx.globalAlpha = t;
+                  } else if (activeTransition === VideoTransition.SLIDE) {
+                      const offset = WIDTH * (1 - t);
+                      ctx.translate(offset, 0);
+                  } else if (activeTransition === VideoTransition.ZOOM) {
+                      const scale = 0.5 + (0.5 * t);
+                      ctx.translate(WIDTH/2, HEIGHT/2);
+                      ctx.scale(scale, scale);
+                      ctx.translate(-WIDTH/2, -HEIGHT/2);
+                      ctx.globalAlpha = t;
+                  } else if (activeTransition === VideoTransition.WIPE) {
+                       // Simple clip wipe
+                       ctx.beginPath();
+                       ctx.rect(0, 0, WIDTH * t, HEIGHT);
+                       ctx.clip();
+                  }
+
+                  // Draw Next Scene (Top Layer) - frozen at start
+                  drawScene(ctx, nextScene, 1, 0, false, 0);
+                  ctx.restore();
+
+              } else {
+                  // Normal Drawing
+                  drawScene(ctx, scene, 1, progress, true, elapsed);
+              }
+
+              if (isRecordingRef.current) {
+                  const totalProgress = ((currentIdx + progress) / scenesRef.current.length) * 100;
+                  setExportProgress(Math.min(Math.round(totalProgress), 99));
+              }
 
               if (elapsed >= durationMs) {
                   if (currentIdx < scenesRef.current.length - 1) {
@@ -771,6 +807,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                       hasStartedAudio = false;
                       particlesRef.current = [];
                   } else {
+                      // STOP RECORDING AT END
+                      if (isRecordingRef.current) {
+                          if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+                              mediaRecorderRef.current.stop();
+                          }
+                      }
                       setIsPlaying(false);
                       if (onPlaybackComplete) onPlaybackComplete();
                   }
@@ -799,6 +841,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                 <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
                 <h3 className="text-white font-bold text-xl animate-pulse">Renderizando...</h3>
                 <p className="text-zinc-400 text-sm mt-2">{exportProgress}%</p>
+                {exportProgress >= 99 && <p className="text-amber-500 text-xs mt-1 animate-pulse">Finalizando arquivo (pode demorar alguns segundos)...</p>}
             </div>
         )}
 

@@ -1,3 +1,4 @@
+
 // Shared AudioContext to prevent "max number of hardware contexts reached" error
 let sharedAudioContext: AudioContext | null = null;
 
@@ -8,33 +9,44 @@ export function getAudioContext(): AudioContext {
       latencyHint: 'interactive'
     });
   }
+  // Try to resume if suspended (common browser policy)
   if (sharedAudioContext.state === 'suspended') {
-    sharedAudioContext.resume();
+    sharedAudioContext.resume().catch(e => console.warn("Audio Resume warning:", e));
   }
   return sharedAudioContext;
 }
 
 // Decodes base64 string to raw bytes
 export function decodeBase64(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
+  try {
+    const binaryString = atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+  } catch (e) {
+    console.error("Base64 decode error", e);
+    return new Uint8Array(0);
   }
-  return bytes;
 }
 
 // Helper to convert Base64 Image to Blob URL (Much lighter on RAM than large Base64 strings)
 export function base64ToBlobUrl(base64: string, mimeType: string = 'image/png'): string {
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  try {
+      const byteCharacters = atob(base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: mimeType });
+      return URL.createObjectURL(blob);
+  } catch(e) {
+      console.error("Blob conversion error", e);
+      return "";
   }
-  const byteArray = new Uint8Array(byteNumbers);
-  const blob = new Blob([byteArray], { type: mimeType });
-  return URL.createObjectURL(blob);
 }
 
 // Decodes raw PCM data (Gemini output) into an AudioBuffer
@@ -44,18 +56,31 @@ export async function decodeAudioData(
   numChannels: number = 1,
 ): Promise<AudioBuffer> {
   const ctx = getAudioContext();
-  const dataInt16 = new Int16Array(data.buffer);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      // Convert Int16 to Float32 [-1.0, 1.0]
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
+  
+  // Safety check for empty data
+  if (data.length === 0) {
+      // Return a silent 1s buffer to prevent crash
+      return ctx.createBuffer(1, sampleRate, sampleRate);
   }
-  return buffer;
+
+  try {
+      const dataInt16 = new Int16Array(data.buffer);
+      const frameCount = dataInt16.length / numChannels;
+      const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+
+      for (let channel = 0; channel < numChannels; channel++) {
+        const channelData = buffer.getChannelData(channel);
+        for (let i = 0; i < frameCount; i++) {
+          // Convert Int16 to Float32 [-1.0, 1.0]
+          channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+        }
+      }
+      return buffer;
+  } catch (e) {
+      console.error("Audio Decode Error:", e);
+      // Return silent buffer on fail
+      return ctx.createBuffer(1, sampleRate, sampleRate);
+  }
 }
 
 // Convert AudioBuffer to WAV Blob for download/playback via URL
