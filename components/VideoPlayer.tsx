@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
 import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe } from '../types';
 import { Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
@@ -553,7 +552,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
       // 4. Draw Layers
       const layers = scene.layers || [];
-      const legacyOverlay = scene.overlay ? { ...scene.overlay, id: 'legacy', type: 'image' as const, name: 'Overlay' } : null;
+      const legacyOverlay = scene.overlay ? { 
+          ...scene.overlay, 
+          id: 'legacy', 
+          type: 'image' as const, 
+          name: 'Overlay', 
+          rotation: 0,
+          opacity: scene.overlay.opacity ?? 1
+      } : null;
       const allLayers = legacyOverlay && layers.length === 0 ? [legacyOverlay] : layers;
 
       allLayers.forEach(baseLayer => {
