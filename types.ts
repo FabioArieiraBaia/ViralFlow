@@ -213,6 +213,12 @@ export interface VFXConfig {
   filmGrain: number; // 0 to 1
 }
 
+export interface SubtitleSettings {
+  fontSizeMultiplier: number; // 0.5 to 2.0 (Default 1.0)
+  yPosition: number; // 0.0 to 1.0 (Default 0.9 - Bottom)
+  fontFamily: string; // Font Family string
+}
+
 export interface Scene {
   id: string;
   speaker: string; 
@@ -287,6 +293,7 @@ export interface ProjectState {
   // Subtitles
   showSubtitles: boolean;
   subtitleStyle: SubtitleStyle;
+  subtitleSettings?: SubtitleSettings;
   
   // Output
   metadata?: VideoMetadata;

@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react';
-import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe, VFXConfig } from '../types';
+import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe, VFXConfig, SubtitleSettings } from '../types';
 import { Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
 import { getAudioContext } from '../services/audioUtils';
 import { triggerBrowserDownload } from '../services/fileSystem';
@@ -15,6 +15,7 @@ interface VideoPlayerProps {
   bgMusicVolume: number;
   showSubtitles: boolean;
   subtitleStyle: SubtitleStyle;
+  subtitleSettings?: SubtitleSettings;
   activeFilter?: VideoFilter;
   globalTransition?: VideoTransition;
   globalVfx?: VFXConfig;
@@ -58,6 +59,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   bgMusicVolume,
   showSubtitles,
   subtitleStyle,
+  subtitleSettings,
   activeFilter = VideoFilter.NONE,
   globalTransition = VideoTransition.NONE,
   globalVfx,
@@ -100,6 +102,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const scenesRef = useRef<Scene[]>(scenes);
   const showSubtitlesRef = useRef(showSubtitles); 
   const subtitleStyleRef = useRef(subtitleStyle);
+  const subtitleSettingsRef = useRef(subtitleSettings);
   const channelLogoRef = useRef(channelLogo);
   const activeFilterRef = useRef(activeFilter);
   const globalVfxRef = useRef(globalVfx);
@@ -156,6 +159,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   useEffect(() => { scenesRef.current = scenes; }, [scenes]);
   useEffect(() => { showSubtitlesRef.current = showSubtitles; }, [showSubtitles]);
   useEffect(() => { subtitleStyleRef.current = subtitleStyle; }, [subtitleStyle]);
+  useEffect(() => { subtitleSettingsRef.current = subtitleSettings; }, [subtitleSettings]);
   useEffect(() => { channelLogoRef.current = channelLogo; }, [channelLogo]);
   useEffect(() => { activeFilterRef.current = activeFilter; }, [activeFilter]);
   useEffect(() => { globalVfxRef.current = globalVfx; }, [globalVfx]);
@@ -516,6 +520,13 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const drawSubtitles = (ctx: CanvasRenderingContext2D, text: string, style: SubtitleStyle, width: number, height: number, progress: number) => {
       if (!text || style === SubtitleStyle.NONE) return;
 
+      // Get Settings
+      const settings = subtitleSettingsRef.current || { fontSizeMultiplier: 1.0, yPosition: 0.9, fontFamily: 'Inter' };
+      const fontSizeMultiplier = settings.fontSizeMultiplier;
+      const yPosFactor = settings.yPosition;
+      // Use user-defined font family or fallback to Inter
+      const userFontFamily = settings.fontFamily || 'Inter';
+
       // --- 1. SPECIAL MODE: WORD BY WORD (SPEED READING) ---
       if (style === SubtitleStyle.WORD_BY_WORD) {
           const allWords = text.split(/\s+/);
@@ -526,17 +537,20 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           
           if (!word) return;
 
-          const fontSize = Math.min(width * 0.1, 100);
-          ctx.font = `900 ${fontSize}px 'Inter', sans-serif`;
+          const baseFontSize = width * 0.1;
+          const fontSize = Math.min(baseFontSize * fontSizeMultiplier, 200);
+
+          // Force bold for readability in speed reading
+          ctx.font = `900 ${fontSize}px '${userFontFamily}', sans-serif`;
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           
           const x = width / 2;
-          const y = height / 2;
+          const y = height * (yPosFactor > 0.8 ? 0.5 : yPosFactor); // Center by default if user hasn't moved it up significantly, else follow custom Y
 
           // Background box
           const measure = ctx.measureText(word);
-          const padding = 20;
+          const padding = 20 * fontSizeMultiplier;
           ctx.fillStyle = 'rgba(0,0,0,0.7)';
           ctx.roundRect(x - measure.width/2 - padding, y - fontSize/2 - padding, measure.width + padding*2, fontSize + padding*2, 10);
           ctx.fill();
@@ -548,18 +562,18 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
 
       // --- 2. REGULAR MODES (LINE BASED) ---
-      let fontSize = Math.min(width * 0.05, 48);
-      let fontFamily = "'Inter', sans-serif";
-      let color = 'white';
-      let strokeColor = 'black';
+      let baseSize = width * 0.05;
+      let fontSize = Math.min(baseSize, 48) * fontSizeMultiplier;
       
-      // Style specific setups
+      let fontFamily = `'${userFontFamily}', sans-serif`;
+      let color = 'white';
+      
+      // Style specific defaults (only if user hasn't selected a custom font, but here we prioritize user selection)
+      // We keep color/size tweaks based on style though
       if (style === SubtitleStyle.COMIC) {
-          fontFamily = "'Comic Neue', 'Comic Sans MS', cursive";
           fontSize = fontSize * 1.1;
           color = '#fef08a'; // Yellow-200
       } else if (style === SubtitleStyle.GLITCH) {
-          fontFamily = "'Oswald', sans-serif";
           color = '#ffffff';
       }
 
@@ -584,7 +598,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
       const lineHeight = fontSize * 1.3;
       const totalTextHeight = lines.length * lineHeight;
-      const startY = height - (height * 0.1) - totalTextHeight;
+      
+      // Calculate start Y based on bottom baseline, respecting user setting
+      // User setting 1.0 = Bottom of screen. 0.0 = Top.
+      // Default yPosFactor is 0.9 (near bottom)
+      const startY = (height * yPosFactor) - totalTextHeight + lineHeight; // Adjust so the text block ends at yPosition
 
       // Karaoke Global Logic
       const allWords = text.split(/\s+/);
@@ -596,9 +614,9 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           const x = width / 2;
           
           if (style === SubtitleStyle.MODERN) {
-              const bgWidth = ctx.measureText(line).width + 40;
+              const bgWidth = ctx.measureText(line).width + (40 * fontSizeMultiplier);
               ctx.fillStyle = 'rgba(0,0,0,0.7)';
-              ctx.roundRect(x - bgWidth/2, y - fontSize, bgWidth, fontSize + 10, 10);
+              ctx.roundRect(x - bgWidth/2, y - fontSize, bgWidth, fontSize + (10 * fontSizeMultiplier), 10);
               ctx.fill();
               ctx.fillStyle = 'white';
               ctx.fillText(line, x, y);
@@ -615,7 +633,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           } 
           else if (style === SubtitleStyle.COMIC) {
               ctx.strokeStyle = 'black';
-              ctx.lineWidth = 6;
+              ctx.lineWidth = 6 * fontSizeMultiplier;
               ctx.lineJoin = 'round';
               ctx.strokeText(line, x, y);
               ctx.fillStyle = '#fde047'; // Yellow
@@ -638,7 +656,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           else if (style === SubtitleStyle.KARAOKE) {
               // Classic Stroke Background
               ctx.strokeStyle = 'black';
-              ctx.lineWidth = 6;
+              ctx.lineWidth = 6 * fontSizeMultiplier;
               ctx.lineJoin = 'round';
               ctx.strokeText(line, x, y);
               
@@ -646,34 +664,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               ctx.fillStyle = 'white';
               ctx.fillText(line, x, y);
 
-              // Draw "Active" Words over it
+              // We just increment word counter here for the overlay pass below
               const lineWords = line.split(' ');
-              const lineWidth = ctx.measureText(line).width;
-              let currentX = x - (lineWidth / 2);
-
-              lineWords.forEach((w, wIdx) => {
-                  const wWidth = ctx.measureText(w + " ").width;
-                  if (wordCounter <= activeWordCount) {
-                       ctx.fillStyle = '#facc15'; // Highlight Color
-                       ctx.fillText(w, currentX + (wWidth/2), y); // Approximate centered drawing logic per word is hard with textAlign center, switching strategy:
-                       
-                       // Better Karaoke Strategy: Clip rect? Or precise drawing?
-                       // Precise drawing: We need to re-draw just this word in yellow over the white text.
-                       // Since ctx.textAlign is center, we must calculate offsets carefully.
-                       // Re-draw is safest.
-                  }
-                  currentX += wWidth;
-                  wordCounter++;
-              });
-              
-              // SIMPLIFIED KARAOKE VISUAL (Per Line for stability if precise positioning fails)
-              // If we are halfway through the line, paint it yellow? 
-              // Better Implementation below:
+              wordCounter += lineWords.length;
           }
           else {
                // CLASSIC DEFAULT
                ctx.strokeStyle = 'black';
-               ctx.lineWidth = 5;
+               ctx.lineWidth = 5 * fontSizeMultiplier;
                ctx.lineJoin = 'round';
                ctx.strokeText(line, x, y);
                ctx.fillStyle = 'white';
@@ -1081,7 +1079,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       return () => {
           if (rafRef.current) cancelAnimationFrame(rafRef.current);
       };
-  }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format, activeFilter, globalTransition, globalVfx, showSubtitles, subtitleStyle, channelLogo, userTier, scrubProgress, scenes]);
+  }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format, activeFilter, globalTransition, globalVfx, showSubtitles, subtitleStyle, subtitleSettings, channelLogo, userTier, scrubProgress, scenes]);
 
   return (
     <div 

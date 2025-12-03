@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import VideoPlayer, { VideoPlayerRef } from '../VideoPlayer';
 import { 
   Scene, VideoFormat, VideoFilter, VideoTransition, SubtitleStyle, UserTier, OverlayConfig, 
-  Language, MusicAction, ImageProvider, GeminiModel, PollinationsModel, VFXConfig
+  Language, MusicAction, ImageProvider, GeminiModel, PollinationsModel, VFXConfig, SubtitleSettings
 } from '../../types';
 import { 
   Palette, Music, Zap, Download, Smartphone, Monitor, Music2, ImagePlus, 
@@ -29,6 +29,8 @@ interface EditorTabProps {
   setShowSubtitles: (v: boolean) => void;
   subtitleStyle: SubtitleStyle;
   setSubtitleStyle: (v: SubtitleStyle) => void;
+  subtitleSettings?: SubtitleSettings;
+  setSubtitleSettings?: (v: SubtitleSettings) => void;
   activeFilter: VideoFilter;
   setActiveFilter: (v: VideoFilter) => void;
   globalTransition: VideoTransition;
@@ -102,6 +104,7 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                         bgMusicVolume={props.bgMusicVolume}
                         showSubtitles={props.showSubtitles}
                         subtitleStyle={props.subtitleStyle}
+                        subtitleSettings={props.subtitleSettings}
                         activeFilter={props.activeFilter}
                         globalTransition={props.globalTransition}
                         globalVfx={props.globalVfx}
@@ -163,9 +166,58 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                                         <button onClick={() => props.setShowSubtitles(!props.showSubtitles)} className={`w-8 h-4 rounded-full transition-colors relative ${props.showSubtitles ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'}`}><div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${props.showSubtitles ? 'translate-x-4' : 'translate-x-0'}`}></div></button>
                                     </div>
                                     {props.showSubtitles && (
-                                        <select value={props.subtitleStyle} onChange={(e) => props.setSubtitleStyle(e.target.value as SubtitleStyle)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs outline-none">
-                                            {Object.values(SubtitleStyle).map(s => <option key={s} value={s}>{s}</option>)}
-                                        </select>
+                                        <div className="space-y-3">
+                                            <select value={props.subtitleStyle} onChange={(e) => props.setSubtitleStyle(e.target.value as SubtitleStyle)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs outline-none">
+                                                {Object.values(SubtitleStyle).map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                            
+                                            {/* Subtitle Customization Sliders */}
+                                            {props.subtitleSettings && props.setSubtitleSettings && (
+                                                <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-100 dark:border-zinc-800 space-y-3">
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                                                <span>Tamanho Fonte</span>
+                                                                <span>{Math.round(props.subtitleSettings.fontSizeMultiplier * 100)}%</span>
+                                                            </div>
+                                                            <input 
+                                                                type="range" min="0.5" max="2.0" step="0.1" 
+                                                                value={props.subtitleSettings.fontSizeMultiplier} 
+                                                                onChange={(e) => props.setSubtitleSettings!({...props.subtitleSettings!, fontSizeMultiplier: parseFloat(e.target.value)})} 
+                                                                className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" 
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                                                <span>Posição Vertical</span>
+                                                                <span>{Math.round(props.subtitleSettings.yPosition * 100)}%</span>
+                                                            </div>
+                                                            <input 
+                                                                type="range" min="0.1" max="0.95" step="0.01" 
+                                                                value={props.subtitleSettings.yPosition} 
+                                                                onChange={(e) => props.setSubtitleSettings!({...props.subtitleSettings!, yPosition: parseFloat(e.target.value)})} 
+                                                                className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" 
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-zinc-500 mb-1 block">Família da Fonte</label>
+                                                        <select 
+                                                            value={props.subtitleSettings.fontFamily} 
+                                                            onChange={(e) => props.setSubtitleSettings!({...props.subtitleSettings!, fontFamily: e.target.value})}
+                                                            className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs"
+                                                        >
+                                                            <option value="Inter">Inter (Padrão)</option>
+                                                            <option value="Montserrat">Montserrat (Moderno)</option>
+                                                            <option value="Oswald">Oswald (Impacto/Bold)</option>
+                                                            <option value="Playfair Display">Playfair (Clássico/Serifa)</option>
+                                                            <option value="JetBrains Mono">JetBrains Mono (Tech/Code)</option>
+                                                            <option value="Comic Neue">Comic Neue (Quadrinhos)</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                                 <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">

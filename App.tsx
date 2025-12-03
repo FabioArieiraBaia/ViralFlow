@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, GeminiModel, Scene, ViralMetadataResult, CameraMovement, VFXConfig } from './types';
+import { VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, GeminiModel, Scene, ViralMetadataResult, CameraMovement, VFXConfig, SubtitleSettings } from './types';
 import { generateVideoScript, generateSpeech, generateSceneImage, generateThumbnails, generateMetadata, getApiKeyCount, saveManualKeys, getManualKeys, savePexelsKey, getPexelsKey, savePollinationsToken, getPollinationsToken, generateMovieOutline, generateViralMetadata } from './services/geminiService';
 import { translations } from './services/translations';
 import { decodeBase64, decodeAudioData, base64ToBlobUrl, audioBufferToWav, getAudioContext } from './services/audioUtils';
@@ -104,6 +104,7 @@ const App: React.FC = () => {
   const [thumbProvider, setThumbProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(SubtitleStyle.KARAOKE); 
+  const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings>({ fontSizeMultiplier: 1.0, yPosition: 0.9, fontFamily: 'Inter' });
   const [activeFilter, setActiveFilter] = useState<VideoFilter>(VideoFilter.NONE);
   const [globalTransition, setGlobalTransition] = useState<VideoTransition>(VideoTransition.FADE);
   
@@ -426,6 +427,7 @@ const App: React.FC = () => {
              isPlaying={isPlaying} setIsPlaying={setIsPlaying} format={format} setFormat={setFormat}
              bgMusicUrl={bgMusicUrl} setBgMusicUrl={setBgMusicUrl} bgMusicVolume={bgMusicVolume} setBgMusicVolume={setBgMusicVolume}
              showSubtitles={showSubtitles} setShowSubtitles={setShowSubtitles} subtitleStyle={subtitleStyle} setSubtitleStyle={setSubtitleStyle}
+             subtitleSettings={subtitleSettings} setSubtitleSettings={setSubtitleSettings}
              activeFilter={activeFilter} setActiveFilter={setActiveFilter} globalTransition={globalTransition} setGlobalTransition={setGlobalTransition}
              globalVfx={globalVfx} setGlobalVfx={setGlobalVfx}
              userTier={userTier} channelLogo={channelLogo} setChannelLogo={setChannelLogo} isGenerating={isGenerating} isReviewing={isReviewing}
