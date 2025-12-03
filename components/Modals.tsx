@@ -133,7 +133,7 @@ export const EditSceneModal: React.FC<{
             setLocalScene(prev => ({
                 ...prev,
                 mediaType: isVideo ? 'video' : 'image',
-                imageUrl: isVideo ? prev.imageUrl : url,
+                imageUrl: isVideo ? prev.imageUrl : url, // Retain old image if video, or new url if image
                 videoUrl: isVideo ? url : undefined,
                 visualPrompt: t[lang].manualUpload
             }));
@@ -246,7 +246,13 @@ export const EditSceneModal: React.FC<{
                     {activeTab === 'visual' && (
                         <div className="space-y-6">
                             <div className="aspect-video bg-black rounded-lg overflow-hidden border border-zinc-800 relative group">
-                                {isRegenerating ? (<div className="w-full h-full flex flex-col items-center justify-center text-indigo-400 gap-2 bg-zinc-950"><Loader2 className="w-8 h-8 animate-spin" /><span className="text-xs font-medium">Gerando...</span></div>) : localScene.mediaType === 'video' && localScene.videoUrl ? (<video src={localScene.videoUrl} className="w-full h-full object-cover" autoPlay muted loop />) : (<img src={localScene.imageUrl} className="w-full h-full object-cover" />)}
+                                {isRegenerating ? (
+                                    <div className="w-full h-full flex flex-col items-center justify-center text-indigo-400 gap-2 bg-zinc-950"><Loader2 className="w-8 h-8 animate-spin" /><span className="text-xs font-medium">Gerando...</span></div>
+                                ) : localScene.mediaType === 'video' && localScene.videoUrl ? (
+                                    <video key={localScene.videoUrl} src={localScene.videoUrl} className="w-full h-full object-cover" autoPlay muted loop />
+                                ) : (
+                                    <img src={localScene.imageUrl} className="w-full h-full object-cover" />
+                                )}
                             </div>
                             <div className="flex items-center justify-between p-3 bg-zinc-100 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700">
                                 <div className="text-xs text-zinc-600 dark:text-zinc-300">Deseja usar uma mídia própria?</div>

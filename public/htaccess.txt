@@ -1,0 +1,18 @@
+# ATENCAO: Renomeie este arquivo para '.htaccess' no seu servidor Apache/XAMPP
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  
+  # Redireciona tudo que nao for arquivo ou diretorio real para index.html
+  # Isso permite que o React Router funcione corretamente
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+  # Garante headers CORS no Apache
+  Header set Access-Control-Allow-Origin "*"
+</IfModule>

@@ -13,7 +13,9 @@
   "scripts": {
     "start": "vite",
     "build": "tsc && vite build",
+    "preview": "vite preview",
     "electron": "npx concurrently \"npm start\" \"npx wait-on http://localhost:3000 && npx electron .\"",
+    "electron:preview": "npm run build && electron . --preview",
     "postinstall": "npx electron-builder install-app-deps",
     "dist": "npm run build && npx electron-builder --win --x64"
   },

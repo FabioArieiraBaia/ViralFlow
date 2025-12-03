@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en" class="dark">
   <head>
@@ -91,9 +92,10 @@
         box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
       }
 
-      .ring-1 { width: 200px; height: 200px; margin: -100px; animation: rotate-x 10s linear infinite; border-color: rgba(99, 102, 241, 0.8); box-shadow: 0 0 30px rgba(99, 102, 241, 0.4); }
-      .ring-2 { width: 260px; height: 260px; margin: -130px; animation: rotate-y 15s linear infinite; border-color: rgba(168, 85, 247, 0.6); }
-      .ring-3 { width: 320px; height: 320px; margin: -160px; animation: rotate-z 20s linear infinite; border-color: rgba(236, 72, 153, 0.4); }
+      /* Renamed to avoid Tailwind 'ring-1' conflict */
+      .r-ring-1 { width: 200px; height: 200px; margin: -100px; animation: rotate-x 10s linear infinite; border-color: rgba(99, 102, 241, 0.8); box-shadow: 0 0 30px rgba(99, 102, 241, 0.4); }
+      .r-ring-2 { width: 260px; height: 260px; margin: -130px; animation: rotate-y 15s linear infinite; border-color: rgba(168, 85, 247, 0.6); }
+      .r-ring-3 { width: 320px; height: 320px; margin: -160px; animation: rotate-z 20s linear infinite; border-color: rgba(236, 72, 153, 0.4); }
 
       .core-glow {
         position: absolute;
@@ -158,6 +160,6 @@
 </head>
   <body class="bg-zinc-50 text-zinc-900 dark:bg-[#09090b] dark:text-zinc-100 transition-colors duration-300 overflow-x-hidden">
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <script type="module" src="./index.tsx"></script>
   </body>
 </html>

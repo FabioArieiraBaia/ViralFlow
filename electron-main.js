@@ -23,15 +23,18 @@ function createWindow() {
     icon: path.join(__dirname, 'build', 'favicon.ico')
   });
 
+  // Verifica flag de preview
+  const isPreview = process.argv.includes('--preview');
+
   // Lógica padrão e robusta para diferenciar Dev vs Prod
-  if (!app.isPackaged) {
+  if (!app.isPackaged && !isPreview) {
     // Modo Desenvolvimento
     console.log("Iniciando em modo DEV...");
     win.loadURL('http://localhost:3000');
     win.webContents.openDevTools();
   } else {
-    // Modo Produção (.exe instalado)
-    console.log("Iniciando em modo PROD...");
+    // Modo Produção (.exe instalado) ou Preview Local
+    console.log("Iniciando em modo PROD/PREVIEW...");
     
     // No Electron builder com asar: true, __dirname aponta para dentro do pacote asar
     // A pasta 'build' deve estar lá conforme configurado no "files" do package.json

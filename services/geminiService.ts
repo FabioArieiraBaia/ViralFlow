@@ -1,8 +1,7 @@
-
-import { GoogleGenAI, Type, Modality, HarmCategory, HarmBlockThreshold } from "@google/genai";
-import { GeneratedScriptItem, VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel } from "../types";
+import { GoogleGenAI, Modality } from "@google/genai";
+import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeneratedScriptItem } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
-import { getProjectDir, saveBase64File, saveTextFile } from "./fileSystem";
+import { getProjectDir, saveBase64File } from "./fileSystem";
 
 // --- KEY MANAGEMENT SYSTEM ---
 
@@ -87,8 +86,6 @@ async function withRetry<T>(
   // Ensure keys are loaded
   if (allKeys.length === 0) initKeys();
   
-  // If customRetries is passed, use it. Otherwise default to number of keys or 3, whichever is higher (max 10)
-  // This ensures we try all keys if we have them.
   const maxRetries = customRetries !== undefined ? customRetries : Math.min(Math.max(3, allKeys.length), 10);
 
   let lastError: any = null;
@@ -127,8 +124,6 @@ async function withRetry<T>(
       if (isQuotaError) {
          const shortKey = key.slice(-4);
          console.warn(`⚠️ Cota (429) na chave ...${shortKey}. Tentativa (${i+1}/${maxRetries}).`);
-         // No delay needed if we have multiple keys, just rotate to next key in next iteration
-         // If we only have 1 key, then delay.
          if (allKeys.length === 1) await new Promise(resolve => setTimeout(resolve, 2000));
          continue;
       } 
@@ -145,7 +140,105 @@ async function withRetry<T>(
   throw lastError || new Error("Falha após tentativas máximas.");
 }
 
+// Helper to robustly parse JSON from AI response
+function robustJsonParse(text: string): any {
+    let clean = text.replace(/```json\s*|```/g, '').trim();
+    
+    if (clean.includes('[') && clean.includes(']')) {
+        const firstBracket = clean.indexOf('[');
+        const lastBracket = clean.lastIndexOf(']');
+        if (lastBracket > firstBracket) {
+             const firstCurly = clean.indexOf('{');
+             if (firstCurly === -1 || firstBracket < firstCurly) {
+                 clean = clean.substring(firstBracket, lastBracket + 1);
+             } else {
+                 const lastCurly = clean.lastIndexOf('}');
+                 if (lastCurly > firstCurly) {
+                     clean = clean.substring(firstCurly, lastCurly + 1);
+                 }
+             }
+        }
+    } else {
+        const firstCurly = clean.indexOf('{');
+        const lastCurly = clean.lastIndexOf('}');
+        if (firstCurly !== -1 && lastCurly !== -1) {
+            clean = clean.substring(firstCurly, lastCurly + 1);
+        }
+    }
+
+    try {
+        return JSON.parse(clean);
+    } catch (e) {
+        console.error("JSON Parse Error. Raw text:", text);
+        try {
+            let fixed = clean.replace(/\n/g, "\\n");
+            // Try to escape unescaped double quotes inside string values
+            // This regex looks for " : "value with "quotes" inside",
+            fixed = fixed.replace(/:\s*"([^"]*)"([^,}\]])/g, (match, p1, p2) => {
+                return `: "${p1.replace(/"/g, '\\"')}"${p2}`;
+            });
+            return JSON.parse(fixed);
+        } catch (e2) {
+            console.warn("Failed to parse AI response even after fix attempt.");
+            return null;
+        }
+    }
+}
+
 // --- GEMINI GENERATORS ---
+
+// PRO FEATURE: MOVIE PIPELINE OUTLINE
+export const generateMovieOutline = async (
+    topic: string, 
+    channelName: string, 
+    language: Language,
+    checkCancelled?: () => boolean
+): Promise<{ title: string, chapters: string[] }> => {
+    return withRetry(async (ai) => {
+        const targetLanguage = language === 'pt' ? 'PORTUGUESE' : language === 'es' ? 'SPANISH' : 'ENGLISH';
+        const prompt = `Create a MASSIVE DOCUMENTARY OUTLINE about: "${topic}".
+        Format: Feature Film / Long Documentary / Deep Dive.
+        Channel: "${channelName}".
+        
+        Task: Break the story down into 12 to 15 distinct, detailed Chapters (Acts).
+        Make sure the coverage is exhaustive and detailed.
+        
+        Output strictly JSON: { "title": "Movie Title", "chapters": ["Chapter 1 Name: Context", "Chapter 2 Name: Context", ...] }
+        Language: ${targetLanguage}`;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+
+        if (!response.text) throw new Error("No outline generated");
+        const parsed = robustJsonParse(response.text);
+        
+        if (!parsed || !parsed.chapters || !Array.isArray(parsed.chapters)) {
+            console.warn("Outline malformed, using fallback structure.");
+            return {
+                title: topic,
+                chapters: [
+                    "Introduction: The Mystery Begins",
+                    "The Context: Historical Background",
+                    "Key Players: Who is involved?",
+                    "The Conflict: Challenges arise",
+                    "Turning Point: A major discovery",
+                    "Deep Dive: Analyzing the evidence",
+                    "Perspectives: Expert opinions",
+                    "Global Impact: How it changed the world",
+                    "Conclusion: Final thoughts",
+                    "Outro: Thanks for watching"
+                ]
+            };
+        }
+        
+        return parsed;
+    }, checkCancelled);
+};
+
+// Removed Reviewer Agent to simplify flow and avoid JSON errors.
 
 export const generateVideoScript = async (
   topic: string, 
@@ -154,14 +247,19 @@ export const generateVideoScript = async (
   pacing: VideoPacing,
   channelName: string,
   language: Language,
-  checkCancelled?: () => boolean
+  checkCancelled?: () => boolean,
+  chapterContext?: { 
+      currentChapter: string, 
+      prevChapter?: string,
+      chapterIndex: number,
+      totalChapters: number
+  } 
 ): Promise<GeneratedScriptItem[]> => {
   
   return withRetry(async (ai) => {
     const totalWords = Math.ceil(durationMinutes * 150);
     const targetLanguage = language === 'pt' ? 'PORTUGUESE (BRAZIL)' : language === 'es' ? 'SPANISH' : 'ENGLISH (US)';
     
-    // Define scene duration rules based on pacing
     let durationRule = "Break the script into scenes of 4-7 seconds.";
     let cutInstruction = "Standard narrative pacing.";
     
@@ -177,7 +275,6 @@ export const generateVideoScript = async (
     }
 
     let extraStyleInstructions = "";
-    
     if (style === VideoStyle.KIDS_STORY) {
         extraStyleInstructions = "Create a multi-character FABLE or STORY. You MUST use specific character names for the 'speaker' field (e.g., 'Wolf', 'Little Red', 'Bear', 'Fairy', 'Narrator'). Create dialogue between them. Keep language simple, fun, and engaging for kids. Visuals should be colorful 3D animation style.";
     } else if (style === VideoStyle.NEWS) {
@@ -188,7 +285,7 @@ export const generateVideoScript = async (
         extraStyleInstructions = "Create a DEBATE. Use speakers: 'Host', 'Proponent' (For), 'Opponent' (Against). The Host introduces, and the others argue their points. Ensure conflict and back-and-forth dialogue.";
     }
 
-    const systemInstruction = `You are a World-Class Video Director and Scriptwriter. Channel: "${channelName}". Style: ${style}. Pacing: ${pacing}.
+    let systemInstruction = `You are a World-Class Video Director and Scriptwriter. Channel: "${channelName}". Style: ${style}. Pacing: ${pacing}.
     
     YOUR MISSION: Create a script that visually tells a story.
     
@@ -197,9 +294,8 @@ export const generateVideoScript = async (
     2. CAMERA ANGLES: You MUST start every 'visual_prompt' with a specific camera angle. Rotate through: [Extreme Close-up], [Wide Drone Shot], [Low Angle], [Over-the-shoulder], [Macro Shot], [GoPro POV], [Security Camera View].
     3. SHOW, DON'T TELL: If the text says "He was rich", the visual must be "Close-up of a gold diamond ring on a finger", not "A rich man".
     4. NO TEXT IN IMAGE: The visual prompt must explicitly say "no text, no logos, photorealistic".
-    5. STYLE: If style is Documentary, use "NatGeo style, 4k, highly detailed". Avoid "Netflix" keyword.
-    6. KEYWORDS: Include 2-3 specific keywords at the end of visual_prompt for search engines (e.g., "gold, ring, luxury").
-    7. MANDATORY OUTRO: The FINAL scene MUST be a Call-to-Action (CTA). The narrator explicitly thanks the viewer in the name of the channel "${channelName || 'Narrator'}" and asks for Likes, Comments, and Subscription.
+    5. JSON ESCAPING: You MUST escape all double quotes inside the text fields. Example: "text": "He said \\"Hello\\"".
+    6. KEYWORDS: Include 2-3 specific keywords at the end of visual_prompt for search engines.
     
     SPECIAL STYLE INSTRUCTIONS:
     ${extraStyleInstructions}
@@ -207,12 +303,54 @@ export const generateVideoScript = async (
     Output ONLY valid JSON array: [{ "speaker": "Name", "text": "Dialogue", "visual_prompt": "CAMERA_ANGLE + Action description" }]
     Language: ${targetLanguage}.`;
 
-    const prompt = `Create a script about: "${topic}".
+    let prompt = `Create a script about: "${topic}".
     Target Duration: ${durationMinutes} minutes (approx ${totalWords} words).
     PACING CONSTRAINT: ${cutInstruction}
     SCENE DURATION: ${durationRule}
     
-    For 'HYPER' or 'FAST' pacing, split long sentences into multiple scene objects to force visual changes.`;
+    MANDATORY OUTRO RULE: The FINAL scene MUST be a Call-to-Action (CTA). The narrator explicitly thanks the viewer in the name of the channel "${channelName || 'Narrator'}" and asks for Likes, Comments, and Subscription.`;
+
+    // MOVIE MODE OVERRIDE
+    if (chapterContext) {
+        const { currentChapter, prevChapter, chapterIndex, totalChapters } = chapterContext;
+        const isFirst = chapterIndex === 0;
+        const isLast = chapterIndex === totalChapters - 1;
+
+        systemInstruction += "\n\nMODE: LONG FEATURE FILM / DEEP DIVE DOCUMENTARY. DO NOT SUMMARIZE. EXPAND ON DETAILS.";
+        
+        let narrativeInstruction = "";
+        if (isFirst) {
+            narrativeInstruction = "This is the OPENING chapter. Hook the viewer immediately. Introduce the core mystery/topic. DO NOT conclude the video. DO NOT say goodbye. DO NOT ask for likes yet.";
+        } else if (isLast) {
+            narrativeInstruction = `This is the FINAL chapter. Summarize the journey and provide a powerful conclusion. END with the Channel Outro/CTA for channel "${channelName}". THIS IS THE ONLY PLACE YOU SHOULD SAY GOODBYE.`;
+        } else {
+            // AGGRESSIVE NEGATIVE CONSTRAINTS FOR MIDDLE CHAPTERS
+            narrativeInstruction = `
+            This is a MIDDLE chapter (Chapter ${chapterIndex + 1} of ${totalChapters}). 
+            Dive deep into this specific sub-topic. Maintain narrative flow. 
+            
+            STRICTLY FORBIDDEN IN THIS CHAPTER:
+            - DO NOT INTRODUCE THE CHANNEL.
+            - DO NOT SAY 'WELCOME BACK'.
+            - DO NOT SAY GOODBYE.
+            - DO NOT ASK FOR SUBSCRIPTIONS.
+            - DO NOT SAY "In this video" or "Today we will see".
+            - DO NOT SUMMARIZE what was just said.
+            
+            Treat it as a continuous scene from a movie. Just tell the story.`;
+        }
+
+        prompt = `Write the script for the CHAPTER: "${currentChapter}".
+        Context from previous chapter: "${prevChapter || 'Opening of the movie'}".
+        
+        NARRATIVE RULE: ${narrativeInstruction}
+        
+        TARGET LENGTH: This specific chapter MUST be approximately 4 to 6 minutes long. Write approximately 500-600 words for this chapter.
+        INSTRUCTION: Dive deep into the details. Use dialogue, examples, and slow-paced storytelling. Do not rush.
+        Visuals: Use slow, cinematic, detailed camera movements in prompts.
+        
+        REMEMBER: ESCAPE ALL DOUBLE QUOTES INSIDE STRINGS.`;
+    }
 
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -225,21 +363,31 @@ export const generateVideoScript = async (
 
     if (!response.text) throw new Error("No text generated");
     
-    let rawData: any[] = [];
-    try {
-      rawData = JSON.parse(response.text.trim());
-    } catch (e) {
-      const cleanText = response.text.replace(/```json|```/g, '').trim();
-      rawData = JSON.parse(cleanText);
+    const rawData: any = robustJsonParse(response.text);
+    let items: any[] = [];
+
+    if (Array.isArray(rawData)) {
+        items = rawData;
+    } else if (rawData && typeof rawData === 'object') {
+        if (Array.isArray(rawData.scenes)) items = rawData.scenes;
+        else if (Array.isArray(rawData.script)) items = rawData.script;
+        else if (Array.isArray(rawData.items)) items = rawData.items;
+        else if (rawData.speaker && rawData.text) items = [rawData];
     }
 
-    return rawData.map((item: any) => ({
+    if (items.length === 0) {
+        throw new Error("Failed to parse script items from AI response");
+    }
+
+    return items.map((item: any) => ({
        speaker: item.speaker || "Narrator",
        text: item.text || item.dialogue || item.script || "",
        visual_prompt: item.visual_prompt || item.visualPrompt || item.image_prompt || item.imageDescription || `Cinematic scene about ${topic}`
     }));
   }, checkCancelled);
 };
+
+// ... (rest of the file including generateSpeech, generateSceneImage, etc. remains the same)
 
 export const generateSpeech = async (
     text: string, 
@@ -250,8 +398,6 @@ export const generateSpeech = async (
     checkCancelled?: () => boolean
 ): Promise<{url: string, buffer: AudioBuffer}> => {
   return withRetry(async (ai) => {
-    // If voice is not provided, default to Fenrir.
-    // Ensure we use valid Gemini voices: Puck, Charon, Kore, Fenrir, Aoede, Zephyr
     const selectedVoice = voiceId && voiceId.trim().length > 0 ? voiceId : 'Fenrir';
     
     const response = await ai.models.generateContent({
@@ -477,7 +623,7 @@ export const generateSceneImage = async (
                   });
                   
                   if (response.generatedImages && response.generatedImages.length > 0) {
-                      imgData = response.generatedImages[0].image.imageBytes;
+                      imgData = response.generatedImages[0]?.image?.imageBytes ?? "";
                   }
               } else {
                   // GEMINI FLASH USES generateContent
@@ -489,7 +635,7 @@ export const generateSceneImage = async (
                   
                   if (response.candidates?.[0]?.content?.parts) {
                      for(const p of response.candidates[0].content.parts) {
-                         if(p.inlineData) { imgData = p.inlineData.data; break; }
+                         if(p.inlineData) { imgData = p.inlineData.data || ""; break; }
                      }
                   }
               }
@@ -569,12 +715,16 @@ export const generateMetadata = async (
     checkCancelled?: () => boolean
 ): Promise<VideoMetadata> => {
     return withRetry(async (ai) => {
-        const prompt = `Generate YouTube SEO metadata for "${topic}". Output JSON: { "title": "", "description": "", "tags": [] }`;
+        const prompt = `Generate YouTube SEO metadata for "${topic}".
+        Context: ${scriptContext.substring(0, 1000)}...
+        Output JSON: { "title": "", "description": "", "tags": [] }`;
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: { responseMimeType: 'application/json' }
         });
-        return JSON.parse(response.text.trim()) as VideoMetadata;
+        const parsed = robustJsonParse(response.text || "{}");
+        if (!parsed || !parsed.title) return { title: topic, description: "Video about " + topic, tags: [] };
+        return parsed;
     }, checkCancelled);
 };

@@ -1,4 +1,5 @@
 
+
 export type Language = 'pt' | 'en' | 'es';
 export type Theme = 'light' | 'dark';
 
@@ -32,7 +33,8 @@ export enum VideoPacing {
 export enum VideoDuration {
   SHORT = 'Shorts Viral (< 60s)',
   MEDIUM = 'Explicação (2-5 min)',
-  LONG = 'Deep Dive (10 min+)'
+  LONG = 'Deep Dive (10 min+)',
+  MOVIE = '🎬 Filme / Documentário (Longa Metragem)'
 }
 
 export enum VideoFormat {
@@ -61,7 +63,8 @@ export enum VideoFilter {
   SEPIA = 'Sépia (Western)',
   COLD = 'Frio (Cinemático Azul)',
   WARM = 'Quente (Golden Hour)',
-  HIGH_CONTRAST = 'Alto Contraste (Dramático)'
+  HIGH_CONTRAST = 'Alto Contraste (Dramático)',
+  NEURAL_CINEMATIC = '🧠 Neural Cinematic (Audio-Reactive)'
 }
 
 export enum VideoTransition {
@@ -73,7 +76,6 @@ export enum VideoTransition {
   GLITCH = 'Glitch Digital',
   PIXELATE = 'Pixelização',
   CURTAIN = 'Cortinas (Teatro)',
-  ROTATION = 'Giro Rápido',
   AUTO = '🤖 IA Auto (Aleatório)'
 }
 

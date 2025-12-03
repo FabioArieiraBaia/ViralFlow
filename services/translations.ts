@@ -1,4 +1,5 @@
 
+
 import { Language } from "../types";
 
 type Translations = {
@@ -359,7 +360,7 @@ export const translations: Translations = {
         pollinationsModel: "Modelo (Pollinations)",
         selectModel: "Seleccionar...",
         originDomain: "Dominio de Origen (Pollinations)",
-        originDesc: "Copia esta dirección y pégala en el panel de Pollinations (Referrer) para autorizar el uso.",
+        originDesc: "Copia esta dirección y pégala en el panel de Pollinations (Referrer) para autorizar o uso.",
         copy: "Copiar",
         copied: "¡Copiado!",
         providerNone: "⛔ Solo Guion (Sin Imagen)",
