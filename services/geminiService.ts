@@ -1,6 +1,8 @@
 
 
 
+
+
 import { GoogleGenAI, Modality } from "@google/genai";
 import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeneratedScriptItem, ViralMetadataResult } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
@@ -438,7 +440,7 @@ export const generateSpeech = async (
     sceneIndex: number, 
     projectTopic: string,
     checkCancelled?: () => boolean
-): Promise<{url: string, buffer: AudioBuffer}> => {
+): Promise<{url: string, buffer: AudioBuffer, base64: string}> => {
   return withRetry(async (ai) => {
     const selectedVoice = voiceId && voiceId.trim().length > 0 ? voiceId : 'Fenrir';
     
@@ -480,7 +482,8 @@ export const generateSpeech = async (
        finalUrl = URL.createObjectURL(wavBlob);
     }
 
-    return { url: finalUrl, buffer: audioBuffer };
+    // Return the base64Audio so we can store it in the scene for persistent JSON export
+    return { url: finalUrl, buffer: audioBuffer, base64: base64Audio };
   }, checkCancelled);
 };
 
@@ -616,7 +619,7 @@ export const generateSceneImage = async (
     pollinationsModel: PollinationsModel = 'turbo', 
     geminiModel: GeminiModel = 'gemini-2.5-flash-image', 
     checkCancelled?: () => boolean
-): Promise<{ imageUrl: string, videoUrl?: string, mediaType: 'image' | 'video' }> => {
+): Promise<{ imageUrl: string, videoUrl?: string, mediaType: 'image' | 'video', base64: string }> => {
   
   if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
 
@@ -641,10 +644,13 @@ export const generateSceneImage = async (
       // 1. STOCK VIDEO PATH
       if (provider === ImageProvider.STOCK_VIDEO) {
           const pexelsData = await searchPexelsVideo(visualPrompt, format, checkCancelled);
+          // For Pexels we don't have base64 immediately for video, but we return image thumbnail
+          // We can try to fetch the thumbnail to base64 for consistency, but video is external link
           return {
               imageUrl: pexelsData.image,
               videoUrl: pexelsData.video,
-              mediaType: 'video'
+              mediaType: 'video',
+              base64: "" // Stock video relies on external link currently
           };
       }
 
@@ -730,7 +736,8 @@ function processBase64Result(base64: string, mimeType: string, ext: string, proj
     } else {
         finalUrl = base64ToBlobUrl(base64, mimeType);
     }
-    return { imageUrl: finalUrl, mediaType: 'image' as const };
+    // Return base64 so we can store it in Scene state for JSON persistence
+    return { imageUrl: finalUrl, mediaType: 'image' as const, base64: base64 };
 }
 
 export const generateThumbnails = async (

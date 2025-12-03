@@ -201,19 +201,27 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               try {
                   const resp = await fetch(bgMusicUrl);
                   const arrayBuffer = await resp.arrayBuffer();
-                  buffer = await getAudioContext().decodeAudioData(arrayBuffer);
-                  musicBufferCacheRef.current.set(bgMusicUrl, buffer);
+                  // Fix: Safely await decodeAudioData to handle browser compatibility issues
+                  const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
+                  if (decoded) {
+                    buffer = decoded;
+                    musicBufferCacheRef.current.set(bgMusicUrl, buffer);
+                  }
               } catch (e) {
                   console.error("Failed to load music", e);
                   return;
               }
           }
-          if (isPlaying && buffer) playMusic(buffer, bgMusicUrl);
+          // Fix: Ensure buffer is a valid AudioBuffer instance before playing
+          if (isPlaying && buffer && buffer instanceof AudioBuffer) playMusic(buffer, bgMusicUrl);
       };
       loadMusic();
   }, [bgMusicUrl, isPlaying]);
 
   const playMusic = (buffer: AudioBuffer, url: string) => {
+      // Fix: Defensive check
+      if (!buffer || !(buffer instanceof AudioBuffer)) return;
+
       const ctx = getAudioContext();
       if (currentMusicUrlRef.current === url && musicSourceRef.current) return;
 
@@ -222,7 +230,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
 
       musicSourceRef.current = ctx.createBufferSource();
-      musicSourceRef.current.buffer = buffer;
+      
+      try {
+        musicSourceRef.current.buffer = buffer;
+      } catch (err) {
+        console.error("Failed to set music buffer", err);
+        return;
+      }
+
       musicSourceRef.current.loop = true;
       
       if (!musicGainRef.current) {
@@ -237,12 +252,22 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   };
 
   const playSpeech = (buffer: AudioBuffer) => {
+      // Fix: Defensive check
+      if (!buffer || !(buffer instanceof AudioBuffer)) return;
+
       const ctx = getAudioContext();
       if (speechSourceRef.current) {
            try { speechSourceRef.current.stop(); } catch(e){}
       }
       speechSourceRef.current = ctx.createBufferSource();
-      speechSourceRef.current.buffer = buffer;
+      
+      try {
+        speechSourceRef.current.buffer = buffer;
+      } catch (err) {
+        console.error("Failed to set speech buffer", err);
+        return;
+      }
+
       speechSourceRef.current.connect(masterGainRef.current!);
       speechSourceRef.current.start(0);
   };
@@ -681,7 +706,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
       if (isPlaying) {
           const buffer = bgMusicUrl ? musicBufferCacheRef.current.get(bgMusicUrl) : null;
-          if (buffer && bgMusicUrl) playMusic(buffer, bgMusicUrl);
+          // Fix: ensure buffer is instance of AudioBuffer
+          if (buffer && buffer instanceof AudioBuffer && bgMusicUrl) playMusic(buffer, bgMusicUrl);
           sceneStartTime = performance.now();
           startTimeRef.current = sceneStartTime;
       } else {
@@ -728,8 +754,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
               }
 
               if (!hasStartedAudio && scene.audioBuffer) {
-                   playSpeech(scene.audioBuffer);
-                   hasStartedAudio = true;
+                   // Fix: Defensive check to ensure valid AudioBuffer
+                   if (scene.audioBuffer instanceof AudioBuffer) {
+                       playSpeech(scene.audioBuffer);
+                       hasStartedAudio = true;
+                   }
               }
 
               drawScene(ctx, scene, 1, progress, true, elapsed);

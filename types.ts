@@ -1,3 +1,4 @@
+
 export type Language = 'pt' | 'en' | 'es';
 export type Theme = 'light' | 'dark';
 
@@ -222,10 +223,12 @@ export interface Scene {
   // Generated Assets
   mediaType: 'image' | 'video';
   imageUrl?: string; // Usado para preview na sidebar e fallback
+  imageBase64?: string; // SAVED FOR JSON EXPORT
   videoUrl?: string; // Usado se mediaType for video
   
   imagePath?: string; // Caminho local
   audioUrl?: string; 
+  audioBase64?: string; // SAVED FOR JSON EXPORT
   audioPath?: string; // Caminho local
   audioBuffer?: AudioBuffer;
   
