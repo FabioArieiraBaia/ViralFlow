@@ -1,6 +1,8 @@
+
+
 import React, { useState, useRef, useEffect } from 'react';
-import { VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, GeminiModel, Scene, ViralMetadataResult, CameraMovement, VFXConfig, SubtitleSettings } from './types';
-import { generateVideoScript, generateSpeech, generateSceneImage, generateThumbnails, generateMetadata, getApiKeyCount, saveManualKeys, getManualKeys, savePexelsKey, getPexelsKey, savePollinationsToken, getPollinationsToken, generateMovieOutline, generateViralMetadata } from './services/geminiService';
+import { VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, GeminiModel, Scene, ViralMetadataResult, CameraMovement, VFXConfig, SubtitleSettings, VisualIntensity, LayerConfig, GeminiTTSModel } from './types';
+import { generateVideoScript, generateSpeech, generateSceneImage, generateThumbnails, generateMetadata, getApiKeyCount, saveManualKeys, getManualKeys, savePexelsKey, getPexelsKey, savePollinationsToken, getPollinationsToken, generateMovieOutline, generateViralMetadata, generateVisualVariations } from './services/geminiService';
 import { translations } from './services/translations';
 import { decodeBase64, decodeAudioData, base64ToBlobUrl, audioBufferToWav, getAudioContext } from './services/audioUtils';
 import { VideoPlayerRef } from './components/VideoPlayer';
@@ -96,6 +98,7 @@ const App: React.FC = () => {
   const [channelName, setChannelName] = useState('CuriosoTech');
   const [style, setStyle] = useState<VideoStyle>(VideoStyle.DOCUMENTARY);
   const [pacing, setPacing] = useState<VideoPacing>(VideoPacing.NORMAL);
+  const [visualIntensity, setVisualIntensity] = useState<VisualIntensity>(VisualIntensity.LOW);
   const [duration, setDuration] = useState<VideoDuration>(VideoDuration.SHORT);
   const [format, setFormat] = useState<VideoFormat>(VideoFormat.PORTRAIT);
   const [voice, setVoice] = useState('Auto');
@@ -108,6 +111,10 @@ const App: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<VideoFilter>(VideoFilter.NONE);
   const [globalTransition, setGlobalTransition] = useState<VideoTransition>(VideoTransition.FADE);
   
+  // TTS SETTINGS
+  const [ttsModel, setTtsModel] = useState<GeminiTTSModel>('gemini-2.5-flash-preview-tts');
+  const [globalTtsStyle, setGlobalTtsStyle] = useState<string>('');
+
   // GLOBAL VFX STATE
   const [globalVfx, setGlobalVfx] = useState<VFXConfig>({
       shakeIntensity: 0,
@@ -167,13 +174,22 @@ const App: React.FC = () => {
       catch (e) { alert("Erro ao regenerar asset: " + e); return { success: false }; } 
   };
   
-  const handleSceneAudioRegeneration = async (scene: Scene): Promise<any> => { 
+  const handleSceneAudioRegeneration = async (scene: Scene, newModel?: GeminiTTSModel, newStyle?: string): Promise<any> => { 
       const index = scenes.findIndex(s => s.id === scene.id); const idx = index >= 0 ? index : 0; 
-      try { const audioResult = await generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', idx, topic); return { ...audioResult, success: true }; } 
+      
+      // Use specific scene style OR global style.
+      // If regeneration is triggered manually from modal, we might want to update the scene's style with newStyle param
+      const effectiveStyle = newStyle !== undefined ? newStyle : (scene.ttsStyle || globalTtsStyle);
+      const effectiveModel = newModel || ttsModel;
+
+      try { 
+          const audioResult = await generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', idx, topic, undefined, effectiveStyle, effectiveModel); 
+          return { ...audioResult, success: true }; 
+      } 
       catch (e) { console.error("Regeneration failed", e); return { success: false }; } 
   };
   
-  const generateDraftChapter = async (chapterName: string, prevChapterName: string, chapterIndex: number, totalChapters: number): Promise<Scene[]> => { const rawScript = await generateVideoScript(topic, style, 8, pacing, channelName, contentLang, () => cancelRef.current, { currentChapter: chapterName, prevChapter: prevChapterName, chapterIndex: chapterIndex, totalChapters: totalChapters }); let chunkScenes: Scene[] = rawScript.map((item, idx) => ({ id: `c${chapterIndex}-s${idx}`, speaker: item.speaker, text: item.text, visualPrompt: item.visual_prompt, durationEstimate: Math.max(3, item.text.split(' ').length * 0.4), mediaType: 'image' as const, imageUrl: "https://placehold.co/1280x720/222/FFF.png?text=DRAFT+MODE", isGeneratingImage: false, isGeneratingAudio: false, audioError: false, cameraMovement: item.cameraMovement as CameraMovement || CameraMovement.ZOOM_IN })); if (voice === 'Auto') chunkScenes = performAutoCasting(chunkScenes, style); else chunkScenes = chunkScenes.map(s => ({ ...s, assignedVoice: voice === 'Custom' ? customVoice : voice })); return chunkScenes; };
+  const generateDraftChapter = async (chapterName: string, prevChapterName: string, chapterIndex: number, totalChapters: number): Promise<Scene[]> => { const rawScript = await generateVideoScript(topic, style, 8, pacing, channelName, contentLang, () => cancelRef.current, { currentChapter: chapterName, prevChapter: prevChapterName, chapterIndex: chapterIndex, totalChapters: totalChapters }); let chunkScenes: Scene[] = rawScript.map((item, idx) => ({ id: `c${chapterIndex}-s${idx}`, speaker: item.speaker, text: item.text, visualPrompt: item.visual_prompt, durationEstimate: Math.max(3, item.text.split(' ').length * 0.4), mediaType: 'image' as const, imageUrl: "https://placehold.co/1280x720/222/FFF.png?text=DRAFT+MODE", isGeneratingImage: false, isGeneratingAudio: false, audioError: false, cameraMovement: item.cameraMovement as CameraMovement || CameraMovement.ZOOM_IN, ttsStyle: "" })); if (voice === 'Auto') chunkScenes = performAutoCasting(chunkScenes, style); else chunkScenes = chunkScenes.map(s => ({ ...s, assignedVoice: voice === 'Custom' ? customVoice : voice })); return chunkScenes; };
   
   const handleGenerateVideo = async () => { 
       if (isGenerating) { cancelRef.current = true; return; } 
@@ -209,7 +225,8 @@ const App: React.FC = () => {
                   isGeneratingImage: true, 
                   isGeneratingAudio: true, 
                   audioError: false, 
-                  cameraMovement: (item.cameraMovement as CameraMovement) || movements[idx % movements.length] 
+                  cameraMovement: (item.cameraMovement as CameraMovement) || movements[idx % movements.length],
+                  ttsStyle: globalTtsStyle // Inherit global style initially
               })); 
               
               if (voice === 'Auto') newScenes = performAutoCasting(newScenes, style); else newScenes = newScenes.map(s => ({ ...s, assignedVoice: voice === 'Custom' ? customVoice : voice })); 
@@ -229,30 +246,82 @@ const App: React.FC = () => {
           const scene = scenesToProduce[i]; 
           if (scene.audioUrl && scene.imageUrl && !scene.imageUrl.includes('placehold')) continue; 
           
-          let safeImageProvider = imageProvider; 
-          if (imageProvider === ImageProvider.NONE) safeImageProvider = ImageProvider.NONE; else if (imageProvider === ImageProvider.GEMINI) safeImageProvider = ImageProvider.POLLINATIONS; 
-          
           setScenes(prev => { const updated = [...prev]; updated[i] = { ...updated[i], isGeneratingAudio: true, isGeneratingImage: true }; return updated; }); 
           
-          const audioPromise = generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', i, topic, () => cancelRef.current)
-              .then(audio => ({ ...audio, success: true }))
-              .catch(e => ({ url: '', buffer: undefined, base64: '', success: false })); 
-          const imagePromise = generateSceneImage(scene.visualPrompt, format, i, topic, safeImageProvider, style, 'turbo', 'gemini-2.5-flash-image', () => cancelRef.current)
-              .then(img => ({ ...img, success: true }))
-              .catch(e => ({ imageUrl: '', mediaType: 'image' as const, base64: '', success: false, videoUrl: undefined })); 
+          let safeImageProvider = imageProvider; 
+          if (imageProvider === ImageProvider.NONE) safeImageProvider = ImageProvider.NONE; else if (imageProvider === ImageProvider.GEMINI) safeImageProvider = ImageProvider.POLLINATIONS; 
+
+          // 1. GENERATE AUDIO FIRST to determine accurate duration
+          let audioResult;
+          try {
+             const effectiveStyle = scene.ttsStyle || globalTtsStyle;
+             // Pass Global TTS Model and Style
+             audioResult = await generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', i, topic, () => cancelRef.current, effectiveStyle, ttsModel);
+          } catch(e) {
+             audioResult = { url: '', buffer: undefined, base64: '', success: false };
+          }
+          const duration = (audioResult.buffer?.duration || scene.durationEstimate) + 0.2;
+
+          // 2. DETERMINE VISUAL CUTS based on Intensity
+          let cutInterval = 100; // infinite
+          if (visualIntensity === VisualIntensity.HYPER) cutInterval = 1.8;
+          else if (visualIntensity === VisualIntensity.HIGH) cutInterval = 2.5;
+          else if (visualIntensity === VisualIntensity.MEDIUM) cutInterval = 4.5;
           
-          const [audioResult, imageResult] = await Promise.all([audioPromise, imagePromise]); 
-          if (cancelRef.current) break; 
+          const numCuts = (visualIntensity === VisualIntensity.LOW) ? 1 : Math.ceil(duration / cutInterval);
+          const finalNumCuts = Math.max(1, numCuts);
           
+          // 3. GENERATE PROMPTS FOR SEQUENCE
+          let visualPrompts: string[] = [scene.visualPrompt];
+          if (finalNumCuts > 1 && safeImageProvider !== ImageProvider.NONE) {
+              setProgress(`🎬 Criando sequência visual (${finalNumCuts} cortes) para cena ${i + 1}...`);
+              visualPrompts = await generateVisualVariations(scene.visualPrompt, scene.text, finalNumCuts, () => cancelRef.current);
+          }
+
+          // 4. GENERATE IMAGES FOR EACH CUT
+          const generatedLayers: LayerConfig[] = [];
+          let mainImageResult: {
+            imageUrl: string;
+            videoUrl?: string;
+            mediaType: 'image' | 'video';
+            base64?: string;
+            success: boolean;
+          } = { 
+            imageUrl: "https://placehold.co/1280x720/333/FFF.png?text=Error", 
+            base64: undefined, 
+            videoUrl: undefined, 
+            mediaType: 'image', 
+            success: false 
+          };
+
+          for (let cutIdx = 0; cutIdx < visualPrompts.length; cutIdx++) {
+              if (cancelRef.current) break;
+              const prompt = visualPrompts[cutIdx];
+              
+              const imgRes = await generateSceneImage(prompt, format, i * 100 + cutIdx, topic, safeImageProvider, style, 'turbo', 'gemini-2.5-flash-image', () => cancelRef.current)
+                  .then(r => ({ ...r, success: true }))
+                  .catch(e => ({ imageUrl: '', mediaType: 'image' as const, base64: '', success: false, videoUrl: undefined }));
+              
+              if (cutIdx === 0) {
+                  mainImageResult = imgRes;
+              } else {
+                  if (imgRes.success) {
+                      generatedLayers.push({
+                          id: `auto-seq-${i}-${cutIdx}`,
+                          type: imgRes.mediaType,
+                          url: imgRes.videoUrl || imgRes.imageUrl,
+                          name: `Auto Cut ${cutIdx + 1}`,
+                          x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1,
+                          startTime: cutIdx * cutInterval,
+                          isBackground: true
+                      });
+                  }
+              }
+          }
+
           setScenes(prev => { 
               const updated = [...prev]; 
               
-              // --- CRITICAL AUDIO TIMING FIX ---
-              let exactDuration = updated[i].durationEstimate;
-              if (audioResult.success && audioResult.buffer) {
-                  exactDuration = audioResult.buffer.duration + 0.2;
-              }
-
               // --- CAMERA MOVEMENT FIX ---
               // If AI didn't suggest a movement, random one to avoid static images
               let finalMovement = updated[i].cameraMovement;
@@ -263,15 +332,19 @@ const App: React.FC = () => {
 
               updated[i] = { 
                   ...updated[i], 
-                  durationEstimate: exactDuration,
-                  audioUrl: audioResult.success ? audioResult.url : undefined, 
-                  audioBuffer: audioResult.success ? audioResult.buffer : undefined, 
-                  audioBase64: audioResult.success ? audioResult.base64 : undefined, 
-                  audioError: !audioResult.success, 
-                  imageUrl: imageResult.success ? imageResult.imageUrl : "https://placehold.co/1280x720/333/FFF.png?text=Error", 
-                  imageBase64: imageResult.success ? imageResult.base64 : undefined, 
-                  videoUrl: imageResult.videoUrl, 
-                  mediaType: imageResult.mediaType,
+                  durationEstimate: duration,
+                  audioUrl: audioResult.url, 
+                  audioBuffer: audioResult.buffer, 
+                  audioBase64: audioResult.base64, 
+                  audioError: !audioResult.buffer, 
+                  
+                  imageUrl: mainImageResult.imageUrl, 
+                  imageBase64: mainImageResult.base64, 
+                  videoUrl: mainImageResult.videoUrl, 
+                  mediaType: mainImageResult.mediaType,
+                  
+                  layers: generatedLayers.length > 0 ? [...(updated[i].layers || []), ...generatedLayers] : updated[i].layers,
+                  
                   cameraMovement: finalMovement, 
                   isGeneratingAudio: false, 
                   isGeneratingImage: false 
@@ -369,8 +442,8 @@ const App: React.FC = () => {
   };
   
   const saveSceneUpdate = (updated: Scene) => { setScenes(prev => prev.map(s => s.id === updated.id ? updated : s)); setEditingScene(null); };
-  const handleCreateManualProject = () => { setScenes([{ id: `manual-s0`, speaker: 'Narrator', text: 'Welcome.', visualPrompt: 'Cinematic opening', durationEstimate: 5, mediaType: 'image', imageUrl: 'https://placehold.co/1280x720/111/FFF.png?text=Scene+1', isGeneratingAudio: false, isGeneratingImage: false, assignedVoice: 'Fenrir', cameraMovement: CameraMovement.ZOOM_IN }]); setTopic('Manual Project'); setActiveTab('preview'); };
-  const handleAddScene = () => { const newIdx = scenes.length; const newScene: Scene = { id: `manual-s${newIdx}-${Date.now()}`, speaker: 'Narrator', text: 'New scene...', visualPrompt: 'Describe...', durationEstimate: 5, mediaType: 'image', imageUrl: `https://placehold.co/1280x720/111/FFF.png?text=Scene+${newIdx+1}`, isGeneratingAudio: false, isGeneratingImage: false, assignedVoice: 'Fenrir', cameraMovement: CameraMovement.ZOOM_IN }; setScenes(prev => [...prev, newScene]); };
+  const handleCreateManualProject = () => { setScenes([{ id: `manual-s0`, speaker: 'Narrator', text: 'Welcome.', visualPrompt: 'Cinematic opening', durationEstimate: 5, mediaType: 'image', imageUrl: 'https://placehold.co/1280x720/111/FFF.png?text=Scene+1', isGeneratingAudio: false, isGeneratingImage: false, assignedVoice: 'Fenrir', cameraMovement: CameraMovement.ZOOM_IN, ttsStyle: globalTtsStyle }]); setTopic('Manual Project'); setActiveTab('preview'); };
+  const handleAddScene = () => { const newIdx = scenes.length; const newScene: Scene = { id: `manual-s${newIdx}-${Date.now()}`, speaker: 'Narrator', text: 'New scene...', visualPrompt: 'Describe...', durationEstimate: 5, mediaType: 'image', imageUrl: `https://placehold.co/1280x720/111/FFF.png?text=Scene+${newIdx+1}`, isGeneratingAudio: false, isGeneratingImage: false, assignedVoice: 'Fenrir', cameraMovement: CameraMovement.ZOOM_IN, ttsStyle: globalTtsStyle }; setScenes(prev => [...prev, newScene]); };
   const handleToggleSelectScene = (id: string) => { const newSet = new Set(selectedSceneIds); if (newSet.has(id)) newSet.delete(id); else newSet.add(id); setSelectedSceneIds(newSet); };
   const handleSelectAll = () => { if (selectedSceneIds.size === scenes.length) setSelectedSceneIds(new Set()); else setSelectedSceneIds(new Set(scenes.map(s => s.id))); };
   const handleBulkDelete = () => { if (selectedSceneIds.size === 0) return; if (!confirm(`Deletar ${selectedSceneIds.size} cenas?`)) return; setScenes(prev => prev.filter(s => !selectedSceneIds.has(s.id))); setSelectedSceneIds(new Set()); if(scenes.length === 0) setCurrentSceneIndex(0); };
@@ -387,7 +460,8 @@ const App: React.FC = () => {
               try { const imgRes = await handleSceneAssetRegeneration(scene, imageProvider, 'turbo', 'gemini-2.5-flash-image'); setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl: imgRes.imageUrl, imageBase64: imgRes.base64, videoUrl: imgRes.videoUrl, mediaType: imgRes.mediaType, isGeneratingImage: false } : s)); } catch(e) {} 
           } else { 
               try { 
-                  const audioRes = await handleSceneAudioRegeneration(scene); 
+                  // Pass Global TTS settings for bulk regen
+                  const audioRes = await handleSceneAudioRegeneration(scene, ttsModel, globalTtsStyle); 
                   let exactDuration = scene.durationEstimate;
                   if (audioRes.success && audioRes.buffer) exactDuration = audioRes.buffer.duration + 0.2;
                   
@@ -410,7 +484,7 @@ const App: React.FC = () => {
         {activeTab === 'create' && (
           <CreateTab 
             lang={lang} topic={topic} setTopic={setTopic} contentLang={contentLang} setContentLang={setContentLang}
-            style={style} setStyle={setStyle} pacing={pacing} setPacing={setPacing} format={format} setFormat={setFormat}
+            style={style} setStyle={setStyle} pacing={pacing} setPacing={setPacing} visualIntensity={visualIntensity} setVisualIntensity={setVisualIntensity} format={format} setFormat={setFormat}
             duration={duration} setDuration={setDuration} channelName={channelName} setChannelName={setChannelName}
             voice={voice} setVoice={setVoice} customVoice={customVoice} setCustomVoice={setCustomVoice}
             imageProvider={imageProvider} setImageProvider={setImageProvider} globalTransition={globalTransition}
@@ -418,6 +492,7 @@ const App: React.FC = () => {
             handleGenerateVideo={handleGenerateVideo} handleImportScriptRef={importInputRef} 
             setShowUpgradeModal={setShowUpgradeModal} setActiveTab={setActiveTab} 
             importClick={() => importInputRef.current?.click()} handleCreateManualProject={handleCreateManualProject}
+            ttsModel={ttsModel} setTtsModel={setTtsModel} globalTtsStyle={globalTtsStyle} setGlobalTtsStyle={setGlobalTtsStyle}
           />
         )}
 
@@ -464,7 +539,7 @@ const App: React.FC = () => {
         <EditSceneModal 
             scene={editingScene} onClose={() => setEditingScene(null)} onSave={saveSceneUpdate} 
             onRegenerateAsset={handleSceneAssetRegeneration} onRegenerateAudio={handleSceneAudioRegeneration}
-            lang={lang} userTier={userTier} format={format} t={translations}
+            lang={lang} userTier={userTier} format={format} t={translations} ttsModel={ttsModel}
         />
       )}
     </div>

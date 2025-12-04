@@ -5,6 +5,7 @@ export type Theme = 'light' | 'dark';
 
 export type PollinationsModel = 'flux' | 'turbo' | 'dreamshaper' | 'deliberate' | 'midjourney';
 export type GeminiModel = 'gemini-2.5-flash-image' | 'imagen-3.0-generate-001';
+export type GeminiTTSModel = 'gemini-2.5-flash-preview-tts' | 'gemini-2.5-pro-tts';
 
 export enum VideoStyle {
   SCARY = 'Terror Analógico (Creepypasta)',
@@ -28,6 +29,13 @@ export enum VideoPacing {
   FAST = 'Rápido (YouTuber Dinâmico - Cortes 4s)',
   NORMAL = 'Narrativo (Padrão TV - Cortes 6s)',
   SLOW = 'Contemplativo (Documentário - Cortes 8s+)'
+}
+
+export enum VisualIntensity {
+  LOW = 'Estático (1 Imagem/Cena)',
+  MEDIUM = 'Dinâmico (A cada 4-5s)',
+  HIGH = 'Intenso (A cada 2-3s)',
+  HYPER = 'Insano (A cada 1-2s)'
 }
 
 export enum VideoDuration {
@@ -134,6 +142,17 @@ export enum UserTier {
   PRO = 'PRO'
 }
 
+export enum LayerAnimation {
+  NONE = 'Nenhum',
+  FADE = 'Fade (Suave)',
+  SLIDE_UP = 'Slide Cima',
+  SLIDE_DOWN = 'Slide Baixo',
+  SLIDE_LEFT = 'Slide Esq',
+  SLIDE_RIGHT = 'Slide Dir',
+  SCALE = 'Pop / Scale',
+  TYPEWRITER = 'Datilografar (Texto)'
+}
+
 export interface Soundtrack {
   id: string;
   label: string;
@@ -181,6 +200,20 @@ export interface LayerConfig {
   
   // Animation
   keyframes?: Keyframe[];
+  entryEffect?: LayerAnimation;
+  entryDuration?: number; // Duration of entry in seconds (Default 1.0)
+  
+  exitEffect?: LayerAnimation;
+  exitDuration?: number; // Duration of exit in seconds (Default 1.0)
+  
+  animationDuration?: number; // Deprecated, kept for compat
+
+  // Visibility Timing (Sequencing)
+  startTime?: number; // Seconds relative to scene start
+  endTime?: number;   // Seconds relative to scene start
+
+  // SPECIAL FLAG: TREAT AS BACKGROUND (FULL SCREEN COVER)
+  isBackground?: boolean; 
 
   // Video Specific (Trimming)
   trimStart?: number; // Start time in seconds
@@ -235,6 +268,7 @@ export interface Scene {
   visualPrompt: string;
   durationEstimate: number; // Seconds (Float)
   assignedVoice?: string; // Voz persistente do personagem (Elenco)
+  ttsStyle?: string; // NEW: Instrução de estilo para a IA (Ex: "Animado", "Sussurrando")
   
   // Generated Assets
   mediaType: 'image' | 'video';
@@ -285,6 +319,7 @@ export interface ProjectState {
   channelName: string;
   style: VideoStyle;
   pacing: VideoPacing;
+  visualIntensity: VisualIntensity; // NEW: Controls image density
   voice: string;
   duration: VideoDuration;
   format: VideoFormat;
@@ -294,6 +329,10 @@ export interface ProjectState {
   // Audio Fields (Global fallback)
   bgMusicUrl?: string;
   bgMusicVolume: number;
+  
+  // TTS Settings
+  ttsModel: GeminiTTSModel;
+  globalTtsStyle: string; // Ex: "Narrador de documentário, tom sério"
   
   // Branding (Global)
   channelLogo?: OverlayConfig;

@@ -1,7 +1,8 @@
 
+
 import React, { useState, useRef, useEffect } from 'react';
-import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle, CameraMovement, AudioLayer } from '../types';
-import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera, Speaker } from 'lucide-react';
+import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle, CameraMovement, AudioLayer, LayerAnimation, GeminiTTSModel } from '../types';
+import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera, Speaker, Clapperboard, Timer, MoveRight } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 
 // VOICE OPTIONS CONSTANT (Reused here for the modal)
@@ -12,16 +13,6 @@ const VOICE_OPTIONS = [
   { id: 'Puck', label: '👩 Puck (Fem. Suave)' },
   { id: 'Kore', label: '🧬 Kore (Fem. Tech)' },
   { id: 'Aoede', label: '🎭 Aoede (Fem. Dramática)' }
-];
-
-const SFX_PRESETS = [
-    { name: 'Whoosh (Rápido)', url: 'https://cdn.pixabay.com/download/audio/2022/03/24/audio_c8c8a73467.mp3' },
-    { name: 'Boom (Impacto)', url: 'https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8c8a73467.mp3' }, // Placeholder URLs - in real app, bundle these or use a reliable CDN
-    { name: 'Click (Mouse)', url: '' },
-    { name: 'Pop', url: '' },
-    { name: 'Camera Shutter', url: '' },
-    { name: 'Risada', url: '' },
-    { name: 'Glitch', url: '' }
 ];
 
 export const WelcomeModal: React.FC<{ onClose: () => void, lang: Language, t: any }> = ({ onClose, lang, t }) => {
@@ -210,12 +201,13 @@ export const EditSceneModal: React.FC<{
     onClose: () => void, 
     onSave: (updatedScene: Scene) => void, 
     onRegenerateAsset: (scene: Scene, provider: ImageProvider, pollinationsModel?: PollinationsModel, geminiModel?: GeminiModel) => Promise<any>,
-    onRegenerateAudio: (scene: Scene) => Promise<any>,
+    onRegenerateAudio: (scene: Scene, newModel?: GeminiTTSModel, newStyle?: string) => Promise<any>,
     lang: Language,
     userTier: UserTier,
     format: VideoFormat,
-    t: any
-}> = ({ scene, onClose, onSave, onRegenerateAsset, onRegenerateAudio, lang, userTier, format, t }) => {
+    t: any,
+    ttsModel: GeminiTTSModel
+}> = ({ scene, onClose, onSave, onRegenerateAsset, onRegenerateAudio, lang, userTier, format, t, ttsModel }) => {
     
     // Initial Layers Setup
     const initialLayers = scene.layers || (scene.overlay ? [{
@@ -233,11 +225,15 @@ export const EditSceneModal: React.FC<{
     const [pollinationsModel, setPollinationsModel] = useState<PollinationsModel>('turbo');
     const [geminiModel, setGeminiModel] = useState<GeminiModel>('gemini-2.5-flash-image');
     
+    // TTS Local State for regeneration
+    const [localTtsModel, setLocalTtsModel] = useState<GeminiTTSModel>(ttsModel);
+    
     // Layer State
     const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
     const [selectedLayer, setSelectedLayer] = useState<LayerConfig | null>(null);
     const [currentFrameTime, setCurrentFrameTime] = useState(0); 
     const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
+    const [regeneratingLayerIds, setRegeneratingLayerIds] = useState<Set<string>>(new Set());
 
     // Audio State
     const [musicAction, setMusicAction] = useState<MusicAction>(localScene.musicConfig?.action || MusicAction.CONTINUE);
@@ -247,6 +243,10 @@ export const EditSceneModal: React.FC<{
     const [uploadedFileName, setUploadedFileName] = useState<string>('');
     const [sfxUploadName, setSfxUploadName] = useState('');
     
+    // Sequence Logic
+    const [cutPrompt, setCutPrompt] = useState('');
+    const [isGeneratingCut, setIsGeneratingCut] = useState(false);
+
     // VFX State
     const [vfx, setVfx] = useState<VFXConfig>(localScene.vfxConfig || { shakeIntensity: 0, chromaticAberration: 0, bloomIntensity: 0, vignetteIntensity: 0, filmGrain: 0 });
     const [grading, setGrading] = useState<ColorGradingPreset>(localScene.colorGrading || ColorGradingPreset.NONE);
@@ -255,6 +255,7 @@ export const EditSceneModal: React.FC<{
     const layerInputRef = useRef<HTMLInputElement>(null);
     const musicFileInputRef = useRef<HTMLInputElement>(null);
     const sfxInputRef = useRef<HTMLInputElement>(null);
+    const cutInputRef = useRef<HTMLInputElement>(null);
 
     // Sync Music Config
     useEffect(() => {
@@ -288,20 +289,6 @@ export const EditSceneModal: React.FC<{
             setSelectedLayer(null);
         }
     }, [selectedLayerId, localScene.layers]);
-
-    // Preview Loop
-    useEffect(() => {
-        let interval: any;
-        if(isPreviewPlaying) {
-             interval = setInterval(() => {
-                 setCurrentFrameTime(prev => {
-                     const next = prev + 0.005; 
-                     return next > 1 ? 0 : next;
-                 });
-             }, 16);
-        }
-        return () => clearInterval(interval);
-    }, [isPreviewPlaying]);
 
     const updateLayer = (id: string, updates: Partial<LayerConfig>) => {
         setLocalScene(prev => ({
@@ -357,6 +344,94 @@ export const EditSceneModal: React.FC<{
         setSelectedLayerId(newLayer.id);
     };
 
+    // --- VISUAL SEQUENCE (MULTI-SHOT) LOGIC ---
+    const handleGenerateVisualCut = async () => {
+        if (!cutPrompt) return alert("Digite um prompt para o corte.");
+        setIsGeneratingCut(true);
+        try {
+            // Fake a scene with the new prompt to reuse the generator logic
+            const tempScene = { ...localScene, visualPrompt: cutPrompt };
+            const result = await onRegenerateAsset(tempScene, selectedProvider, pollinationsModel, geminiModel);
+            
+            if (result.success && (result.imageUrl || result.videoUrl)) {
+                // Determine sensible start time (e.g., halfway through or end of last cut)
+                let startTime = localScene.durationEstimate / 2;
+                const backgroundLayers = localScene.layers?.filter(l => l.isBackground) || [];
+                if (backgroundLayers.length > 0) {
+                     const last = backgroundLayers[backgroundLayers.length - 1];
+                     if (last.startTime !== undefined) startTime = Math.min(last.startTime + 2, localScene.durationEstimate - 1);
+                }
+
+                const newLayer: LayerConfig = {
+                    id: `seq-cut-${Date.now()}`,
+                    type: result.mediaType,
+                    url: result.videoUrl || result.imageUrl,
+                    name: `Corte ${backgroundLayers.length + 2}`, // +2 because index 0 is main + current
+                    x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1,
+                    startTime: startTime,
+                    isBackground: true // MAGIC FLAG
+                };
+                
+                setLocalScene(prev => ({ ...prev, layers: [...(prev.layers || []), newLayer] }));
+                setCutPrompt(""); // Clear prompt
+            }
+        } catch (e) { console.error(e); }
+        setIsGeneratingCut(false);
+    };
+
+    const handleAddUploadCut = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const url = URL.createObjectURL(file);
+            const isVideo = file.type.startsWith('video/');
+            let startTime = localScene.durationEstimate / 2;
+            const backgroundLayers = localScene.layers?.filter(l => l.isBackground) || [];
+            if (backgroundLayers.length > 0) {
+                 const last = backgroundLayers[backgroundLayers.length - 1];
+                 if (last.startTime !== undefined) startTime = Math.min(last.startTime + 2, localScene.durationEstimate - 1);
+            }
+
+            const newLayer: LayerConfig = {
+                id: `seq-upload-${Date.now()}`,
+                type: isVideo ? 'video' : 'image',
+                url,
+                name: file.name.substring(0, 10),
+                x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1,
+                startTime: startTime,
+                isBackground: true
+            };
+             setLocalScene(prev => ({ ...prev, layers: [...(prev.layers || []), newLayer] }));
+        }
+    };
+
+    const handleRegenerateSequenceLayer = async (layerId: string) => {
+        const layer = localScene.layers?.find(l => l.id === layerId);
+        if (!layer) return;
+
+        setRegeneratingLayerIds(prev => new Set(prev).add(layerId));
+
+        try {
+            const variationPrompt = `${localScene.visualPrompt}. Alternative camera angle, cinematic cut, detailed.`;
+            const tempScene = { ...localScene, visualPrompt: variationPrompt };
+            const result = await onRegenerateAsset(tempScene, selectedProvider, pollinationsModel, geminiModel);
+            
+            if (result.success) {
+                updateLayer(layerId, {
+                    url: result.videoUrl || result.imageUrl,
+                    type: result.mediaType
+                });
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setRegeneratingLayerIds(prev => {
+                const next = new Set(prev);
+                next.delete(layerId);
+                return next;
+            });
+        }
+    };
+
     const removeLayer = (id: string) => {
         setLocalScene(prev => ({ ...prev, layers: prev.layers?.filter(l => l.id !== id) }));
         if (selectedLayerId === id) setSelectedLayerId(null);
@@ -403,7 +478,6 @@ export const EditSceneModal: React.FC<{
             setLocalScene(prev => {
                 const newState: Scene = { 
                     ...prev, 
-                    // Set both for safety, but mediaType dictates rendering
                     imageUrl: isVideo ? "https://placehold.co/1280x720/000000/FFFFFF.png?text=VIDEO+READY" : url,
                     videoUrl: isVideo ? url : undefined,
                     mediaType: (isVideo ? 'video' : 'image') as 'image' | 'video'
@@ -428,9 +502,9 @@ export const EditSceneModal: React.FC<{
         setIsRegeneratingAudio(true);
         setAudioGenStatus('idle');
         try {
-            const res = await onRegenerateAudio(localScene);
+            // Pass the local TTS settings
+            const res = await onRegenerateAudio(localScene, localTtsModel, localScene.ttsStyle);
             if (res.success) {
-                // When audio is regenerated, update scene duration estimate
                 const dur = res.buffer ? res.buffer.duration + 0.2 : localScene.durationEstimate;
                 setLocalScene(prev => ({ 
                     ...prev, 
@@ -459,7 +533,6 @@ export const EditSceneModal: React.FC<{
         }
     };
 
-    // --- SFX (Audio Layers) ---
     const handleAddAudioLayer = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -505,7 +578,7 @@ export const EditSceneModal: React.FC<{
                      <span className="px-3 py-1 bg-red-600 text-white text-xs font-bold rounded-full animate-pulse flex items-center gap-1"><Maximize2 className="w-3 h-3" /> LIVE PREVIEW</span>
                 </div>
                 <div className="flex-1 flex items-center justify-center p-4 bg-zinc-900/50 overflow-hidden relative">
-                    <div className="max-w-full max-h-full aspect-video shadow-2xl rounded-lg overflow-hidden border border-zinc-800 relative">
+                    <div className={`max-w-full max-h-full ${format === VideoFormat.PORTRAIT ? 'aspect-[9/16]' : 'aspect-video'} shadow-2xl rounded-lg overflow-hidden border border-zinc-800 relative`}>
                          <VideoPlayer 
                             scenes={[localScene]} 
                             currentSceneIndex={0}
@@ -514,10 +587,15 @@ export const EditSceneModal: React.FC<{
                             setIsPlaying={setIsPreviewPlaying}
                             format={format}
                             bgMusicVolume={0}
-                            showSubtitles={true}
+                            showSubtitles={false}
                             subtitleStyle={SubtitleStyle.MODERN}
                             userTier={userTier}
                             scrubProgress={currentFrameTime}
+                            onProgress={(progress) => setCurrentFrameTime(progress)}
+                            onPlaybackComplete={() => {
+                                setIsPreviewPlaying(false);
+                                setCurrentFrameTime(0);
+                            }}
                         />
                         {!isPreviewPlaying && (
                              <div className="absolute bottom-0 left-0 h-1 bg-red-500 z-50 pointer-events-none" style={{ width: `${currentFrameTime * 100}%` }}></div>
@@ -562,7 +640,7 @@ export const EditSceneModal: React.FC<{
                 <div className="shrink-0 px-6 py-4 bg-zinc-50 dark:bg-zinc-950 border-b border-zinc-200 dark:border-zinc-800 overflow-x-auto">
                     <div className="flex gap-2 w-max">
                         <button onClick={() => setActiveTab('text')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'text' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800'}`}><FileAudio className="w-4 h-4" /> {t[lang].tabScript}</button>
-                        <button onClick={() => setActiveTab('visual')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'visual' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800'}`}><ImagePlus className="w-4 h-4" /> {t[lang].tabVisual}</button>
+                        <button onClick={() => setActiveTab('visual')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'visual' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800'}`}><Clapperboard className="w-4 h-4" /> {t[lang].tabVisual}</button>
                         <button onClick={() => setActiveTab('audio')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'audio' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800'}`}><Music2 className="w-4 h-4" /> {t[lang].tabAudio}</button>
                         <button onClick={() => setActiveTab('vfx')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === 'vfx' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800'}`}><Layers className="w-4 h-4" /> Camadas & VFX</button>
                     </div>
@@ -576,11 +654,30 @@ export const EditSceneModal: React.FC<{
                                     <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Roteiro (Texto da Fala)</label>
                                     <textarea value={localScene.text} onChange={(e) => setLocalScene({...localScene, text: e.target.value})} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none h-32" placeholder="Digite o texto que será falado nesta cena..." />
                                 </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Voz do Personagem</label>
+                                        <select value={localScene.assignedVoice || 'Fenrir'} onChange={(e) => setLocalScene({...localScene, assignedVoice: e.target.value})} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none">
+                                            {VOICE_OPTIONS.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Modelo TTS</label>
+                                        <select value={localTtsModel} onChange={(e) => setLocalTtsModel(e.target.value as GeminiTTSModel)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none">
+                                            <option value="gemini-2.5-flash-preview-tts">Flash 2.5</option>
+                                            <option value="gemini-2.5-pro-tts">Pro 2.5</option>
+                                        </select>
+                                    </div>
+                                </div>
                                 <div>
-                                    <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Voz do Personagem</label>
-                                    <select value={localScene.assignedVoice || 'Fenrir'} onChange={(e) => setLocalScene({...localScene, assignedVoice: e.target.value})} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none">
-                                        {VOICE_OPTIONS.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
-                                    </select>
+                                    <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Estilo de Fala (Acting Prompt)</label>
+                                    <input 
+                                        type="text" 
+                                        value={localScene.ttsStyle || ''} 
+                                        onChange={(e) => setLocalScene({...localScene, ttsStyle: e.target.value})} 
+                                        placeholder="Sobrescreve o estilo global (Ex: Sussurrando...)" 
+                                        className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white outline-none focus:border-indigo-500"
+                                    />
                                 </div>
                                 <div className="pt-2 flex flex-col gap-2">
                                      <div className="flex items-center justify-between text-xs px-1">
@@ -623,7 +720,7 @@ export const EditSceneModal: React.FC<{
                                 <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2"><ArrowRightLeft className="w-4 h-4" /> Transição de Saída</h4>
                                 <select 
                                     value={localScene.transition || VideoTransition.AUTO} 
-                                    onChange={(e) => setLocalScene({...localScene, transition: e.target.value as VideoTransition})}
+                                    onChange={(e) => setLocalScene({...localScene,transition: e.target.value as VideoTransition})}
                                     className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white outline-none"
                                 >
                                     <option value={VideoTransition.AUTO}>Padrão (Global)</option>
@@ -633,7 +730,6 @@ export const EditSceneModal: React.FC<{
                                     <option value={VideoTransition.ZOOM}>Zoom</option>
                                     <option value={VideoTransition.WIPE}>Wipe</option>
                                 </select>
-                                <p className="text-[10px] text-zinc-500">Define como esta cena transita para a próxima.</p>
                              </div>
 
                              {/* Camera Movement Selector */}
@@ -653,7 +749,137 @@ export const EditSceneModal: React.FC<{
                                     <option value={CameraMovement.ROTATE_CCW}>Girar Anti-Horário (Leve)</option>
                                     <option value={CameraMovement.HANDHELD}>Câmera na Mão (Shake)</option>
                                 </select>
-                                <p className="text-[10px] text-zinc-500">Simula movimento em imagens estáticas.</p>
+                             </div>
+                             
+                             {/* Layers Management */}
+                             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-4">
+                                <div className="flex justify-between items-center">
+                                    <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider flex items-center gap-2"><Layers className="w-4 h-4" /> Camadas (Overlays)</h4>
+                                    <div className="flex gap-2">
+                                        <button onClick={handleAddTextLayer} className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded text-[10px] font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex items-center gap-1"><Type className="w-3 h-3"/> Texto</button>
+                                        <button onClick={() => layerInputRef.current?.click()} className="px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded text-[10px] font-bold hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors flex items-center gap-1"><ImagePlus className="w-3 h-3"/> Mídia</button>
+                                        <input type="file" ref={layerInputRef} onChange={handleAddLayer} className="hidden" accept="image/*,video/*" />
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                                    {localScene.layers?.filter(l => !l.isBackground).length === 0 && (
+                                        <div className="text-center text-[10px] text-zinc-400 py-4 italic">Nenhuma camada adicionada.</div>
+                                    )}
+                                    {localScene.layers?.map((layer, idx) => {
+                                         if (layer.isBackground) return null;
+                                         return (
+                                            <div key={layer.id} onClick={() => setSelectedLayerId(layer.id)} className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer ${selectedLayerId === layer.id ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-500' : 'bg-zinc-50 dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 hover:border-zinc-300'}`}>
+                                                {layer.type === 'text' ? <Type className="w-4 h-4 text-zinc-500"/> : layer.type === 'video' ? <Video className="w-4 h-4 text-zinc-500"/> : <ImagePlus className="w-4 h-4 text-zinc-500"/>}
+                                                <span className="flex-1 text-xs font-bold truncate">{layer.name || layer.text || "Camada"}</span>
+                                                <div className="flex gap-1">
+                                                    <button onClick={(e) => { e.stopPropagation(); moveLayer(idx, 'up'); }} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"><MoveUp className="w-3 h-3"/></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); moveLayer(idx, 'down'); }} className="p-1 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"><MoveDown className="w-3 h-3"/></button>
+                                                    <button onClick={(e) => { e.stopPropagation(); removeLayer(layer.id); }} className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"><Trash2 className="w-3 h-3"/></button>
+                                                </div>
+                                            </div>
+                                         );
+                                    })}
+                                </div>
+
+                                {selectedLayer && !selectedLayer.isBackground && (
+                                    <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-3 animate-in slide-in-from-top-2">
+                                        <h5 className="text-[10px] font-bold text-indigo-500 uppercase">Propriedades: {selectedLayer.name}</h5>
+                                        
+                                        {selectedLayer.type === 'text' && (
+                                            <div className="space-y-2">
+                                                <input value={selectedLayer.text} onChange={(e) => updateLayer(selectedLayer.id, { text: e.target.value })} className="w-full bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded p-1 text-xs" placeholder="Texto..." />
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    <div>
+                                                        <label className="text-[9px] text-zinc-500 uppercase block">Cor</label>
+                                                        <input type="color" value={selectedLayer.fontColor || '#ffffff'} onChange={(e) => updateLayer(selectedLayer.id, { fontColor: e.target.value })} className="w-full h-6 rounded cursor-pointer" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[9px] text-zinc-500 uppercase block">Tamanho</label>
+                                                        <input type="number" value={selectedLayer.fontSize || 50} onChange={(e) => updateLayer(selectedLayer.id, { fontSize: parseInt(e.target.value) })} className="w-full bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded p-1 text-xs" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-[9px] text-zinc-500 uppercase block">Pos X</label>
+                                                <input type="range" min="0" max="1" step="0.01" value={selectedLayer.x} onChange={(e) => updateLayer(selectedLayer.id, { x: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] text-zinc-500 uppercase block">Pos Y</label>
+                                                <input type="range" min="0" max="1" step="0.01" value={selectedLayer.y} onChange={(e) => updateLayer(selectedLayer.id, { y: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] text-zinc-500 uppercase block">Escala</label>
+                                                <input type="range" min="0.1" max="3" step="0.1" value={selectedLayer.scale} onChange={(e) => updateLayer(selectedLayer.id, { scale: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                            </div>
+                                            <div>
+                                                <label className="text-[9px] text-zinc-500 uppercase block">Rotação</label>
+                                                <input type="range" min="0" max="360" step="1" value={selectedLayer.rotation} onChange={(e) => updateLayer(selectedLayer.id, { rotation: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="text-[9px] text-zinc-500 uppercase block">Opacidade</label>
+                                            <input type="range" min="0" max="1" step="0.05" value={selectedLayer.opacity} onChange={(e) => updateLayer(selectedLayer.id, { opacity: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                        </div>
+                                        
+                                        {/* Animation Controls */}
+                                        <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-2">
+                                            <h6 className="text-[9px] font-bold text-zinc-500 uppercase flex items-center gap-1"><MoveRight className="w-3 h-3"/> Animação In/Out</h6>
+                                            
+                                            {/* Entry Settings */}
+                                            <div className="bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-100 dark:border-zinc-800">
+                                                <label className="text-[9px] font-bold text-zinc-500 block mb-1">Efeito de Entrada</label>
+                                                <div className="flex gap-2 mb-2">
+                                                    <select 
+                                                        value={selectedLayer.entryEffect || LayerAnimation.NONE} 
+                                                        onChange={(e) => updateLayer(selectedLayer.id, { entryEffect: e.target.value as LayerAnimation })}
+                                                        className="flex-1 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded p-1 text-[10px]"
+                                                    >
+                                                        {Object.values(LayerAnimation).map(l => <option key={l} value={l}>{l}</option>)}
+                                                    </select>
+                                                </div>
+                                                <label className="text-[8px] text-zinc-400 block mb-1 flex justify-between">
+                                                    <span>Duração Entrada</span>
+                                                    <span>{(selectedLayer.entryDuration || 1.0).toFixed(1)}s</span>
+                                                </label>
+                                                <input 
+                                                    type="range" min="0.1" max="3.0" step="0.1" 
+                                                    value={selectedLayer.entryDuration !== undefined ? selectedLayer.entryDuration : 1.0} 
+                                                    onChange={(e) => updateLayer(selectedLayer.id, { entryDuration: parseFloat(e.target.value) })} 
+                                                    className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none accent-indigo-500" 
+                                                />
+                                            </div>
+
+                                            {/* Exit Settings */}
+                                            <div className="bg-zinc-50 dark:bg-zinc-950 p-2 rounded border border-zinc-100 dark:border-zinc-800">
+                                                <label className="text-[9px] font-bold text-zinc-500 block mb-1">Efeito de Saída</label>
+                                                <div className="flex gap-2 mb-2">
+                                                    <select 
+                                                        value={selectedLayer.exitEffect || LayerAnimation.NONE} 
+                                                        onChange={(e) => updateLayer(selectedLayer.id, { exitEffect: e.target.value as LayerAnimation })}
+                                                        className="flex-1 bg-white dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded p-1 text-[10px]"
+                                                    >
+                                                        {Object.values(LayerAnimation).map(l => <option key={l} value={l}>{l}</option>)}
+                                                    </select>
+                                                </div>
+                                                <label className="text-[8px] text-zinc-400 block mb-1 flex justify-between">
+                                                    <span>Duração Saída</span>
+                                                    <span>{(selectedLayer.exitDuration || 1.0).toFixed(1)}s</span>
+                                                </label>
+                                                <input 
+                                                    type="range" min="0.1" max="3.0" step="0.1" 
+                                                    value={selectedLayer.exitDuration !== undefined ? selectedLayer.exitDuration : 1.0} 
+                                                    onChange={(e) => updateLayer(selectedLayer.id, { exitDuration: parseFloat(e.target.value) })} 
+                                                    className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none accent-red-500" 
+                                                />
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                )}
                              </div>
 
                              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-4">
@@ -672,18 +898,8 @@ export const EditSceneModal: React.FC<{
                     
                     {activeTab === 'visual' && (
                          <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
-                             <div className="flex gap-4">
-                                 <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl flex flex-col items-center justify-center gap-2 text-zinc-500 hover:text-indigo-500 hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/10 transition-all">
-                                     <div className="flex gap-1"><Upload className="w-6 h-6" /><Video className="w-6 h-6" /></div>
-                                     <span className="text-xs font-bold">Trocar Mídia Principal</span>
-                                     <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*,video/*" />
-                                 </button>
-                                 <button onClick={handleRegenerateVisual} disabled={isRegeneratingVisual} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex flex-col items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 disabled:opacity-50">
-                                     {isRegeneratingVisual ? <Loader2 className="w-6 h-6 animate-spin" /> : <Wand2 className="w-6 h-6" />}
-                                     <span className="text-xs font-bold">{isRegeneratingVisual ? "Gerando..." : "Gerar com IA"}</span>
-                                 </button>
-                             </div>
                              
+                             {/* 1. CONFIGURAÇÃO GERAL */}
                              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 space-y-4">
                                  <div className="grid grid-cols-2 gap-4">
                                      <div>
@@ -712,72 +928,76 @@ export const EditSceneModal: React.FC<{
                                          {selectedProvider === ImageProvider.STOCK_VIDEO && ( <div className="text-xs text-zinc-500 italic p-2">Busca automática via Pexels API</div> )}
                                      </div>
                                  </div>
-                                 <div className="space-y-2">
-                                     <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">{t[lang].visualPrompt}</label>
-                                     <textarea value={localScene.visualPrompt} onChange={(e) => setLocalScene({...localScene, visualPrompt: e.target.value})} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none h-24" />
+                             </div>
+
+                             {/* 2. SEQUÊNCIA VISUAL (MULTI-SHOT) */}
+                             <div className="space-y-3">
+                                 <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-2"><Clapperboard className="w-4 h-4" /> Sequência Visual (Timeline)</h4>
+                                 <div className="bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 space-y-3">
+                                     
+                                     {/* Base Image (Shot 1) */}
+                                     <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                         <div className="w-12 h-12 bg-black rounded shrink-0 overflow-hidden">
+                                            {localScene.imageUrl ? <img src={localScene.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-500">N/A</div>}
+                                         </div>
+                                         <div className="flex-1">
+                                             <div className="flex justify-between items-center mb-1">
+                                                <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Base Visual (0s)</span>
+                                             </div>
+                                             <textarea value={localScene.visualPrompt} onChange={(e) => setLocalScene({...localScene, visualPrompt: e.target.value})} className="w-full text-[10px] bg-transparent border-b border-zinc-200 dark:border-zinc-800 focus:border-indigo-500 outline-none resize-none h-8 text-zinc-500" placeholder="Prompt da imagem base..." />
+                                         </div>
+                                         <button onClick={handleRegenerateVisual} disabled={isRegeneratingVisual} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-indigo-500" title="Regenerar Base">{isRegeneratingVisual ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCcw className="w-4 h-4"/>}</button>
+                                     </div>
+
+                                     {/* Additional Shots */}
+                                     {localScene.layers?.filter(l => l.isBackground).map(layer => (
+                                         <div key={layer.id} className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 animate-in fade-in slide-in-from-left-4">
+                                            <div className="w-12 h-12 bg-black rounded shrink-0 overflow-hidden relative">
+                                                {layer.url ? (layer.type === 'video' ? <video src={layer.url} className="w-full h-full object-cover"/> : <img src={layer.url} className="w-full h-full object-cover"/>) : null}
+                                                <div className="absolute bottom-0 right-0 bg-indigo-600 text-white text-[8px] px-1 font-bold">SEQ</div>
+                                            </div>
+                                            <div className="flex-1">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Corte Adicional</span>
+                                                    <div className="flex gap-1">
+                                                        <button 
+                                                            onClick={() => handleRegenerateSequenceLayer(layer.id)}
+                                                            disabled={regeneratingLayerIds.has(layer.id)}
+                                                            className="text-zinc-400 hover:text-indigo-500 p-1"
+                                                            title="Regenerar este corte"
+                                                        >
+                                                            {regeneratingLayerIds.has(layer.id) ? <Loader2 className="w-3 h-3 animate-spin"/> : <RefreshCcw className="w-3 h-3"/>}
+                                                        </button>
+                                                        <button onClick={() => removeLayer(layer.id)} className="text-red-500 hover:text-red-600 p-1"><Trash2 className="w-3 h-3"/></button>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <Clock className="w-3 h-3 text-zinc-400"/>
+                                                    <label className="text-[10px] text-zinc-500">Início (s):</label>
+                                                    <input type="number" min="0" max={localScene.durationEstimate} step="0.5" value={layer.startTime || 0} onChange={(e) => updateLayer(layer.id, { startTime: parseFloat(e.target.value) })} className="w-16 bg-zinc-100 dark:bg-zinc-800 border-none rounded p-1 text-xs font-bold text-center" />
+                                                </div>
+                                            </div>
+                                         </div>
+                                     ))}
+
+                                     {/* Add New Shot UI */}
+                                     <div className="pt-2 border-t border-dashed border-zinc-300 dark:border-zinc-700">
+                                         <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block">Adicionar Corte Visual (Sequência)</label>
+                                         <div className="flex gap-2">
+                                             <input value={cutPrompt} onChange={(e) => setCutPrompt(e.target.value)} placeholder="Prompt para o novo corte..." className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs outline-none" />
+                                             <button onClick={handleGenerateVisualCut} disabled={isGeneratingCut || !cutPrompt} className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 transition-colors disabled:opacity-50">{isGeneratingCut ? <Loader2 className="w-4 h-4 animate-spin"/> : "Gerar"}</button>
+                                             <button onClick={() => cutInputRef.current?.click()} className="px-3 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-lg text-xs font-bold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors" title="Upload"><Upload className="w-4 h-4"/></button>
+                                             <input type="file" ref={cutInputRef} onChange={handleAddUploadCut} className="hidden" accept="image/*,video/*" />
+                                         </div>
+                                     </div>
                                  </div>
                              </div>
 
-                             {/* MULTIPLE LAYERS MANAGEMENT */}
-                             <div className="space-y-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Camadas Visuais (Múltiplas Imagens/Vídeos)</label>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => layerInputRef.current?.click()} className="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 shadow-md"><Plus className="w-3 h-3"/> Adicionar Imagem/Vídeo</button>
-                                        <button onClick={handleAddTextLayer} className="text-[10px] bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1"><Type className="w-3 h-3"/> Texto</button>
-                                        <input type="file" ref={layerInputRef} onChange={handleAddLayer} className="hidden" accept="image/*,video/*" />
-                                    </div>
-                                </div>
-                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden max-h-48 overflow-y-auto">
-                                    {localScene.layers && localScene.layers.length > 0 ? (
-                                        localScene.layers.map((layer, idx) => (
-                                            <div key={layer.id} onClick={() => setSelectedLayerId(layer.id)} className={`flex items-center justify-between p-3 border-b border-zinc-100 dark:border-zinc-800 last:border-0 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors ${selectedLayerId === layer.id ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}>
-                                                <div className="flex items-center gap-3">
-                                                    {layer.type === 'image' && <ImagePlus className="w-4 h-4 text-emerald-500" />}
-                                                    {layer.type === 'video' && <Video className="w-4 h-4 text-blue-500" />}
-                                                    {layer.type === 'text' && <Type className="w-4 h-4 text-amber-500" />}
-                                                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 truncate w-24">{layer.name}</span>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <button onClick={(e) => {e.stopPropagation(); moveLayer(idx, 'down')}} className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white"><MoveUp className="w-3 h-3" /></button>
-                                                    <button onClick={(e) => {e.stopPropagation(); moveLayer(idx, 'up')}} className="p-1 text-zinc-400 hover:text-zinc-900 dark:hover:text-white"><MoveDown className="w-3 h-3" /></button>
-                                                    <button onClick={(e) => {e.stopPropagation(); removeLayer(layer.id)}} className="p-1 text-zinc-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : ( <div className="p-4 text-center text-xs text-zinc-500">Nenhuma camada extra.</div> )}
-                                </div>
+                             {/* Legacy Layers Button (Hidden to simplify unless user wants overlays) */}
+                             <div className="flex items-center justify-between text-xs text-zinc-400 pt-4">
+                                 <span>Deseja adicionar overlays (logos, stickers)? Use a aba <strong>Camadas & VFX</strong>.</span>
                              </div>
 
-                             {selectedLayer && (
-                                <div className="bg-zinc-100 dark:bg-zinc-900/50 rounded-xl p-4 border border-zinc-200 dark:border-zinc-800 space-y-4">
-                                     <div className="flex items-center justify-between border-b border-zinc-200 dark:border-zinc-700 pb-2 mb-2">
-                                         <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase">Propriedades: {selectedLayer.name}</h4>
-                                     </div>
-                                     <div className="grid grid-cols-2 gap-4">
-                                         <div>
-                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Posição X</label>
-                                             <input type="range" min="0" max="1" step="0.01" value={selectedLayer.x} onChange={(e) => updateLayer(selectedLayer.id, { x: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
-                                         </div>
-                                         <div>
-                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Posição Y</label>
-                                             <input type="range" min="0" max="1" step="0.01" value={selectedLayer.y} onChange={(e) => updateLayer(selectedLayer.id, { y: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
-                                         </div>
-                                         <div>
-                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Escala</label>
-                                             <input type="range" min="0.1" max="3" step="0.1" value={selectedLayer.scale} onChange={(e) => updateLayer(selectedLayer.id, { scale: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
-                                         </div>
-                                         <div>
-                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Rotação</label>
-                                             <input type="range" min="-180" max="180" step="1" value={selectedLayer.rotation} onChange={(e) => updateLayer(selectedLayer.id, { rotation: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
-                                         </div>
-                                         <div>
-                                             <label className="text-[10px] text-zinc-500 uppercase font-bold">Opacidade</label>
-                                             <input type="range" min="0" max="1" step="0.05" value={selectedLayer.opacity} onChange={(e) => updateLayer(selectedLayer.id, { opacity: parseFloat(e.target.value) })} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
-                                         </div>
-                                     </div>
-                                </div>
-                             )}
                          </div>
                     )}
 

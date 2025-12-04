@@ -4,8 +4,12 @@
 
 
 
+
+
+
+
 import { GoogleGenAI, Modality } from "@google/genai";
-import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeneratedScriptItem, ViralMetadataResult } from "../types";
+import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeminiTTSModel, GeneratedScriptItem, ViralMetadataResult } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
 import { getProjectDir, saveBase64File } from "./fileSystem";
 
@@ -192,6 +196,44 @@ function robustJsonParse(text: string): any {
 }
 
 // --- GEMINI GENERATORS ---
+
+export const generateVisualVariations = async (
+    basePrompt: string,
+    sceneText: string,
+    count: number,
+    checkCancelled?: () => boolean
+): Promise<string[]> => {
+    if (count <= 1) return [basePrompt];
+
+    return withRetry(async (ai) => {
+        const prompt = `
+        I have a scene for a video.
+        Scene Text: "${sceneText}"
+        Base Visual Idea: "${basePrompt}"
+        
+        TASK: Generate ${count} DISTINCT visual prompts to show a sequence of shots for this scene.
+        The prompts must tell the story visually. Change camera angles (Close-up, Wide, etc) for each.
+        
+        OUTPUT JSON ARRAY OF STRINGS ONLY: ["Prompt 1", "Prompt 2", ...]
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+
+        if (!response.text) return [basePrompt]; // Fallback
+        const parsed = robustJsonParse(response.text);
+        
+        if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.map(s => String(s));
+        }
+        
+        // Fallback if parsing fails
+        return Array(count).fill(basePrompt).map((p, i) => `${p}, shot ${i+1}, different angle`);
+    }, checkCancelled);
+};
 
 export const generateViralMetadata = async (
     title: string,
@@ -445,14 +487,23 @@ export const generateSpeech = async (
     voiceId: string, 
     sceneIndex: number, 
     projectTopic: string,
-    checkCancelled?: () => boolean
+    checkCancelled?: () => boolean,
+    styleInstruction?: string, // NEW: Acting/Direction
+    modelId: GeminiTTSModel = 'gemini-2.5-flash-preview-tts' // NEW: Model Selection
 ): Promise<{url: string, buffer: AudioBuffer, base64: string}> => {
   return withRetry(async (ai) => {
     const selectedVoice = voiceId && voiceId.trim().length > 0 ? voiceId : 'Fenrir';
     
+    // CONSTRUCT THE PROMPT TO INCLUDE ACTING INSTRUCTIONS
+    // Gemini 2.5 Audio models use the text prompt itself to determine prosody/emotion
+    let finalPromptText = text;
+    if (styleInstruction && styleInstruction.trim().length > 0) {
+         finalPromptText = `(Estilo de fala/Acting Instruction: ${styleInstruction}) \n\n Texto para falar: "${text}"`;
+    }
+
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash-preview-tts",
-      contents: { parts: [{ text: text }] },
+      model: modelId, // Use the selected model (Flash or Pro)
+      contents: { parts: [{ text: finalPromptText }] },
       config: {
         responseModalities: [Modality.AUDIO],
         speechConfig: {

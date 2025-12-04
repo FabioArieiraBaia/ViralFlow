@@ -1,10 +1,13 @@
 
+
+
+
 import React from 'react';
 import { 
   Globe, Smartphone, Monitor, Youtube, Lock, AlertCircle, CheckCircle2, 
-  Loader2, Wand2, FolderOpen, TriangleAlert, Clapperboard, ChevronRight, Edit2 
+  Loader2, Wand2, FolderOpen, TriangleAlert, Clapperboard, ChevronRight, Edit2, Zap, Mic 
 } from 'lucide-react';
-import { Language, VideoStyle, VideoPacing, VideoDuration, VideoFormat, ImageProvider, UserTier, VideoTransition } from '../../types';
+import { Language, VideoStyle, VideoPacing, VideoDuration, VideoFormat, ImageProvider, UserTier, VideoTransition, VisualIntensity, GeminiTTSModel } from '../../types';
 import { translations } from '../../services/translations';
 
 // Reusing voice options locally or importing if centralized
@@ -29,6 +32,8 @@ interface CreateTabProps {
   setStyle: (v: VideoStyle) => void;
   pacing: VideoPacing;
   setPacing: (v: VideoPacing) => void;
+  visualIntensity: VisualIntensity;
+  setVisualIntensity: (v: VisualIntensity) => void;
   format: VideoFormat;
   setFormat: (v: VideoFormat) => void;
   duration: VideoDuration;
@@ -52,15 +57,21 @@ interface CreateTabProps {
   setActiveTab: (v: any) => void;
   importClick: () => void;
   handleCreateManualProject: () => void;
+  // NEW TTS PROPS
+  ttsModel: GeminiTTSModel;
+  setTtsModel: (v: GeminiTTSModel) => void;
+  globalTtsStyle: string;
+  setGlobalTtsStyle: (v: string) => void;
 }
 
 export const CreateTab: React.FC<CreateTabProps> = ({
   lang, topic, setTopic, contentLang, setContentLang, style, setStyle,
-  pacing, setPacing, format, setFormat, duration, setDuration,
+  pacing, setPacing, visualIntensity, setVisualIntensity, format, setFormat, duration, setDuration,
   channelName, setChannelName, voice, setVoice, customVoice, setCustomVoice,
   imageProvider, setImageProvider, globalTransition, setGlobalTransition,
   userTier, isGenerating, progress, handleGenerateVideo, setShowUpgradeModal,
-  setActiveTab, importClick, handleCreateManualProject
+  setActiveTab, importClick, handleCreateManualProject,
+  ttsModel, setTtsModel, globalTtsStyle, setGlobalTtsStyle
 }) => {
   const t = translations[lang];
 
@@ -148,7 +159,7 @@ export const CreateTab: React.FC<CreateTabProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-2">
                 <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider">{t.visualStyle}</label>
                 <select
@@ -159,15 +170,27 @@ export const CreateTab: React.FC<CreateTabProps> = ({
                   {Object.values(VideoStyle).map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider">{t.pacing}</label>
-                <select
-                  value={pacing}
-                  onChange={(e) => setPacing(e.target.value as VideoPacing)}
-                  className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
-                >
-                  {Object.values(VideoPacing).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider">{t.pacing}</label>
+                  <select
+                    value={pacing}
+                    onChange={(e) => setPacing(e.target.value as VideoPacing)}
+                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
+                  >
+                    {Object.values(VideoPacing).map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-1"><Zap className="w-3 h-3 text-indigo-500" /> Intensidade Visual</label>
+                  <select
+                    value={visualIntensity}
+                    onChange={(e) => setVisualIntensity(e.target.value as VisualIntensity)}
+                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
+                  >
+                    {Object.values(VisualIntensity).map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -235,32 +258,61 @@ export const CreateTab: React.FC<CreateTabProps> = ({
           </div>
         </div>
 
+        {/* TTS & Advanced Settings */}
         <div className="space-y-6">
-            <div className="space-y-2">
-                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-                    {t.narrator} {userTier === UserTier.FREE && <Lock className="w-3 h-3" />}
-                </label>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {VOICE_OPTIONS.map(v => (
-                    <button
-                        key={v.id}
-                        onClick={() => {
-                        if (userTier === UserTier.PRO || v.id === 'Auto') setVoice(v.id);
-                        else setShowUpgradeModal(true);
-                        }}
-                        className={`text-left px-3 py-2 rounded-lg text-xs border transition-all ${
-                        voice === v.id
-                            ? 'bg-indigo-50 dark:bg-indigo-600/20 border-indigo-500 text-indigo-700 dark:text-white'
-                            : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
-                        } ${userTier === UserTier.FREE && v.id !== 'Auto' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                    >
-                        {v.label}
-                    </button>
-                    ))}
+            <div className="space-y-4 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4">
+                <h3 className="font-bold text-sm text-indigo-600 dark:text-indigo-400 flex items-center gap-2"><Mic className="w-4 h-4" /> Configurações de Voz Avançadas (TTS)</h3>
+                
+                <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-2">
+                        {t.narrator} {userTier === UserTier.FREE && <Lock className="w-3 h-3" />}
+                    </label>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {VOICE_OPTIONS.map(v => (
+                        <button
+                            key={v.id}
+                            onClick={() => {
+                            if (userTier === UserTier.PRO || v.id === 'Auto') setVoice(v.id);
+                            else setShowUpgradeModal(true);
+                            }}
+                            className={`text-left px-3 py-2 rounded-lg text-xs border transition-all ${
+                            voice === v.id
+                                ? 'bg-indigo-50 dark:bg-indigo-600/20 border-indigo-500 text-indigo-700 dark:text-white'
+                                : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
+                            } ${userTier === UserTier.FREE && v.id !== 'Auto' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            {v.label}
+                        </button>
+                        ))}
+                    </div>
+                    {voice === 'Custom' && userTier === UserTier.PRO && (
+                        <input type="text" value={customVoice} onChange={(e) => setCustomVoice(e.target.value)} placeholder="Nome da voz (ex: en-US-Studio-M)" className="w-full mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none" />
+                    )}
                 </div>
-                {voice === 'Custom' && userTier === UserTier.PRO && (
-                    <input type="text" value={customVoice} onChange={(e) => setCustomVoice(e.target.value)} placeholder="Nome da voz (ex: en-US-Studio-M)" className="w-full mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none" />
-                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                    <div>
+                        <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider mb-2 block">Modelo TTS</label>
+                        <select
+                            value={ttsModel}
+                            onChange={(e) => setTtsModel(e.target.value as GeminiTTSModel)}
+                            className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
+                        >
+                            <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash (Rápido)</option>
+                            <option value="gemini-2.5-pro-tts">Gemini 2.5 Pro (Qualidade Máxima - Preview)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider mb-2 block">Estilo de Fala Global (Acting Prompt)</label>
+                        <input
+                            type="text"
+                            value={globalTtsStyle}
+                            onChange={(e) => setGlobalTtsStyle(e.target.value)}
+                            placeholder="Ex: Como um repórter animado com sotaque mineiro..."
+                            className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
+                        />
+                    </div>
+                </div>
             </div>
 
             <div className="space-y-2">
