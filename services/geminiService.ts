@@ -1,13 +1,3 @@
-
-
-
-
-
-
-
-
-
-
 import { GoogleGenAI, Modality } from "@google/genai";
 import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeminiTTSModel, GeneratedScriptItem, ViralMetadataResult } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
@@ -105,6 +95,10 @@ async function withRetry<T>(
         throw new Error("CANCELLED_BY_USER");
     }
 
+    // Jitter delay to prevent thundering herd on 429
+    const jitter = Math.floor(Math.random() * 2000) + 1000; // 1s to 3s
+    await new Promise(resolve => setTimeout(resolve, jitter));
+
     const key = getNextApiKey();
     if (!key) throw new Error("Nenhuma chave de API configurada.");
     
@@ -133,8 +127,10 @@ async function withRetry<T>(
 
       if (isQuotaError) {
          const shortKey = key.slice(-4);
-         console.warn(`⚠️ Cota (429) na chave ...${shortKey}. Tentativa (${i+1}/${maxRetries}).`);
-         if (allKeys.length === 1) await new Promise(resolve => setTimeout(resolve, 2000));
+         console.warn(`[Pollinations Debug] ⚠️ Cota (429) na chave ...${shortKey}. Tentativa (${i+1}/${maxRetries}).`);
+         // Exponential backoff for 429
+         const backoff = 2000 * Math.pow(1.5, i);
+         await new Promise(resolve => setTimeout(resolve, backoff));
          continue;
       } 
       else if (isAuthError) {
@@ -142,702 +138,343 @@ async function withRetry<T>(
          continue;
       }
       else {
-        console.error(`Erro Genérico (Tentativa ${i+1}/${maxRetries}):`, errorMsg);
+        console.error(`[Pollinations Debug] Erro Genérico (Tentativa ${i+1}/${maxRetries}):`, errorMsg);
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
   }
-  throw lastError || new Error("Falha após tentativas máximas.");
+  throw lastError;
 }
 
-// Helper to robustly parse JSON from AI response
-function robustJsonParse(text: string): any {
-    let clean = text.replace(/```json\s*|```/g, '').trim();
-    
-    if (clean.includes('[') && clean.includes(']')) {
-        const firstBracket = clean.indexOf('[');
-        const lastBracket = clean.lastIndexOf(']');
-        if (lastBracket > firstBracket) {
-             const firstCurly = clean.indexOf('{');
-             if (firstCurly === -1 || firstBracket < firstCurly) {
-                 clean = clean.substring(firstBracket, lastBracket + 1);
-             } else {
-                 const lastCurly = clean.lastIndexOf('}');
-                 if (lastCurly > firstCurly) {
-                     clean = clean.substring(firstCurly, lastCurly + 1);
-                 }
-             }
-        }
-    } else {
-        const firstCurly = clean.indexOf('{');
-        const lastCurly = clean.lastIndexOf('}');
-        if (firstCurly !== -1 && lastCurly !== -1) {
-            clean = clean.substring(firstCurly, lastCurly + 1);
-        }
-    }
-
-    try {
-        return JSON.parse(clean);
-    } catch (e) {
-        console.error("JSON Parse Error. Raw text:", text);
-        try {
-            let fixed = clean.replace(/\n/g, "\\n");
-            // Try to escape unescaped double quotes inside string values
-            // This regex looks for " : "value with "quotes" inside",
-            fixed = fixed.replace(/:\s*"([^"]*)"([^,}\]])/g, (match, p1, p2) => {
-                return `: "${p1.replace(/"/g, '\\"')}"${p2}`;
-            });
-            return JSON.parse(fixed);
-        } catch (e2) {
-            console.warn("Failed to parse AI response even after fix attempt.");
-            return null;
-        }
-    }
+// --- CLEAN PROMPT HELPER ---
+function cleanPrompt(prompt: string): string {
+    // Remove characters that might break URL generation or JSON parsing
+    return prompt
+        .replace(/["\n\r]/g, ' ') // Remove quotes and newlines
+        .replace(/[^\w\s\-,.]/gi, '') // Keep alphanum, space, hyphen, comma, dot
+        .trim()
+        .substring(0, 1000); // Limit length
 }
 
-// --- GEMINI GENERATORS ---
-
-export const generateVisualVariations = async (
-    basePrompt: string,
-    sceneText: string,
-    count: number,
-    checkCancelled?: () => boolean
-): Promise<string[]> => {
-    if (count <= 1) return [basePrompt];
-
-    return withRetry(async (ai) => {
-        const prompt = `
-        I have a scene for a video.
-        Scene Text: "${sceneText}"
-        Base Visual Idea: "${basePrompt}"
-        
-        TASK: Generate ${count} DISTINCT visual prompts to show a sequence of shots for this scene.
-        The prompts must tell the story visually. Change camera angles (Close-up, Wide, etc) for each.
-        
-        OUTPUT JSON ARRAY OF STRINGS ONLY: ["Prompt 1", "Prompt 2", ...]
-        `;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: "application/json" }
-        });
-
-        if (!response.text) return [basePrompt]; // Fallback
-        const parsed = robustJsonParse(response.text);
-        
-        if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed.map(s => String(s));
-        }
-        
-        // Fallback if parsing fails
-        return Array(count).fill(basePrompt).map((p, i) => `${p}, shot ${i+1}, different angle`);
-    }, checkCancelled);
-};
-
-export const generateViralMetadata = async (
-    title: string,
-    context: string,
-    checkCancelled?: () => boolean
-): Promise<ViralMetadataResult> => {
-    // Safety truncate context to avoid token limits for metadata gen
-    const safeContext = context.length > 5000 ? context.substring(0, 5000) + "..." : context;
-
-    return withRetry(async (ai) => {
-        const prompt = `
-        Act as a WORLD-CLASS YOUTUBE SEO EXPERT & COPYWRITER.
-        
-        Input Title: "${title}"
-        Context/Description: "${safeContext}"
-
-        TASK:
-        1. Generate 5 EXTREME CLICKBAIT / VIRAL TITLES (Must be impossible not to click, use caps for emphasis, emojis).
-        2. Write a DESCRIPTION using the AIDA framework (Attention, Interest, Desire, Action). First 2 lines must be catchy.
-        3. Generate 30 HIGH-VOLUME VIRAL TAGS, comma-separated (ready to copy-paste).
-
-        OUTPUT JSON STRICTLY:
-        {
-          "titles": ["Title 1", "Title 2", ...],
-          "description": "Full description text...",
-          "tags": "tag1, tag2, tag3, ..."
-        }
-        `;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: "application/json" }
-        });
-
-        if (!response.text) throw new Error("No metadata generated");
-        return robustJsonParse(response.text);
-    }, checkCancelled);
-};
-
-// PRO FEATURE: MOVIE PIPELINE OUTLINE
-export const generateMovieOutline = async (
-    topic: string, 
-    channelName: string, 
-    language: Language,
-    checkCancelled?: () => boolean
-): Promise<{ title: string, chapters: string[] }> => {
-    return withRetry(async (ai) => {
-        const targetLanguage = language === 'pt' ? 'PORTUGUESE' : language === 'es' ? 'SPANISH' : 'ENGLISH';
-        const prompt = `Create a MASSIVE DOCUMENTARY OUTLINE about: "${topic}".
-        Format: Feature Film / Long Documentary / Deep Dive.
-        Channel: "${channelName}".
-        
-        Task: Break the story down into 12 to 15 distinct, detailed Chapters (Acts).
-        Make sure the coverage is exhaustive and detailed.
-        
-        Output strictly JSON: { "title": "Movie Title", "chapters": ["Chapter 1 Name: Context", "Chapter 2 Name: Context", ...] }
-        Language: ${targetLanguage}`;
-
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: { responseMimeType: "application/json" }
-        });
-
-        if (!response.text) throw new Error("No outline generated");
-        const parsed = robustJsonParse(response.text);
-        
-        if (!parsed || !parsed.chapters || !Array.isArray(parsed.chapters)) {
-            console.warn("Outline malformed, using fallback structure.");
-            return {
-                title: topic,
-                chapters: [
-                    "Introduction: The Mystery Begins",
-                    "The Context: Historical Background",
-                    "Key Players: Who is involved?",
-                    "The Conflict: Challenges arise",
-                    "Turning Point: A major discovery",
-                    "Deep Dive: Analyzing the evidence",
-                    "Perspectives: Expert opinions",
-                    "Global Impact: How it changed the world",
-                    "Conclusion: Final thoughts",
-                    "Outro: Thanks for watching"
-                ]
-            };
-        }
-        
-        return parsed;
-    }, checkCancelled);
-};
+// --- GENERATION FUNCTIONS ---
 
 export const generateVideoScript = async (
-  topic: string, 
-  style: VideoStyle, 
-  durationMinutes: number,
-  pacing: VideoPacing,
-  channelName: string,
-  language: Language,
-  checkCancelled?: () => boolean,
-  chapterContext?: { 
-      currentChapter: string, 
-      prevChapter?: string,
-      chapterIndex: number,
-      totalChapters: number
-  } 
+    topic: string, 
+    style: VideoStyle, 
+    durationMinutes: number,
+    pacing: VideoPacing,
+    channelName: string,
+    lang: Language,
+    checkCancelled: () => boolean,
+    chapterContext?: { currentChapter: string, prevChapter: string, chapterIndex: number, totalChapters: number }
 ): Promise<GeneratedScriptItem[]> => {
-  
-  return withRetry(async (ai) => {
-    const totalWords = Math.ceil(durationMinutes * 150);
-    const targetLanguage = language === 'pt' ? 'PORTUGUESE (BRAZIL)' : language === 'es' ? 'SPANISH' : 'ENGLISH (US)';
-    
-    let durationRule = "Break the script into scenes of 4-7 seconds.";
-    let cutInstruction = "Standard narrative pacing.";
-    
-    if (pacing === VideoPacing.HYPER) {
-        durationRule = "EXTREMELY IMPORTANT: Break the script into very short scenes of 1-2 seconds max. Short sentences. Rapid cuts.";
-        cutInstruction = "Fast-paced, TikTok style, constant visual changes.";
-    } else if (pacing === VideoPacing.FAST) {
-        durationRule = "Break the script into short scenes of 2-4 seconds.";
-        cutInstruction = "Dynamic YouTuber style, frequent cuts.";
-    } else if (pacing === VideoPacing.SLOW) {
-        durationRule = "Break the script into long, contemplative scenes of 8-15 seconds.";
-        cutInstruction = "Slow documentary style, let the visuals breathe.";
-    }
-
-    let extraStyleInstructions = "";
-    if (style === VideoStyle.KIDS_STORY) {
-        extraStyleInstructions = "Create a multi-character FABLE or STORY. You MUST use specific character names for the 'speaker' field (e.g., 'Wolf', 'Little Red', 'Bear', 'Fairy', 'Narrator'). Create dialogue between them. Keep language simple, fun, and engaging for kids. Visuals should be colorful 3D animation style.";
-    } else if (style === VideoStyle.NEWS) {
-        extraStyleInstructions = "Create a TV News segment. Use speakers like 'Anchor', 'Reporter', 'Witness', 'Expert'. Visuals should look like a TV broadcast, including 'Breaking News' lower thirds descriptions in visual prompts.";
-    } else if (style === VideoStyle.PROFESSOR) {
-        extraStyleInstructions = "Create an educational lecture. Speaker should be 'Professor'. Visuals should be diagrams, whiteboards, or historical footage explaining the concept clearly.";
-    } else if (style === VideoStyle.DEBATE) {
-        extraStyleInstructions = "Create a DEBATE. Use speakers: 'Host', 'Proponent' (For), 'Opponent' (Against). The Host introduces, and the others argue their points. Ensure conflict and back-and-forth dialogue.";
-    }
-
-    let systemInstruction = `You are a World-Class Video Director and Scriptwriter. Channel: "${channelName}". Style: ${style}. Pacing: ${pacing}.
-    
-    YOUR MISSION: Create a script that visually tells a story.
-    
-    MANDATORY VISUAL RULES (FOLLOW STRICTLY):
-    1. NO REPETITION: Every scene MUST have a different "visual_prompt". Never use the same setting twice in a row.
-    2. CAMERA ANGLES: You MUST start every 'visual_prompt' with a specific camera angle. Rotate through: [Extreme Close-up], [Wide Drone Shot], [Low Angle], [Over-the-shoulder], [Macro Shot], [GoPro POV], [Security Camera View].
-    3. SHOW, DON'T TELL: If the text says "He was rich", the visual must be "Close-up of a gold diamond ring on a finger", not "A rich man".
-    4. NO TEXT IN IMAGE: The visual prompt must explicitly say "no text, no logos, photorealistic".
-    5. JSON ESCAPING: You MUST escape all double quotes inside the text fields. Example: "text": "He said \\"Hello\\"".
-    6. KEYWORDS: Include 2-3 specific keywords at the end of visual_prompt for search engines.
-    
-    CAMERA MOVEMENT:
-    Include a 'cameraMovement' field for each scene. Choose from: 'ZOOM_IN', 'ZOOM_OUT', 'PAN_LEFT', 'PAN_RIGHT', 'STATIC', 'ROTATE_CW', 'HANDHELD'. Avoid STATIC for high energy videos.
-
-    CRITICAL: The "visual_prompt" field MUST ALWAYS BE IN ENGLISH, even if the "text" is in another language. This is crucial for the image generator.
-    
-    SPECIAL STYLE INSTRUCTIONS:
-    ${extraStyleInstructions}
-
-    Output ONLY valid JSON array: [{ "speaker": "Name", "text": "Dialogue (${targetLanguage})", "visual_prompt": "ENGLISH DESCRIPTION OF THE SCENE", "cameraMovement": "ZOOM_IN" }]
-    Language for Text/Dialogue: ${targetLanguage}.
-    Language for Visual Prompts: ENGLISH ONLY.`;
-
-    let prompt = `Create a script about: "${topic}".
-    Target Duration: ${durationMinutes} minutes (approx ${totalWords} words).
-    PACING CONSTRAINT: ${cutInstruction}
-    SCENE DURATION: ${durationRule}
-    
-    MANDATORY OUTRO RULE: The FINAL scene MUST be a Call-to-Action (CTA). The narrator explicitly thanks the viewer in the name of the channel "${channelName || 'Narrator'}" and asks for Likes, Comments, and Subscription.`;
-
-    // MOVIE MODE OVERRIDE
-    if (chapterContext) {
-        const { currentChapter, prevChapter, chapterIndex, totalChapters } = chapterContext;
-        const isFirst = chapterIndex === 0;
-        const isLast = chapterIndex === totalChapters - 1;
-
-        systemInstruction += "\n\nMODE: LONG FEATURE FILM / DEEP DIVE DOCUMENTARY. DO NOT SUMMARIZE. EXPAND ON DETAILS.";
+    return withRetry(async (ai) => {
+        const langName = lang === 'pt' ? 'Portuguese' : lang === 'es' ? 'Spanish' : 'English';
+        const isMovieMode = !!chapterContext;
         
-        let narrativeInstruction = "";
-        if (isFirst) {
-            narrativeInstruction = "This is the OPENING chapter. Hook the viewer immediately. Introduce the core mystery/topic. DO NOT conclude the video. DO NOT say goodbye. DO NOT ask for likes yet.";
-        } else if (isLast) {
-            narrativeInstruction = `This is the FINAL chapter. Summarize the journey and provide a powerful conclusion. END with the Channel Outro/CTA for channel "${channelName}". THIS IS THE ONLY PLACE YOU SHOULD SAY GOODBYE.`;
+        let prompt = "";
+        
+        if (isMovieMode) {
+             prompt = `
+              You are a professional screenwriter for a ${style} movie. 
+              Write the script for Chapter ${chapterContext.chapterIndex + 1}/${chapterContext.totalChapters}: "${chapterContext.currentChapter}".
+              Context from previous chapter: "${chapterContext.prevChapter}".
+              Channel: ${channelName}.
+              Language: ${langName}.
+              
+              Format: Strictly JSON Array of objects.
+              Objects: { "speaker": "Name", "text": "Dialogue...", "visual_prompt": "Cinematic description...", "cameraMovement": "ZOOM_IN" }.
+              Make it detailed, engaging, and suitable for the middle of a movie.
+             `;
         } else {
-            // AGGRESSIVE NEGATIVE CONSTRAINTS FOR MIDDLE CHAPTERS
-            narrativeInstruction = `
-            This is a MIDDLE chapter (Chapter ${chapterIndex + 1} of ${totalChapters}). 
-            Dive deep into this specific sub-topic. Maintain narrative flow. 
-            
-            STRICTLY FORBIDDEN IN THIS CHAPTER:
-            - DO NOT INTRODUCE THE CHANNEL.
-            - DO NOT SAY 'WELCOME BACK'.
-            - DO NOT SAY GOODBYE.
-            - DO NOT ASK FOR SUBSCRIPTIONS.
-            - DO NOT SAY "In this video" or "Today we will see".
-            - DO NOT SUMMARIZE what was just said.
-            
-            Treat it as a continuous scene from a movie. Just tell the story.`;
+             prompt = `
+              Create a viral video script about "${topic}".
+              Style: ${style}. Pacing: ${pacing}. Channel: ${channelName}.
+              Target Duration: ${durationMinutes} minutes.
+              Language: ${langName}.
+              
+              Strictly output a JSON Array of objects with this schema:
+              [
+                { 
+                  "speaker": "Narrator" or Character Name,
+                  "text": "The spoken content...",
+                  "visual_prompt": "Detailed image generation prompt for this scene...",
+                  "cameraMovement": "ZOOM_IN" | "ZOOM_OUT" | "PAN_LEFT" | "PAN_RIGHT" | "STATIC"
+                }
+              ]
+              Do not include markdown code blocks. Just the raw JSON string.
+             `;
         }
 
-        prompt = `Write the script for the CHAPTER: "${currentChapter}".
-        Context from previous chapter: "${prevChapter || 'Opening of the movie'}".
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json"
+            }
+        });
         
-        NARRATIVE RULE: ${narrativeInstruction}
-        
-        TARGET LENGTH: This specific chapter MUST be approximately 4 to 6 minutes long. Write approximately 500-600 words for this chapter.
-        INSTRUCTION: Dive deep into the details. Use dialogue, examples, and slow-paced storytelling. Do not rush.
-        Visuals: Use slow, cinematic, detailed camera movements in prompts (IN ENGLISH).
-        
-        REMEMBER: ESCAPE ALL DOUBLE QUOTES INSIDE STRINGS.`;
-    }
-
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        systemInstruction: systemInstruction,
-        responseMimeType: "application/json",
-      }
-    });
-
-    if (!response.text) throw new Error("No text generated");
-    
-    const rawData: any = robustJsonParse(response.text);
-    let items: any[] = [];
-
-    if (Array.isArray(rawData)) {
-        items = rawData;
-    } else if (rawData && typeof rawData === 'object') {
-        if (Array.isArray(rawData.scenes)) items = rawData.scenes;
-        else if (Array.isArray(rawData.script)) items = rawData.script;
-        else if (Array.isArray(rawData.items)) items = rawData.items;
-        else if (rawData.speaker && rawData.text) items = [rawData];
-    }
-
-    if (items.length === 0) {
-        throw new Error("Failed to parse script items from AI response");
-    }
-
-    return items.map((item: any) => ({
-       speaker: item.speaker || "Narrator",
-       text: item.text || item.dialogue || item.script || "",
-       visual_prompt: item.visual_prompt || item.visualPrompt || item.image_prompt || item.imageDescription || `Cinematic scene about ${topic}`,
-       cameraMovement: item.cameraMovement || item.camera_movement || undefined
-    }));
-  }, checkCancelled);
+        const text = response.text || "[]";
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            // Fallback parsing if model adds markdown
+            const clean = text.replace(/```json/g, '').replace(/```/g, '');
+            return JSON.parse(clean);
+        }
+    }, checkCancelled);
 };
 
-// ... (rest of the file remains the same)
+export const generateMovieOutline = async (topic: string, channelName: string, lang: Language, checkCancelled: () => boolean): Promise<{ chapters: string[] }> => {
+    return withRetry(async (ai) => {
+        const langName = lang === 'pt' ? 'Portuguese' : lang === 'es' ? 'Spanish' : 'English';
+        const prompt = `
+            Create a movie outline for a documentary/film about "${topic}".
+            Language: ${langName}.
+            Output JSON: { "chapters": ["Chapter 1 Title", "Chapter 2 Title", ... up to 8 chapters] }
+        `;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+        return JSON.parse(response.text || '{"chapters": []}');
+    }, checkCancelled);
+};
 
 export const generateSpeech = async (
     text: string, 
     speakerName: string, 
-    voiceId: string, 
-    sceneIndex: number, 
-    projectTopic: string,
+    voiceProfile: string, 
+    index: number,
+    topic: string,
     checkCancelled?: () => boolean,
-    styleInstruction?: string, // NEW: Acting/Direction
-    modelId: GeminiTTSModel = 'gemini-2.5-flash-preview-tts' // NEW: Model Selection
-): Promise<{url: string, buffer: AudioBuffer, base64: string}> => {
-  return withRetry(async (ai) => {
-    const selectedVoice = voiceId && voiceId.trim().length > 0 ? voiceId : 'Fenrir';
-    
-    // CONSTRUCT THE PROMPT TO INCLUDE ACTING INSTRUCTIONS
-    // Gemini 2.5 Audio models use the text prompt itself to determine prosody/emotion
-    let finalPromptText = text;
-    if (styleInstruction && styleInstruction.trim().length > 0) {
-         finalPromptText = `(Estilo de fala/Acting Instruction: ${styleInstruction}) \n\n Texto para falar: "${text}"`;
-    }
+    stylePrompt?: string,
+    model: GeminiTTSModel = 'gemini-2.5-flash-preview-tts'
+): Promise<{ url: string, buffer?: AudioBuffer, base64: string, success: boolean }> => {
+    return withRetry(async (ai) => {
+        // Map internal voice IDs to Gemini Voice names
+        // Available: 'Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Zephyr'
+        let voiceName = 'Fenrir';
+        const lowerProfile = voiceProfile.toLowerCase();
+        if (lowerProfile.includes('puck') || lowerProfile.includes('suave')) voiceName = 'Puck';
+        else if (lowerProfile.includes('charon') || lowerProfile.includes('grave')) voiceName = 'Charon';
+        else if (lowerProfile.includes('kore') || lowerProfile.includes('tech')) voiceName = 'Kore';
+        else if (lowerProfile.includes('aoede') || lowerProfile.includes('dramática')) voiceName = 'Aoede';
+        else if (lowerProfile.includes('zephyr') || lowerProfile.includes('calmo')) voiceName = 'Zephyr';
 
-    const response = await ai.models.generateContent({
-      model: modelId, // Use the selected model (Flash or Pro)
-      contents: { parts: [{ text: finalPromptText }] },
-      config: {
-        responseModalities: [Modality.AUDIO],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: selectedVoice },
-          },
-        },
-      },
-    });
+        // Add acting direction if stylePrompt is provided
+        const finalContent = stylePrompt 
+            ? `(Acting Direction: ${stylePrompt}) ${text}`
+            : text;
 
-    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    if (!base64Audio) throw new Error("No audio generated");
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: finalContent,
+            config: {
+                responseModalities: [Modality.AUDIO],
+                speechConfig: {
+                    voiceConfig: {
+                        prebuiltVoiceConfig: { voiceName: voiceName }
+                    }
+                }
+            }
+        });
 
-    const rawBytes = decodeBase64(base64Audio);
-    const audioBuffer = await decodeAudioData(rawBytes);
-    
-    const projectDir = getProjectDir(projectTopic);
-    let finalUrl = "";
-    
-    if (projectDir) {
-       const wavBlob = audioBufferToWav(audioBuffer);
-       const reader = new FileReader();
-       finalUrl = await new Promise((resolve) => {
-          reader.onloadend = () => {
-             const base64Wav = reader.result as string;
-             const savedUrl = saveBase64File(projectDir, `audio_${sceneIndex}_${speakerName}.wav`, base64Wav);
-             resolve(savedUrl);
-          };
-          reader.readAsDataURL(wavBlob);
-       });
-    } else {
-       const wavBlob = audioBufferToWav(audioBuffer);
-       finalUrl = URL.createObjectURL(wavBlob);
-    }
+        const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+        if (!base64Audio) throw new Error("No audio data received");
 
-    // Return the base64Audio so we can store it in the scene for persistent JSON export
-    return { url: finalUrl, buffer: audioBuffer, base64: base64Audio };
-  }, checkCancelled);
+        const rawBytes = decodeBase64(base64Audio);
+        const audioBuffer = await decodeAudioData(rawBytes); // Decodes PCM to AudioBuffer
+        const wavBlob = audioBufferToWav(audioBuffer); // Converts to WAV Blob
+        const url = URL.createObjectURL(wavBlob);
+
+        return { url, buffer: audioBuffer, base64: base64Audio, success: true };
+    }, checkCancelled);
 };
-
-const sanitizePrompt = (prompt: string): string => {
-    if (!prompt) return "Mysterious cinematic scene";
-    return prompt
-      .replace(/netflix|logo|text|watermark|label|sign|writing|lettering|caption|subtitles/gi, "") 
-      .replace(/terror|horror|scary|blood|gore|death|dead|kill|murder|demon|creepy|nightmare/gi, "mysterious")
-      .trim();
-};
-
-// --- PEXELS INTEGRATION ---
-const searchPexelsVideo = async (query: string, format: VideoFormat, checkCancelled?: () => boolean): Promise<{video: string, image: string}> => {
-    const pexelsKey = getPexelsKey();
-    if (!pexelsKey) throw new Error("Chave Pexels não configurada.");
-
-    // Extract key terms from visual prompt for better search and remove stop words
-    const stopWords = ['a', 'an', 'the', 'in', 'on', 'at', 'of', 'for', 'to', 'with', 'by', 'is', 'are', 'was', 'were', 'scene', 'showing', 'show', 'view', 'angle', 'shot', 'cinematic', 'style', 'no', 'text', 'photorealistic', 'camera', 'close-up', 'wide', 'drone', 'macro', 'pov', '4k', 'hd'];
-    
-    const simplifiedQuery = query
-        .toLowerCase()
-        .replace(/[^\w\s]/g, '') // remove punctuation
-        .split(' ')
-        .filter(word => !stopWords.includes(word) && word.length > 2)
-        .slice(0, 5) // Take first 5 relevant words (Pexels handles short queries better)
-        .join(' ') 
-        || query.split(',')[0]; // Fallback to first part of prompt
-    
-    const orientation = format === VideoFormat.PORTRAIT ? 'portrait' : 'landscape';
-    
-    // Random page to ensure variety if regenerating
-    const randomPage = Math.floor(Math.random() * 5) + 1;
-    
-    const url = `https://api.pexels.com/videos/search?query=${encodeURIComponent(simplifiedQuery)}&orientation=${orientation}&size=medium&per_page=1&page=${randomPage}`;
-    
-    const response = await fetch(url, {
-        headers: { Authorization: pexelsKey }
-    });
-
-    if (!response.ok) {
-        if (response.status === 401) throw new Error("Chave Pexels Inválida");
-        if (response.status === 429) throw new Error("Cota Pexels Excedida");
-        throw new Error("Erro ao buscar vídeo no Pexels");
-    }
-
-    const data = await response.json();
-    if (!data.videos || data.videos.length === 0) {
-        throw new Error("Nenhum vídeo encontrado para: " + simplifiedQuery);
-    }
-
-    const videoData = data.videos[0];
-    // Find best quality video file that matches format
-    const videoFile = videoData.video_files.find((f: any) => f.quality === 'hd') || videoData.video_files[0];
-    
-    return {
-        video: videoFile.link,
-        image: videoData.image // Thumbnail
-    };
-};
-
-// --- POLLINATIONS.AI INTEGRATION ---
-const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-        const base64 = reader.result as string;
-        // remove prefix "data:image/png;base64,"
-        resolve(base64.split(',')[1]);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
-
-const generatePollinationsImage = async (prompt: string, width: number, height: number, model: PollinationsModel = 'turbo', checkCancelled?: () => boolean): Promise<string> => {
-  if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
-
-  const encodedPrompt = encodeURIComponent(prompt);
-  const seed = Math.floor(Math.random() * 1000000);
-  const isDev = (import.meta as any).env?.DEV;
-
-  // Helper to fetch and convert to base64
-  const fetchAndConvert = async (url: string) => {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Status ${response.status}`);
-      const contentType = response.headers.get("content-type");
-      if (!contentType || !contentType.startsWith("image")) {
-         throw new Error(`Invalid content-type: ${contentType}`);
-      }
-      const blob = await response.blob();
-      return await blobToBase64(blob);
-  };
-
-  const strategies: string[] = [];
-
-  // 1. DEV MODE: Use Vite Proxy directly (Most reliable for local dev)
-  if (isDev) {
-      strategies.push(`/pollinations_proxy/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=${model}`);
-  }
-  
-  // 2. PROD MODE: Try PHP Proxy first (if available on server)
-  if (!isDev) {
-      strategies.push(`./proxy.php?prompt=${encodedPrompt}&width=${width}&height=${height}&seed=${seed}&model=${model}`);
-  }
-
-  // 3. FINAL FALLBACK: Direct URL (Last resort, might block)
-  strategies.push(`https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=${model}`);
-
-  let lastError;
-  for (const url of strategies) {
-     if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
-     try {
-         return await fetchAndConvert(url);
-     } catch (e) {
-         console.warn(`Polling Strategy failed: ${url}`, e);
-         lastError = e;
-     }
-  }
-  
-  throw lastError || new Error("All Pollinations strategies failed");
-};
-
-// PLACEHOLDER BASE64 (Simple Grey Gradient)
-const PLACEHOLDER_IMAGE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkkAQAAB8AG7jymN8AAAAASUVORK5CYII=";
 
 export const generateSceneImage = async (
-    visualPrompt: string, 
+    prompt: string, 
     format: VideoFormat, 
-    sceneIndex: number, 
-    projectTopic: string,
+    seed: number, 
+    topic: string,
     provider: ImageProvider,
-    style: VideoStyle = VideoStyle.STORY,
-    pollinationsModel: PollinationsModel = 'turbo', 
-    geminiModel: GeminiModel = 'gemini-2.5-flash-image', 
-    checkCancelled?: () => boolean
-): Promise<{ imageUrl: string, videoUrl?: string, mediaType: 'image' | 'video', base64: string }> => {
-  
-  if (checkCancelled && checkCancelled()) throw new Error("CANCELLED_BY_USER");
-
-  // 0. NONE PATH (SCRIPT ONLY)
-  if (provider === ImageProvider.NONE) {
-      return processBase64Result(PLACEHOLDER_IMAGE, 'image/png', 'png', projectTopic, sceneIndex);
-  }
-
-  const isPortrait = format === VideoFormat.PORTRAIT;
-  const aspectRatio = isPortrait ? "9:16" : "16:9";
-  const width = isPortrait ? 720 : 1280;
-  const height = isPortrait ? 1280 : 720;
-
-  const safeVisualPrompt = sanitizePrompt((visualPrompt || "Cinematic scene").substring(0, 400));
-  const negativePrompt = "text, watermark, logo, writing, letters, signature, bad anatomy, blurry, netflix logo, company logo";
-  const cleanStyle = style === VideoStyle.DOCUMENTARY ? 'National Geographic Style, 4k, hyperrealistic' : style;
-  
-  const fullPromptGemini = `${safeVisualPrompt}. Style: ${cleanStyle}. High quality, 8k, photorealistic, cinematic lighting. \nNEGATIVE PROMPT: ${negativePrompt}`;
-  const fullPromptPollinations = `(masterpiece, best quality, absolute realism), ${safeVisualPrompt}, ${cleanStyle}, detailed lighting. (no text:1.5), (no watermark:1.5), (no logo:1.5), (no netflix:1.5).`;
-
-  try {
-      // 1. STOCK VIDEO PATH
-      if (provider === ImageProvider.STOCK_VIDEO) {
-          const pexelsData = await searchPexelsVideo(visualPrompt, format, checkCancelled);
-          // For Pexels we don't have base64 immediately for video, but we return image thumbnail
-          // We can try to fetch the thumbnail to base64 for consistency, but video is external link
-          return {
-              imageUrl: pexelsData.image,
-              videoUrl: pexelsData.video,
-              mediaType: 'video',
-              base64: "" // Stock video relies on external link currently
-          };
-      }
-
-      // 2. POLLINATIONS PATH
-      if (provider === ImageProvider.POLLINATIONS) {
-          const base64 = await generatePollinationsImage(fullPromptPollinations, width, height, pollinationsModel, checkCancelled);
-          return processBase64Result(base64, 'image/jpeg', 'jpg', projectTopic, sceneIndex);
-      }
-
-      // 3. GEMINI PATH
-      if (provider === ImageProvider.GEMINI) {
-          const base64 = await withRetry(async (ai) => {
-              let imgData = "";
-              
-              if (geminiModel === 'imagen-3.0-generate-001') {
-                  // IMAGEN 3.0 USES generateImages
-                  const response = await ai.models.generateImages({
-                      model: 'imagen-3.0-generate-001',
-                      prompt: fullPromptGemini,
-                      config: {
-                          numberOfImages: 1,
-                          aspectRatio: aspectRatio,
-                          outputMimeType: 'image/png'
-                      }
-                  });
-                  
-                  if (response.generatedImages && response.generatedImages.length > 0) {
-                      imgData = response.generatedImages[0]?.image?.imageBytes ?? "";
-                  }
-              } else {
-                  // GEMINI FLASH USES generateContent
-                  const response = await ai.models.generateContent({
-                      model: 'gemini-2.5-flash-image',
-                      contents: { parts: [{ text: fullPromptGemini }] },
-                      config: { imageConfig: { aspectRatio: aspectRatio } }
-                  });
-                  
-                  if (response.candidates?.[0]?.content?.parts) {
-                     for(const p of response.candidates[0].content.parts) {
-                         if(p.inlineData) { imgData = p.inlineData.data || ""; break; }
-                     }
-                  }
-              }
-              
-              if(!imgData) throw new Error(`No image data from ${geminiModel}`);
-              return imgData;
-          }, checkCancelled, 5); // More retries for manual generation to exhaust keys if needed
-
-          return processBase64Result(base64, 'image/png', 'png', projectTopic, sceneIndex);
-      }
-
-      throw new Error("Provider not handled");
-
-  } catch (error: any) {
-      if (error.message === "CANCELLED_BY_USER") throw error;
-
-      console.error(`❌ Asset Generation Failed [Provider: ${provider}]:`, error);
-
-      // --- FINAL FALLBACK: Pollinations via Proxy ---
-      if (provider === ImageProvider.GEMINI || provider === ImageProvider.STOCK_VIDEO) {
-          try {
-              console.log("🔄 Final Fallback to Pollinations (Turbo)...");
-              // Fallback uses 'turbo' explicitly to be safe
-              const base64 = await generatePollinationsImage(fullPromptPollinations, width, height, 'turbo', checkCancelled);
-              return processBase64Result(base64, 'image/jpeg', 'jpg', projectTopic, sceneIndex);
-          } catch (fallbackError) {
-              console.error("❌ Fallback also failed.", fallbackError);
-          }
-      }
-
-      console.warn("⚠️ Returning Placeholder Image for Scene " + sceneIndex);
-      return processBase64Result(PLACEHOLDER_IMAGE, 'image/png', 'png', projectTopic, sceneIndex);
-  }
-};
-
-// Helper to save/format result
-function processBase64Result(base64: string, mimeType: string, ext: string, projectTopic: string, sceneIndex: number) {
-    const projectDir = getProjectDir(projectTopic);
-    let finalUrl = "";
-    if (projectDir) {
-        const dataUrl = `data:${mimeType};base64,${base64}`;
-        finalUrl = saveBase64File(projectDir, `image_${sceneIndex}.${ext}`, dataUrl);
-    } else {
-        finalUrl = base64ToBlobUrl(base64, mimeType);
-    }
-    // Return base64 so we can store it in Scene state for JSON persistence
-    return { imageUrl: finalUrl, mediaType: 'image' as const, base64: base64 };
-}
-
-export const generateThumbnails = async (
-    topic: string, 
     style: VideoStyle,
-    provider: ImageProvider = ImageProvider.GEMINI,
+    pollinationsModel: PollinationsModel = 'turbo',
+    geminiModel: GeminiModel = 'gemini-2.5-flash-image',
     checkCancelled?: () => boolean
-): Promise<string[]> => {
-  const prompts = [
-    `YouTube thumbnail for "${topic}", style ${style}, close-up emotion, vibrant colors, 4k, detailed, catchy, no text`,
-    `Cinematic composition regarding "${topic}", ${style}, dramatic lighting, mysterious background, no text`
-  ];
+): Promise<{ imageUrl: string, mediaType: 'image' | 'video', base64?: string, videoUrl?: string }> => {
+    
+    // Clean Prompt to avoid URL issues
+    const safePrompt = cleanPrompt(prompt);
+    
+    // 1. STOCK VIDEO (PEXELS)
+    if (provider === ImageProvider.STOCK_VIDEO) {
+        return withRetry(async () => {
+             const pexelsKey = getPexelsKey();
+             if (!pexelsKey) throw new Error("Pexels key not found");
+             
+             // Extract keywords from prompt for better search
+             const keywords = safePrompt.split(' ').slice(0, 5).join(' ');
+             const orientation = format === VideoFormat.PORTRAIT ? 'portrait' : 'landscape';
+             
+             const res = await fetch(`https://api.pexels.com/videos/search?query=${encodeURIComponent(keywords)}&per_page=1&orientation=${orientation}&size=medium`, {
+                 headers: { Authorization: pexelsKey }
+             });
+             const data = await res.json();
+             const videoFiles = data.videos?.[0]?.video_files;
+             if (!videoFiles || videoFiles.length === 0) throw new Error("No stock video found");
+             
+             // Find best quality fit (HD)
+             const bestVideo = videoFiles.find((v: any) => v.height >= 720) || videoFiles[0];
+             
+             return { imageUrl: bestVideo.image, videoUrl: bestVideo.link, mediaType: 'video' };
+        }, checkCancelled);
+    }
 
-  const results = [];
-  for (const prompt of prompts) {
-      if (checkCancelled && checkCancelled()) break;
-      try {
-          // Thumbnails typically use Flash for speed, but fallback to turbo (not flux) if needed
-          const result = await generateSceneImage(prompt, VideoFormat.LANDSCAPE, 999, topic, provider, style, 'turbo', 'gemini-2.5-flash-image', checkCancelled);
-          results.push(result.imageUrl);
-      } catch (e) {
-          console.error("Thumb failed", e);
-      }
-  }
-  return results;
+    // 2. GEMINI IMAGEN
+    if (provider === ImageProvider.GEMINI) {
+        return withRetry(async (ai) => {
+            const width = format === VideoFormat.PORTRAIT ? 768 : 1280;
+            const height = format === VideoFormat.PORTRAIT ? 1280 : 768;
+            const aspectRatio = format === VideoFormat.PORTRAIT ? '9:16' : '16:9';
+
+            const response = await ai.models.generateContent({
+                model: geminiModel,
+                contents: safePrompt + `, ${style} style, high quality, 8k`,
+                config: {
+                    // Note: aspect ratio param depends on exact model version, 
+                    // using prompt injection is often more reliable for flash-image
+                }
+            });
+            
+            // Handle image extraction (usually comes as inlineData in parts)
+            // Note: The specific response structure depends on the model version.
+            // For flash-image, it might return base64.
+            // Since SDK typings can be tricky, we iterate parts.
+            let base64 = "";
+            for (const part of response.candidates?.[0]?.content?.parts || []) {
+                if (part.inlineData) {
+                    base64 = part.inlineData.data;
+                    break;
+                }
+            }
+            
+            if (!base64) throw new Error("No image data in Gemini response");
+            const imageUrl = `data:image/png;base64,${base64}`;
+            return { imageUrl, mediaType: 'image', base64 };
+        }, checkCancelled);
+    }
+
+    // 3. POLLINATIONS (Default Fallback)
+    const width = format === VideoFormat.PORTRAIT ? 768 : 1280;
+    const height = format === VideoFormat.PORTRAIT ? 1280 : 768;
+    const safeSeed = seed || Math.floor(Math.random() * 1000);
+    
+    // Using a proxy or direct URL
+    // Note: To avoid 429s and URL errors, we use the cleaned prompt
+    const finalUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(safePrompt)}?width=${width}&height=${height}&seed=${safeSeed}&nologo=true&model=${pollinationsModel}`;
+    
+    // We fetch it to convert to blob/base64 to ensure it loads and can be saved
+    return withRetry(async () => {
+        const res = await fetch(finalUrl);
+        if (!res.ok) throw new Error(`Pollinations error: ${res.status}`);
+        const blob = await res.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        
+        // Convert blob to base64 for saving
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve) => {
+            reader.onloadend = () => {
+                const b64 = (reader.result as string).split(',')[1];
+                resolve(b64);
+            };
+        });
+        reader.readAsDataURL(blob);
+        const base64 = await base64Promise;
+
+        return { imageUrl: objectUrl, mediaType: 'image', base64 };
+    }, checkCancelled, 2); // Less retries for Pollinations
 };
 
-export const generateMetadata = async (
-    topic: string, 
-    scriptContext: string,
-    checkCancelled?: () => boolean
-): Promise<VideoMetadata> => {
+export const generateThumbnails = async (topic: string, style: VideoStyle, provider: ImageProvider, checkCancelled?: () => boolean): Promise<string[]> => {
+    // Generate 4 variations
+    const promises = [1, 2, 3, 4].map(i => 
+        generateSceneImage(
+            `YouTube thumbnail for video about ${topic}, ${style}, catchy, high contrast, text-free`,
+            VideoFormat.LANDSCAPE,
+            i * 55,
+            topic,
+            provider,
+            style,
+            'flux', // Use better model for thumbs
+            'gemini-2.5-flash-image',
+            checkCancelled
+        ).then(r => r.imageUrl).catch(() => 'https://placehold.co/1280x720/222/FFF.png?text=Thumb+Error')
+    );
+    return Promise.all(promises);
+};
+
+export const generateMetadata = async (topic: string, scriptContext: string, checkCancelled?: () => boolean): Promise<VideoMetadata> => {
     return withRetry(async (ai) => {
-        const prompt = `Generate YouTube SEO metadata for "${topic}".
-        Context: ${scriptContext.substring(0, 1000)}...
-        Output JSON: { "title": "", "description": "", "tags": [] }`;
+        const prompt = `
+            Generate YouTube Metadata for a video about: "${topic}".
+            Script Context: "${scriptContext.substring(0, 500)}...".
+            Output JSON: { "title": "Clickbait Title", "description": "SEO Description...", "tags": ["tag1", "tag2", "tag3"] }
+        `;
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
-            config: { responseMimeType: 'application/json' }
+            config: { responseMimeType: "application/json" }
         });
-        const parsed = robustJsonParse(response.text || "{}");
-        if (!parsed || !parsed.title) return { title: topic, description: "Video about " + topic, tags: [] };
-        return parsed;
+        return JSON.parse(response.text || '{}');
+    }, checkCancelled);
+};
+
+export const generateViralMetadata = async (topic: string, context: string, checkCancelled?: () => boolean): Promise<ViralMetadataResult> => {
+    return withRetry(async (ai) => {
+        const prompt = `
+            You are a Viral YouTube Expert.
+            Topic: ${topic}
+            Context: ${context}
+            Generate:
+            1. 5 Clickbait Titles (High CTR).
+            2. AIDA Description (Attention, Interest, Desire, Action).
+            3. 30 Viral Tags (comma separated).
+            
+            Output JSON:
+            {
+                "titles": ["Title 1", ...],
+                "description": "Full description text...",
+                "tags": "tag1, tag2, tag3..."
+            }
+        `;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+        return JSON.parse(response.text || '{}');
+    }, checkCancelled);
+};
+
+export const generateVisualVariations = async (originalPrompt: string, sceneText: string, count: number, checkCancelled?: () => boolean): Promise<string[]> => {
+    return withRetry(async (ai) => {
+        const prompt = `
+            Based on this scene script: "${sceneText}"
+            And this base visual style: "${originalPrompt}"
+            
+            Generate ${count} distinct visual descriptions (prompts) for sequential shots in this scene.
+            They should tell a story visually.
+            
+            Output JSON: { "prompts": ["prompt 1", "prompt 2", ...] }
+        `;
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+        const res = JSON.parse(response.text || '{"prompts": []}');
+        return res.prompts && res.prompts.length > 0 ? res.prompts : [originalPrompt];
     }, checkCancelled);
 };

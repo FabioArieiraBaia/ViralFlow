@@ -251,11 +251,16 @@ export const EditSceneModal: React.FC<{
     const [vfx, setVfx] = useState<VFXConfig>(localScene.vfxConfig || { shakeIntensity: 0, chromaticAberration: 0, bloomIntensity: 0, vignetteIntensity: 0, filmGrain: 0 });
     const [grading, setGrading] = useState<ColorGradingPreset>(localScene.colorGrading || ColorGradingPreset.NONE);
     const [showTrimmer, setShowTrimmer] = useState(false);
+    
+    // REFS FOR UPLOADS
     const fileInputRef = useRef<HTMLInputElement>(null);
     const layerInputRef = useRef<HTMLInputElement>(null);
     const musicFileInputRef = useRef<HTMLInputElement>(null);
     const sfxInputRef = useRef<HTMLInputElement>(null);
     const cutInputRef = useRef<HTMLInputElement>(null);
+    const baseVisualUploadRef = useRef<HTMLInputElement>(null);
+    const layerReplacementUploadRef = useRef<HTMLInputElement>(null);
+    const [layerIdToReplace, setLayerIdToReplace] = useState<string | null>(null);
 
     // Sync Music Config
     useEffect(() => {
@@ -295,6 +300,40 @@ export const EditSceneModal: React.FC<{
             ...prev,
             layers: prev.layers?.map(l => l.id === id ? { ...l, ...updates } : l)
         }));
+    };
+
+    const handleBaseVisualUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const url = URL.createObjectURL(file);
+            const isVideo = file.type.startsWith('video/');
+            setLocalScene(prev => ({
+                ...prev,
+                imageUrl: isVideo ? "https://placehold.co/1280x720/000000/FFFFFF.png?text=VIDEO+READY" : url,
+                videoUrl: isVideo ? url : undefined,
+                mediaType: isVideo ? 'video' : 'image',
+                isGeneratingImage: false
+            }));
+        }
+    };
+
+    const handleLayerReplacementUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file && layerIdToReplace) {
+            const url = URL.createObjectURL(file);
+            const isVideo = file.type.startsWith('video/');
+            updateLayer(layerIdToReplace, {
+                url: url,
+                type: isVideo ? 'video' : 'image',
+                name: `Upload: ${file.name.substring(0, 10)}`
+            });
+            setLayerIdToReplace(null);
+        }
+    };
+
+    const triggerLayerReplacement = (id: string) => {
+        setLayerIdToReplace(id);
+        layerReplacementUploadRef.current?.click();
     };
 
     const handleAddLayer = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -946,7 +985,11 @@ export const EditSceneModal: React.FC<{
                                              </div>
                                              <textarea value={localScene.visualPrompt} onChange={(e) => setLocalScene({...localScene, visualPrompt: e.target.value})} className="w-full text-[10px] bg-transparent border-b border-zinc-200 dark:border-zinc-800 focus:border-indigo-500 outline-none resize-none h-8 text-zinc-500" placeholder="Prompt da imagem base..." />
                                          </div>
-                                         <button onClick={handleRegenerateVisual} disabled={isRegeneratingVisual} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-indigo-500" title="Regenerar Base">{isRegeneratingVisual ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCcw className="w-4 h-4"/>}</button>
+                                         <div className="flex gap-1">
+                                            <button onClick={handleRegenerateVisual} disabled={isRegeneratingVisual} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-indigo-500" title="Regenerar Base">{isRegeneratingVisual ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCcw className="w-4 h-4"/>}</button>
+                                            <button onClick={() => baseVisualUploadRef.current?.click()} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-zinc-500 hover:text-indigo-500" title="Upload Mídia Própria"><Upload className="w-4 h-4"/></button>
+                                         </div>
+                                         <input type="file" ref={baseVisualUploadRef} onChange={handleBaseVisualUpload} className="hidden" accept="image/*,video/*" />
                                      </div>
 
                                      {/* Additional Shots */}
@@ -968,6 +1011,13 @@ export const EditSceneModal: React.FC<{
                                                         >
                                                             {regeneratingLayerIds.has(layer.id) ? <Loader2 className="w-3 h-3 animate-spin"/> : <RefreshCcw className="w-3 h-3"/>}
                                                         </button>
+                                                        <button 
+                                                            onClick={() => triggerLayerReplacement(layer.id)}
+                                                            className="text-zinc-400 hover:text-indigo-500 p-1"
+                                                            title="Substituir por Upload"
+                                                        >
+                                                            <Upload className="w-3 h-3"/>
+                                                        </button>
                                                         <button onClick={() => removeLayer(layer.id)} className="text-red-500 hover:text-red-600 p-1"><Trash2 className="w-3 h-3"/></button>
                                                     </div>
                                                 </div>
@@ -979,6 +1029,8 @@ export const EditSceneModal: React.FC<{
                                             </div>
                                          </div>
                                      ))}
+
+                                     <input type="file" ref={layerReplacementUploadRef} onChange={handleLayerReplacementUpload} className="hidden" accept="image/*,video/*" />
 
                                      {/* Add New Shot UI */}
                                      <div className="pt-2 border-t border-dashed border-zinc-300 dark:border-zinc-700">

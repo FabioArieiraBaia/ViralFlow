@@ -1,6 +1,7 @@
 
+
 import React from 'react';
-import { Settings, Key, ChevronRight, Video, ShieldCheck, Terminal, Copy, Calendar, CheckCircle2 } from 'lucide-react';
+import { Settings, Key, ChevronRight, Video, ShieldCheck, Terminal, Copy, Calendar, CheckCircle2, Image } from 'lucide-react';
 import { Language } from '../../types';
 import { translations } from '../../services/translations';
 import { getApiKeyCount } from '../../services/geminiService';
@@ -14,6 +15,8 @@ interface SettingsTabProps {
   apiKeyCount: number;
   pexelsKey: string;
   updatePexelsKey: (v: string) => void;
+  pollinationsToken: string;
+  updatePollinationsToken: (v: string) => void;
   userKey: string;
   selectedLicenseType: any;
   setSelectedLicenseType: (v: any) => void;
@@ -23,6 +26,7 @@ interface SettingsTabProps {
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({
   lang, manualKeys, updateKeys, apiKeyCount, pexelsKey, updatePexelsKey,
+  pollinationsToken, updatePollinationsToken,
   userKey, selectedLicenseType, setSelectedLicenseType, handleGenerateLicense, generatedAdminKey
 }) => {
   const t = translations[lang];
@@ -45,6 +49,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                         </div>
                         <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1">{t.getKey} <ChevronRight className="w-3 h-3" /></a>
                     </div>
+                </div>
+
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">
+                    <div>
+                        <h3 className="font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Image className="w-4 h-4 text-pink-500" /> {t.pollinationsTitle}</h3>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{t.pollinationsDesc}</p>
+                    </div>
+                    <input type="text" value={pollinationsToken} onChange={(e) => updatePollinationsToken(e.target.value)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-xs font-mono text-zinc-600 dark:text-zinc-300 outline-none focus:border-pink-500" placeholder="plln_sk_..." />
                 </div>
 
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-6 space-y-4 shadow-sm">

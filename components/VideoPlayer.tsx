@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe, VFXConfig, SubtitleSettings, AudioLayer, LayerAnimation } from '../types';
 import { Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
@@ -127,6 +128,9 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const chunksRef = useRef<Blob[]>([]);
   const isRecordingRef = useRef(false);
   
+  // Ref to track the mime type used for recording
+  const recordingMimeTypeRef = useRef<string>('video/webm');
+
   const startTimeRef = useRef<number>(0);
   const rafRef = useRef<number>(0);
   const audioDataArrayRef = useRef<Uint8Array>(new Uint8Array(0));
@@ -364,6 +368,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                  mimeType = 'video/webm';
              }
         }
+        
+        recordingMimeTypeRef.current = mimeType;
 
         mediaRecorderRef.current = new MediaRecorder(stream, {
             mimeType: mimeType,
@@ -377,7 +383,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
         mediaRecorderRef.current.onstop = () => {
             console.log("Recorder Stopped. Exporting Blob...");
-            const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+            // Use the stored mimeType to ensure correct file creation
+            const blob = new Blob(chunksRef.current, { type: recordingMimeTypeRef.current });
             triggerBrowserDownload(blob, `viralflow_video_${Date.now()}.webm`);
             setIsExporting(false);
             setRenderScale(1);

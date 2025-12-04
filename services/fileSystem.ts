@@ -32,14 +32,24 @@ export const saveTextFile = (projectDir: string, fileName: string, content: stri
 
 // Trigger a browser download for the final video or assets
 export const triggerBrowserDownload = (blob: Blob, filename: string) => {
+  // Create Object URL from Blob
   const url = URL.createObjectURL(blob);
+  
   const a = document.createElement('a');
+  a.style.display = 'none';
   a.href = url;
   a.download = filename;
+  
   document.body.appendChild(a);
   a.click();
+  
+  // Clean up
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  
+  // Important: Add delay before revoking to ensure download starts on all browsers
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+  }, 2000);
 };
 
 export const openProjectFolder = (projectDir: string) => {
