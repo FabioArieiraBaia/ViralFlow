@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Modality } from "@google/genai";
 import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeminiTTSModel, GeneratedScriptItem, ViralMetadataResult } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
@@ -77,6 +78,26 @@ const getNextApiKey = (): string => {
   return key;
 };
 
+// HELPER: Fallback Generator
+// If primary model fails with 404 (Not Found), tries fallback model (e.g. 1.5 flash)
+async function generateWithFallback(
+    ai: GoogleGenAI, 
+    primaryModel: string, 
+    params: any,
+    fallbackModel: string = 'gemini-1.5-flash'
+) {
+    try {
+        return await ai.models.generateContent({ model: primaryModel, ...params });
+    } catch (e: any) {
+        const msg = (e.message || JSON.stringify(e)).toLowerCase();
+        if (msg.includes('not found') || msg.includes('404')) {
+            console.warn(`[Gemini] Modelo ${primaryModel} não encontrado (404). Tentando fallback para ${fallbackModel}...`);
+            return await ai.models.generateContent({ model: fallbackModel, ...params });
+        }
+        throw e;
+    }
+}
+
 // Modified withRetry to accept a cancellation checker and custom retries
 async function withRetry<T>(
     operation: (ai: GoogleGenAI) => Promise<T>, 
@@ -127,7 +148,7 @@ async function withRetry<T>(
 
       if (isQuotaError) {
          const shortKey = key.slice(-4);
-         console.warn(`[Pollinations Debug] ⚠️ Cota (429) na chave ...${shortKey}. Tentativa (${i+1}/${maxRetries}).`);
+         console.warn(`[API Debug] ⚠️ Cota (429) na chave ...${shortKey}. Tentativa (${i+1}/${maxRetries}).`);
          // Exponential backoff for 429
          const backoff = 2000 * Math.pow(1.5, i);
          await new Promise(resolve => setTimeout(resolve, backoff));
@@ -138,7 +159,8 @@ async function withRetry<T>(
          continue;
       }
       else {
-        console.error(`[Pollinations Debug] Erro Genérico (Tentativa ${i+1}/${maxRetries}):`, errorMsg);
+        // Log generic errors but keep trying if it's potentially transient
+        console.error(`[API Debug] Erro Genérico (Tentativa ${i+1}/${maxRetries}):`, errorMsg);
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
@@ -206,19 +228,16 @@ export const generateVideoScript = async (
              `;
         }
 
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+        // Use Fallback logic here
+        const response = await generateWithFallback(ai, 'gemini-2.5-flash', {
             contents: prompt,
-            config: {
-                responseMimeType: "application/json"
-            }
-        });
+            config: { responseMimeType: "application/json" }
+        }, 'gemini-1.5-flash');
         
         const text = response.text || "[]";
         try {
             return JSON.parse(text);
         } catch (e) {
-            // Fallback parsing if model adds markdown
             const clean = text.replace(/```json/g, '').replace(/```/g, '');
             return JSON.parse(clean);
         }
@@ -233,11 +252,11 @@ export const generateMovieOutline = async (topic: string, channelName: string, l
             Language: ${langName}.
             Output JSON: { "chapters": ["Chapter 1 Title", "Chapter 2 Title", ... up to 8 chapters] }
         `;
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+        const response = await generateWithFallback(ai, 'gemini-2.5-flash', {
             contents: prompt,
             config: { responseMimeType: "application/json" }
-        });
+        }, 'gemini-1.5-flash');
+
         return JSON.parse(response.text || '{"chapters": []}');
     }, checkCancelled);
 };
@@ -254,7 +273,6 @@ export const generateSpeech = async (
 ): Promise<{ url: string, buffer?: AudioBuffer, base64: string, success: boolean }> => {
     return withRetry(async (ai) => {
         // Map internal voice IDs to Gemini Voice names
-        // Available: 'Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Zephyr'
         let voiceName = 'Fenrir';
         const lowerProfile = voiceProfile.toLowerCase();
         if (lowerProfile.includes('puck') || lowerProfile.includes('suave')) voiceName = 'Puck';
@@ -263,11 +281,9 @@ export const generateSpeech = async (
         else if (lowerProfile.includes('aoede') || lowerProfile.includes('dramática')) voiceName = 'Aoede';
         else if (lowerProfile.includes('zephyr') || lowerProfile.includes('calmo')) voiceName = 'Zephyr';
 
-        // Add acting direction if stylePrompt is provided
-        const finalContent = stylePrompt 
-            ? `(Acting Direction: ${stylePrompt}) ${text}`
-            : text;
+        const finalContent = stylePrompt ? `(Acting Direction: ${stylePrompt}) ${text}` : text;
 
+        // NOTE: TTS usually doesn't fallback to text models, so we just try the requested model
         const response = await ai.models.generateContent({
             model: model,
             contents: finalContent,
@@ -300,12 +316,11 @@ export const generateSceneImage = async (
     topic: string,
     provider: ImageProvider,
     style: VideoStyle,
-    pollinationsModel: PollinationsModel = 'turbo',
-    geminiModel: GeminiModel = 'gemini-2.5-flash-image',
+    pollinationsModel: PollinationsModel = 'flux', // DEFAULT TO FLUX
+    geminiModel: GeminiModel = 'gemini-2.5-flash-image', // Ignored, kept for compat
     checkCancelled?: () => boolean
 ): Promise<{ imageUrl: string, mediaType: 'image' | 'video', base64?: string, videoUrl?: string }> => {
     
-    // Clean Prompt to avoid URL issues
     const safePrompt = cleanPrompt(prompt);
     
     // 1. STOCK VIDEO (PEXELS)
@@ -314,7 +329,6 @@ export const generateSceneImage = async (
              const pexelsKey = getPexelsKey();
              if (!pexelsKey) throw new Error("Pexels key not found");
              
-             // Extract keywords from prompt for better search
              const keywords = safePrompt.split(' ').slice(0, 5).join(' ');
              const orientation = format === VideoFormat.PORTRAIT ? 'portrait' : 'landscape';
              
@@ -325,64 +339,56 @@ export const generateSceneImage = async (
              const videoFiles = data.videos?.[0]?.video_files;
              if (!videoFiles || videoFiles.length === 0) throw new Error("No stock video found");
              
-             // Find best quality fit (HD)
              const bestVideo = videoFiles.find((v: any) => v.height >= 720) || videoFiles[0];
              
              return { imageUrl: bestVideo.image, videoUrl: bestVideo.link, mediaType: 'video' };
         }, checkCancelled);
     }
 
-    // 2. GEMINI IMAGEN
-    if (provider === ImageProvider.GEMINI) {
-        return withRetry(async (ai) => {
-            const width = format === VideoFormat.PORTRAIT ? 768 : 1280;
-            const height = format === VideoFormat.PORTRAIT ? 1280 : 768;
-            const aspectRatio = format === VideoFormat.PORTRAIT ? '9:16' : '16:9';
-
-            const response = await ai.models.generateContent({
-                model: geminiModel,
-                contents: safePrompt + `, ${style} style, high quality, 8k`,
-                config: {
-                    // Note: aspect ratio param depends on exact model version, 
-                    // using prompt injection is often more reliable for flash-image
-                }
-            });
-            
-            // Handle image extraction (usually comes as inlineData in parts)
-            // Note: The specific response structure depends on the model version.
-            // For flash-image, it might return base64.
-            // Since SDK typings can be tricky, we iterate parts.
-            let base64 = "";
-            for (const part of response.candidates?.[0]?.content?.parts || []) {
-                if (part.inlineData) {
-                    base64 = part.inlineData.data;
-                    break;
-                }
-            }
-            
-            if (!base64) throw new Error("No image data in Gemini response");
-            const imageUrl = `data:image/png;base64,${base64}`;
-            return { imageUrl, mediaType: 'image', base64 };
-        }, checkCancelled);
-    }
-
-    // 3. POLLINATIONS (Default Fallback)
+    // 2. POLLINATIONS (Sole Image/Video Provider)
     const width = format === VideoFormat.PORTRAIT ? 768 : 1280;
     const height = format === VideoFormat.PORTRAIT ? 1280 : 768;
     const safeSeed = seed || Math.floor(Math.random() * 1000);
     
-    // Using a proxy or direct URL
-    // Note: To avoid 429s and URL errors, we use the cleaned prompt
-    const finalUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(safePrompt)}?width=${width}&height=${height}&seed=${safeSeed}&nologo=true&model=${pollinationsModel}`;
+    const effectiveModel = pollinationsModel || 'flux';
     
-    // We fetch it to convert to blob/base64 to ensure it loads and can be saved
+    // Check if the selected model is considered a video model
+    // Note: Pollinations might not stream video bytes directly on the main endpoint for all models,
+    // but the instruction is to use the URL structure. 
+    // Admin only models: veo, luma, kling, runway.
+    const isVideoModel = ['veo', 'luma', 'kling', 'runway', 'sora'].includes(effectiveModel);
+    
+    const pollinationsKey = getPollinationsToken();
+    
+    let queryParams = `width=${width}&height=${height}&seed=${safeSeed}&nologo=true&model=${effectiveModel}`;
+    if (pollinationsKey) {
+        queryParams += `&api_key=${pollinationsKey}`; // Used for high-tier access if configured
+    }
+
+    const baseUrl = "https://image.pollinations.ai/prompt";
+    const finalUrl = `${baseUrl}/${encodeURIComponent(safePrompt)}?${queryParams}`;
+    
+    // If it's a video model (Admin feature), we treat the URL as the video source directly.
+    // Pollinations handles the generation and serving.
+    if (isVideoModel) {
+        // Return videoUrl pointing to the Pollinations endpoint.
+        // The VideoPlayer component knows how to handle <video src={videoUrl}>
+        return {
+            imageUrl: `https://placehold.co/${width}x${height}/000/FFF.png?text=VIDEO+LOADING`, // Placeholder thumb
+            videoUrl: finalUrl, // Direct link to Pollinations video stream
+            mediaType: 'video',
+            base64: '' 
+        };
+    }
+
+    // Standard Image Generation (Flux, Turbo, etc)
+    // We download it as a Blob/Base64 to ensure it's available offline or during export
     return withRetry(async () => {
         const res = await fetch(finalUrl);
         if (!res.ok) throw new Error(`Pollinations error: ${res.status}`);
         const blob = await res.blob();
         const objectUrl = URL.createObjectURL(blob);
         
-        // Convert blob to base64 for saving
         const reader = new FileReader();
         const base64Promise = new Promise<string>((resolve) => {
             reader.onloadend = () => {
@@ -394,11 +400,10 @@ export const generateSceneImage = async (
         const base64 = await base64Promise;
 
         return { imageUrl: objectUrl, mediaType: 'image', base64 };
-    }, checkCancelled, 2); // Less retries for Pollinations
+    }, checkCancelled, 2); 
 };
 
 export const generateThumbnails = async (topic: string, style: VideoStyle, provider: ImageProvider, checkCancelled?: () => boolean): Promise<string[]> => {
-    // Generate 4 variations
     const promises = [1, 2, 3, 4].map(i => 
         generateSceneImage(
             `YouTube thumbnail for video about ${topic}, ${style}, catchy, high contrast, text-free`,
@@ -407,8 +412,8 @@ export const generateThumbnails = async (topic: string, style: VideoStyle, provi
             topic,
             provider,
             style,
-            'flux', // Use better model for thumbs
-            'gemini-2.5-flash-image',
+            'flux', // Force Flux for thumbs
+            'gemini-2.5-flash-image', // Ignored
             checkCancelled
         ).then(r => r.imageUrl).catch(() => 'https://placehold.co/1280x720/222/FFF.png?text=Thumb+Error')
     );
@@ -422,11 +427,10 @@ export const generateMetadata = async (topic: string, scriptContext: string, che
             Script Context: "${scriptContext.substring(0, 500)}...".
             Output JSON: { "title": "Clickbait Title", "description": "SEO Description...", "tags": ["tag1", "tag2", "tag3"] }
         `;
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+        const response = await generateWithFallback(ai, 'gemini-2.5-flash', {
             contents: prompt,
             config: { responseMimeType: "application/json" }
-        });
+        }, 'gemini-1.5-flash');
         return JSON.parse(response.text || '{}');
     }, checkCancelled);
 };
@@ -449,11 +453,10 @@ export const generateViralMetadata = async (topic: string, context: string, chec
                 "tags": "tag1, tag2, tag3..."
             }
         `;
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+        const response = await generateWithFallback(ai, 'gemini-2.5-flash', {
             contents: prompt,
             config: { responseMimeType: "application/json" }
-        });
+        }, 'gemini-1.5-flash');
         return JSON.parse(response.text || '{}');
     }, checkCancelled);
 };
@@ -469,11 +472,10 @@ export const generateVisualVariations = async (originalPrompt: string, sceneText
             
             Output JSON: { "prompts": ["prompt 1", "prompt 2", ...] }
         `;
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+        const response = await generateWithFallback(ai, 'gemini-2.5-flash', {
             contents: prompt,
             config: { responseMimeType: "application/json" }
-        });
+        }, 'gemini-1.5-flash');
         const res = JSON.parse(response.text || '{"prompts": []}');
         return res.prompts && res.prompts.length > 0 ? res.prompts : [originalPrompt];
     }, checkCancelled);

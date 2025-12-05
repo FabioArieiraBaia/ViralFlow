@@ -1,10 +1,26 @@
 
-
 export type Language = 'pt' | 'en' | 'es';
 export type Theme = 'light' | 'dark';
 
-export type PollinationsModel = 'flux' | 'turbo' | 'dreamshaper' | 'deliberate' | 'midjourney';
-export type GeminiModel = 'gemini-2.5-flash-image' | 'imagen-3.0-generate-001';
+// POLLINATIONS MODELS
+// Public: Image models
+// Admin Only: Video models (mapped via API)
+export type PollinationsModel = 
+  | 'flux' 
+  | 'flux-realism' 
+  | 'flux-anime' 
+  | 'flux-3d' 
+  | 'flux-cne' 
+  | 'turbo' 
+  | 'midjourney' 
+  | 'any-dark'
+  // Video Models (Admin)
+  | 'veo' 
+  | 'luma' 
+  | 'kling' 
+  | 'runway';
+
+export type GeminiModel = 'gemini-2.5-flash-image' | 'imagen-3.0-generate-001'; // Deprecated but kept for type safety in old signatures
 export type GeminiTTSModel = 'gemini-2.5-flash-preview-tts' | 'gemini-2.5-pro-tts';
 
 export enum VideoStyle {
@@ -131,8 +147,7 @@ export enum MusicAction {
 
 export enum ImageProvider {
   NONE = 'Apenas Roteiro (Sem Imagem)',
-  GEMINI = 'Gemini 2.5 Flash (Google)',
-  POLLINATIONS = 'Pollinations.ai (Flux/SD - Grátis)',
+  POLLINATIONS = 'Pollinations.ai (Flux/Veo/Luma)',
   STOCK_VIDEO = 'Stock Video (Pexels - Real)',
   UPLOAD = 'Upload Próprio (Arquivo Local)'
 }

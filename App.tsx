@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, GeminiModel, Scene, ViralMetadataResult, CameraMovement, VFXConfig, SubtitleSettings, VisualIntensity, LayerConfig, GeminiTTSModel } from './types';
 import { generateVideoScript, generateSpeech, generateSceneImage, generateThumbnails, generateMetadata, getApiKeyCount, saveManualKeys, getManualKeys, savePexelsKey, getPexelsKey, savePollinationsToken, getPollinationsToken, generateMovieOutline, generateViralMetadata, generateVisualVariations } from './services/geminiService';
@@ -103,8 +102,9 @@ const App: React.FC = () => {
   const [format, setFormat] = useState<VideoFormat>(VideoFormat.PORTRAIT);
   const [voice, setVoice] = useState('Auto');
   const [customVoice, setCustomVoice] = useState('');
-  const [imageProvider, setImageProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
-  const [thumbProvider, setThumbProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
+  const [imageProvider, setImageProvider] = useState<ImageProvider>(ImageProvider.POLLINATIONS);
+  const [pollinationsModel, setPollinationsModel] = useState<PollinationsModel>('flux'); // NEW: Global state for Pollinations model
+  const [thumbProvider, setThumbProvider] = useState<ImageProvider>(ImageProvider.POLLINATIONS);
   const [showSubtitles, setShowSubtitles] = useState(true);
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(SubtitleStyle.KARAOKE); 
   const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings>({ fontSizeMultiplier: 1.0, yPosition: 0.9, fontFamily: 'Inter' });
@@ -157,6 +157,9 @@ const App: React.FC = () => {
   const [metaContext, setMetaContext] = useState('');
   const [viralMetaResult, setViralMetaResult] = useState<ViralMetadataResult | null>(null);
 
+  // ADMIN CHECK
+  const isMasterAdmin = userKey === MASTER_KEY;
+
   useEffect(() => { if (theme === 'dark') document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); }, [theme]);
   useEffect(() => { const initUser = async () => { const savedKey = localStorage.getItem('viralflow_pro_key'); if (savedKey) { if (savedKey === MASTER_KEY || verifyLocalKey(savedKey)) { setUserTier(UserTier.PRO); setUserKey(savedKey); } } }; initUser(); const seenWelcome = sessionStorage.getItem('viralflow_welcome_seen'); if (seenWelcome) setShowWelcomeModal(false); }, []);
 
@@ -168,9 +171,13 @@ const App: React.FC = () => {
   };
   const handleCloseWelcome = () => { setShowWelcomeModal(false); sessionStorage.setItem('viralflow_welcome_seen', 'true'); };
   
-  const handleSceneAssetRegeneration = async (scene: Scene, provider: ImageProvider, pollinationsModel?: PollinationsModel, geminiModel?: GeminiModel): Promise<any> => { 
+  const handleSceneAssetRegeneration = async (scene: Scene, provider: ImageProvider, pModel?: PollinationsModel, geminiModel?: GeminiModel): Promise<any> => { 
       const index = scenes.findIndex(s => s.id === scene.id); const idx = index >= 0 ? index : 0; 
-      try { const result = await generateSceneImage(scene.visualPrompt, format, idx, topic, provider, style, pollinationsModel || 'turbo', geminiModel); return { ...result, success: true }; } 
+      const safeProvider = provider; 
+      try { 
+          const result = await generateSceneImage(scene.visualPrompt, format, idx, topic, safeProvider, style, pModel || pollinationsModel, geminiModel); 
+          return { ...result, success: true }; 
+      } 
       catch (e) { alert("Erro ao regenerar asset: " + e); return { success: false }; } 
   };
   
@@ -236,8 +243,8 @@ const App: React.FC = () => {
   const produceScenes = async (scenesToProduce: Scene[]) => { 
       setIsGenerating(true); 
       
-      // BATCH CONFIGURATION
-      const BATCH_SIZE = 4; // Generate 4 scenes in parallel
+      // BATCH CONFIGURATION - KEEP AT 1 TO AVOID 429
+      const BATCH_SIZE = 1; 
       const chunks: Scene[][] = [];
       for (let i = 0; i < scenesToProduce.length; i += BATCH_SIZE) {
           chunks.push(scenesToProduce.slice(i, i + BATCH_SIZE));
@@ -249,7 +256,7 @@ const App: React.FC = () => {
           if (cancelRef.current) break;
           
           const batch = chunks[i];
-          setProgress(`${translations[lang].producingScene} ${processedCount + 1}-${processedCount + batch.length} / ${scenesToProduce.length}... (Batch ${i+1}/${chunks.length})`);
+          setProgress(`${translations[lang].producingScene} ${processedCount + 1} / ${scenesToProduce.length}...`);
           
           // Mark batch as generating
           setScenes(prev => {
@@ -261,14 +268,20 @@ const App: React.FC = () => {
               return updated;
           });
 
-          // Process batch in parallel
+          // Delay for rate limiting
+          if (i > 0) {
+              await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+
+          // Process batch
           await Promise.all(batch.map(async (scene) => {
               if (scene.audioUrl && scene.imageUrl && !scene.imageUrl.includes('placehold')) return;
 
               const idxInTotal = scenesToProduce.findIndex(s => s.id === scene.id);
               
               let safeImageProvider = imageProvider; 
-              if (imageProvider === ImageProvider.NONE) safeImageProvider = ImageProvider.NONE; else if (imageProvider === ImageProvider.GEMINI) safeImageProvider = ImageProvider.POLLINATIONS; 
+              if (imageProvider === ImageProvider.NONE) safeImageProvider = ImageProvider.NONE; 
+              else safeImageProvider = ImageProvider.POLLINATIONS;
 
               // 1. GENERATE AUDIO
               let audioResult;
@@ -293,24 +306,21 @@ const App: React.FC = () => {
               let visualPrompts: string[] = [scene.visualPrompt];
               if (finalNumCuts > 1 && safeImageProvider !== ImageProvider.NONE) {
                   try {
-                       // Pass scene text to allow narrative segmentation
                        visualPrompts = await generateVisualVariations(scene.visualPrompt, scene.text, finalNumCuts, () => cancelRef.current);
                   } catch(e) { /* fallback to single prompt */ }
               }
 
-              // 4. GENERATE IMAGES
+              // 4. GENERATE IMAGES (OR VIDEO IF MODEL IS VEO)
               const generatedLayers: LayerConfig[] = [];
               let mainImageResult: any = { imageUrl: "https://placehold.co/1280x720/333/FFF.png?text=Error", success: false, mediaType: 'image' };
 
               for (let cutIdx = 0; cutIdx < visualPrompts.length; cutIdx++) {
                   if (cancelRef.current) break;
                   const prompt = visualPrompts[cutIdx];
-                  
-                  // Use robust generation (which now uses optimized GET)
-                  // Use a distinct index multiplier to force a different random seed in Pollinations
                   const seedIndex = (idxInTotal * 1000) + (cutIdx * 55);
 
-                  const imgRes = await generateSceneImage(prompt, format, seedIndex, topic, safeImageProvider, style, 'turbo', 'gemini-2.5-flash-image', () => cancelRef.current)
+                  // USE SELECTED MODEL FROM STATE (veo, flux, etc)
+                  const imgRes = await generateSceneImage(prompt, format, seedIndex, topic, safeImageProvider, style, pollinationsModel, 'gemini-2.5-flash-image', () => cancelRef.current)
                       .then(r => ({ ...r, success: true }))
                       .catch(e => ({ imageUrl: '', mediaType: 'image' as const, base64: '', success: false, videoUrl: undefined }));
                   
@@ -446,7 +456,8 @@ const App: React.FC = () => {
       const scene = scenes[index]; if (!scene) return; 
       setScenes(prev => { const updated = [...prev]; updated[index] = { ...updated[index], isGeneratingImage: true }; return updated; }); 
       try { 
-          const result = await generateSceneImage(scene.visualPrompt, format, index, topic, imageProvider, style, 'turbo'); 
+          // Always use Pollinations now
+          const result = await generateSceneImage(scene.visualPrompt, format, index, topic, ImageProvider.POLLINATIONS, style, pollinationsModel); 
           setScenes(prev => { const updated = [...prev]; updated[index] = { ...updated[index], imageUrl: result.imageUrl, imageBase64: result.base64, videoUrl: result.videoUrl, mediaType: result.mediaType, isGeneratingImage: false }; return updated; }); 
       } catch (e) { console.error(e); setScenes(prev => { const updated = [...prev]; updated[index] = { ...updated[index], isGeneratingImage: false }; return updated; }); } 
   };
@@ -464,8 +475,7 @@ const App: React.FC = () => {
       setIsGenerating(true); 
       const scenesToProcess = scenes.filter(s => selectedSceneIds.has(s.id)); 
       
-      // Batch processing for Bulk Regenerate too
-      const BATCH_SIZE = 4;
+      const BATCH_SIZE = 1;
       const chunks: Scene[][] = [];
       for(let i=0; i<scenesToProcess.length; i+=BATCH_SIZE) chunks.push(scenesToProcess.slice(i, i+BATCH_SIZE));
       
@@ -473,9 +483,11 @@ const App: React.FC = () => {
       
       for(const batch of chunks) {
           if (cancelRef.current) break;
+          await new Promise(resolve => setTimeout(resolve, 1000));
+
           await Promise.all(batch.map(async (scene) => {
               if (type === 'images') { 
-                  try { const imgRes = await handleSceneAssetRegeneration(scene, imageProvider, 'turbo', 'gemini-2.5-flash-image'); setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl: imgRes.imageUrl, imageBase64: imgRes.base64, videoUrl: imgRes.videoUrl, mediaType: imgRes.mediaType, isGeneratingImage: false } : s)); } catch(e) {} 
+                  try { const imgRes = await handleSceneAssetRegeneration(scene, ImageProvider.POLLINATIONS, pollinationsModel, 'gemini-2.5-flash-image'); setScenes(prev => prev.map(s => s.id === scene.id ? { ...s, imageUrl: imgRes.imageUrl, imageBase64: imgRes.base64, videoUrl: imgRes.videoUrl, mediaType: imgRes.mediaType, isGeneratingImage: false } : s)); } catch(e) {} 
               } else { 
                   try { 
                       const audioRes = await handleSceneAudioRegeneration(scene, ttsModel, globalTtsStyle); 
@@ -510,6 +522,8 @@ const App: React.FC = () => {
             setShowUpgradeModal={setShowUpgradeModal} setActiveTab={setActiveTab} 
             importClick={() => importInputRef.current?.click()} handleCreateManualProject={handleCreateManualProject}
             ttsModel={ttsModel} setTtsModel={setTtsModel} globalTtsStyle={globalTtsStyle} setGlobalTtsStyle={setGlobalTtsStyle}
+            pollinationsModel={pollinationsModel} setPollinationsModel={setPollinationsModel}
+            isAdmin={isMasterAdmin}
           />
         )}
 
@@ -559,6 +573,7 @@ const App: React.FC = () => {
             scene={editingScene} onClose={() => setEditingScene(null)} onSave={saveSceneUpdate} 
             onRegenerateAsset={handleSceneAssetRegeneration} onRegenerateAudio={handleSceneAudioRegeneration}
             lang={lang} userTier={userTier} format={format} t={translations} ttsModel={ttsModel}
+            isAdmin={isMasterAdmin}
         />
       )}
     </div>

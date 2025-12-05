@@ -1,8 +1,7 @@
 
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle, CameraMovement, AudioLayer, LayerAnimation, GeminiTTSModel } from '../types';
-import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera, Speaker, Clapperboard, Timer, MoveRight } from 'lucide-react';
+import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera, Speaker, Clapperboard, Timer, MoveRight, Image } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 
 // VOICE OPTIONS CONSTANT (Reused here for the modal)
@@ -206,8 +205,9 @@ export const EditSceneModal: React.FC<{
     userTier: UserTier,
     format: VideoFormat,
     t: any,
-    ttsModel: GeminiTTSModel
-}> = ({ scene, onClose, onSave, onRegenerateAsset, onRegenerateAudio, lang, userTier, format, t, ttsModel }) => {
+    ttsModel: GeminiTTSModel,
+    isAdmin?: boolean
+}> = ({ scene, onClose, onSave, onRegenerateAsset, onRegenerateAudio, lang, userTier, format, t, ttsModel, isAdmin }) => {
     
     // Initial Layers Setup
     const initialLayers = scene.layers || (scene.overlay ? [{
@@ -221,9 +221,8 @@ export const EditSceneModal: React.FC<{
     const [isRegeneratingVisual, setIsRegeneratingVisual] = useState(false);
     const [isRegeneratingAudio, setIsRegeneratingAudio] = useState(false);
     const [audioGenStatus, setAudioGenStatus] = useState<'idle' | 'success' | 'error'>('idle');
-    const [selectedProvider, setSelectedProvider] = useState<ImageProvider>(ImageProvider.GEMINI);
-    const [pollinationsModel, setPollinationsModel] = useState<PollinationsModel>('turbo');
-    const [geminiModel, setGeminiModel] = useState<GeminiModel>('gemini-2.5-flash-image');
+    const [selectedProvider, setSelectedProvider] = useState<ImageProvider>(ImageProvider.POLLINATIONS);
+    const [pollinationsModel, setPollinationsModel] = useState<PollinationsModel>('flux');
     
     // TTS Local State for regeneration
     const [localTtsModel, setLocalTtsModel] = useState<GeminiTTSModel>(ttsModel);
@@ -390,7 +389,8 @@ export const EditSceneModal: React.FC<{
         try {
             // Fake a scene with the new prompt to reuse the generator logic
             const tempScene = { ...localScene, visualPrompt: cutPrompt };
-            const result = await onRegenerateAsset(tempScene, selectedProvider, pollinationsModel, geminiModel);
+            // Force Pollinations here too as we removed Gemini
+            const result = await onRegenerateAsset(tempScene, selectedProvider, pollinationsModel, undefined);
             
             if (result.success && (result.imageUrl || result.videoUrl)) {
                 // Determine sensible start time (e.g., halfway through or end of last cut)
@@ -452,7 +452,8 @@ export const EditSceneModal: React.FC<{
         try {
             const variationPrompt = `${localScene.visualPrompt}. Alternative camera angle, cinematic cut, detailed.`;
             const tempScene = { ...localScene, visualPrompt: variationPrompt };
-            const result = await onRegenerateAsset(tempScene, selectedProvider, pollinationsModel, geminiModel);
+            // Force Pollinations
+            const result = await onRegenerateAsset(tempScene, selectedProvider, pollinationsModel, undefined);
             
             if (result.success) {
                 updateLayer(layerId, {
@@ -529,7 +530,8 @@ export const EditSceneModal: React.FC<{
     const handleRegenerateVisual = async () => {
         setIsRegeneratingVisual(true);
         try {
-            const result = await onRegenerateAsset(localScene, selectedProvider, pollinationsModel, geminiModel);
+            // Force Pollinations
+            const result = await onRegenerateAsset(localScene, selectedProvider, pollinationsModel, undefined);
             if(result.success) {
                 setLocalScene(prev => ({ ...prev, imageUrl: result.imageUrl, videoUrl: result.videoUrl, mediaType: result.mediaType }));
             }
@@ -944,8 +946,7 @@ export const EditSceneModal: React.FC<{
                                      <div>
                                          <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Provedor IA</label>
                                          <select value={selectedProvider} onChange={(e) => setSelectedProvider(e.target.value as ImageProvider)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs">
-                                             <option value={ImageProvider.GEMINI}>Google Gemini</option>
-                                             <option value={ImageProvider.POLLINATIONS}>Pollinations.ai (Free)</option>
+                                             <option value={ImageProvider.POLLINATIONS}>Pollinations.ai (Free/Pro)</option>
                                              <option value={ImageProvider.STOCK_VIDEO}>Stock Video (Pexels)</option>
                                          </select>
                                      </div>
@@ -953,15 +954,21 @@ export const EditSceneModal: React.FC<{
                                          <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Modelo IA</label>
                                          {selectedProvider === ImageProvider.POLLINATIONS && (
                                              <select value={pollinationsModel} onChange={(e) => setPollinationsModel(e.target.value as PollinationsModel)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs">
-                                                 <option value="turbo">Turbo (Rápido)</option>
-                                                 <option value="flux">Flux (Realista)</option>
-                                                 <option value="midjourney">Midjourney Style</option>
-                                             </select>
-                                         )}
-                                         {selectedProvider === ImageProvider.GEMINI && (
-                                             <select value={geminiModel} onChange={(e) => setGeminiModel(e.target.value as GeminiModel)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs">
-                                                 <option value="gemini-2.5-flash-image">Flash 2.5 (Standard)</option>
-                                                 <option value="imagen-3.0-generate-001">Imagen 3 (High Quality)</option>
+                                                 <optgroup label="Modelos de Imagem">
+                                                     <option value="flux">Flux (Padrão - Alta Qualidade)</option>
+                                                     <option value="flux-realism">Flux Realism</option>
+                                                     <option value="flux-3d">Flux 3D (Pixar Style)</option>
+                                                     <option value="flux-anime">Flux Anime</option>
+                                                     <option value="midjourney">Midjourney Style</option>
+                                                     <option value="turbo">Turbo (Super Rápido)</option>
+                                                 </optgroup>
+                                                 {isAdmin && (
+                                                     <optgroup label="Vídeo (Admin Only)">
+                                                         <option value="veo">Google Veo 3.1 (Video 1080p)</option>
+                                                         <option value="seedance">Seedance (Audio Reactive)</option>
+                                                         <option value="seedance-pro">Seedance Pro (Fast)</option>
+                                                     </optgroup>
+                                                 )}
                                              </select>
                                          )}
                                          {selectedProvider === ImageProvider.STOCK_VIDEO && ( <div className="text-xs text-zinc-500 italic p-2">Busca automática via Pexels API</div> )}
@@ -976,8 +983,9 @@ export const EditSceneModal: React.FC<{
                                      
                                      {/* Base Image (Shot 1) */}
                                      <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                                         <div className="w-12 h-12 bg-black rounded shrink-0 overflow-hidden">
-                                            {localScene.imageUrl ? <img src={localScene.imageUrl} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-[10px] text-zinc-500">N/A</div>}
+                                         <div className="w-12 h-12 bg-black rounded shrink-0 overflow-hidden relative">
+                                            {localScene.mediaType === 'video' ? <video src={localScene.videoUrl} className="w-full h-full object-cover" muted loop autoPlay /> : <img src={localScene.imageUrl} className="w-full h-full object-cover" />}
+                                            {localScene.mediaType === 'video' && <div className="absolute top-0 right-0 p-0.5 bg-black/50"><Video className="w-3 h-3 text-white"/></div>}
                                          </div>
                                          <div className="flex-1">
                                              <div className="flex justify-between items-center mb-1">

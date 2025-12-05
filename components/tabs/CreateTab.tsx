@@ -1,13 +1,11 @@
 
-
-
-
 import React from 'react';
 import { 
   Globe, Smartphone, Monitor, Youtube, Lock, AlertCircle, CheckCircle2, 
-  Loader2, Wand2, FolderOpen, TriangleAlert, Clapperboard, ChevronRight, Edit2, Zap, Mic 
+  Loader2, Wand2, FolderOpen, TriangleAlert, Clapperboard, ChevronRight, Edit2, Zap, Mic,
+  Video, Image
 } from 'lucide-react';
-import { Language, VideoStyle, VideoPacing, VideoDuration, VideoFormat, ImageProvider, UserTier, VideoTransition, VisualIntensity, GeminiTTSModel } from '../../types';
+import { Language, VideoStyle, VideoPacing, VideoDuration, VideoFormat, ImageProvider, UserTier, VideoTransition, VisualIntensity, GeminiTTSModel, PollinationsModel } from '../../types';
 import { translations } from '../../services/translations';
 
 // Reusing voice options locally or importing if centralized
@@ -62,6 +60,10 @@ interface CreateTabProps {
   setTtsModel: (v: GeminiTTSModel) => void;
   globalTtsStyle: string;
   setGlobalTtsStyle: (v: string) => void;
+  // Pollinations Model State
+  pollinationsModel?: PollinationsModel;
+  setPollinationsModel?: (v: PollinationsModel) => void;
+  isAdmin?: boolean;
 }
 
 export const CreateTab: React.FC<CreateTabProps> = ({
@@ -71,9 +73,15 @@ export const CreateTab: React.FC<CreateTabProps> = ({
   imageProvider, setImageProvider, globalTransition, setGlobalTransition,
   userTier, isGenerating, progress, handleGenerateVideo, setShowUpgradeModal,
   setActiveTab, importClick, handleCreateManualProject,
-  ttsModel, setTtsModel, globalTtsStyle, setGlobalTtsStyle
+  ttsModel, setTtsModel, globalTtsStyle, setGlobalTtsStyle,
+  pollinationsModel, setPollinationsModel, isAdmin
 }) => {
   const t = translations[lang];
+
+  // If props are missing, use local state fallback
+  const [localPollinationsModel, setLocalPollinationsModel] = React.useState<PollinationsModel>('flux');
+  const activeModel = pollinationsModel || localPollinationsModel;
+  const setActiveModel = setPollinationsModel || setLocalPollinationsModel;
 
   return (
     <div className="flex-1 overflow-y-auto custom-scrollbar p-8 animate-in fade-in duration-500">
@@ -110,15 +118,6 @@ export const CreateTab: React.FC<CreateTabProps> = ({
                  </div>
             </div>
         )}
-
-        {/* Copyright Warning */}
-        <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-4 flex items-start gap-3 shadow-sm">
-          <TriangleAlert className="w-5 h-5 text-amber-600 dark:text-amber-500 shrink-0 mt-0.5" />
-          <div>
-            <h3 className="font-bold text-amber-800 dark:text-amber-400 text-sm mb-1">{t.copyrightWarning}</h3>
-            <p className="text-xs text-amber-700 dark:text-amber-300/80 leading-relaxed">{t.copyrightBody}</p>
-          </div>
-        </div>
 
         {/* Main Form */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -318,12 +317,10 @@ export const CreateTab: React.FC<CreateTabProps> = ({
             <div className="space-y-2">
                 <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center justify-between">
                     <span>{t.imageProvider}</span>
-                    {imageProvider === ImageProvider.GEMINI && <span className="text-[10px] text-amber-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {t.quota}</span>}
                 </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {[
-                    { id: ImageProvider.GEMINI, label: '⚡ Gemini 2.5', sub: 'High Quality (Manual Only)' },
-                    { id: ImageProvider.POLLINATIONS, label: '🎨 Pollinations.ai', sub: 'Turbo Model - Free' },
+                    { id: ImageProvider.POLLINATIONS, label: '🎨 Pollinations.ai', sub: 'Models: Flux, Turbo, Veo (Admin)' },
                     { id: ImageProvider.STOCK_VIDEO, label: '📹 Stock Video', sub: 'Real Footage (Pexels)' },
                     { id: ImageProvider.NONE, label: t.providerNone, sub: t.providerNoneSub }
                     ].map(p => (
@@ -344,6 +341,52 @@ export const CreateTab: React.FC<CreateTabProps> = ({
                     </button>
                     ))}
                 </div>
+
+                {/* Pollinations Model Selector (Only if Pollinations selected) */}
+                {imageProvider === ImageProvider.POLLINATIONS && (
+                    <div className="mt-4 p-4 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3 animate-in slide-in-from-top-2">
+                         <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-2">
+                             <Zap className="w-3 h-3"/> Modelos Pollinations
+                         </h4>
+                         
+                         <div className="space-y-3">
+                            <div>
+                                <label className="text-[10px] font-bold text-zinc-500 mb-1 block flex items-center gap-1"><Image className="w-3 h-3"/> Modelo de Geração</label>
+                                <select 
+                                    value={activeModel} 
+                                    onChange={(e) => {
+                                        if(e.target.value) setActiveModel(e.target.value as PollinationsModel);
+                                    }}
+                                    className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs outline-none focus:border-indigo-500"
+                                >
+                                    <optgroup label="Modelos de Imagem (Público)">
+                                        <option value="flux">Flux (Padrão - Alta Qualidade)</option>
+                                        <option value="flux-realism">Flux Realism</option>
+                                        <option value="flux-3d">Flux 3D (Pixar Style)</option>
+                                        <option value="flux-anime">Flux Anime</option>
+                                        <option value="flux-cne">Flux Cinematic</option>
+                                        <option value="midjourney">Midjourney Style</option>
+                                        <option value="any-dark">Any Dark</option>
+                                        <option value="turbo">Turbo (Super Rápido)</option>
+                                    </optgroup>
+
+                                    {/* VIDEO MODELS HIDDEN FOR NON-ADMINS */}
+                                    {isAdmin && (
+                                        <optgroup label="Vídeo (Admin Only)">
+                                            <option value="veo">Veo (Video)</option>
+                                            <option value="luma">Luma (Video)</option>
+                                            <option value="kling">Kling (Video)</option>
+                                            <option value="runway">Runway (Video)</option>
+                                        </optgroup>
+                                    )}
+                                </select>
+                            </div>
+                         </div>
+                         <p className="text-[10px] text-zinc-500 italic">
+                             Nota: Modelos de vídeo só funcionam com permissão administrativa (chave Admin).
+                         </p>
+                    </div>
+                )}
             </div>
         </div>
 
@@ -381,4 +424,4 @@ export const CreateTab: React.FC<CreateTabProps> = ({
       </div>
     </div>
   );
-};
+}
