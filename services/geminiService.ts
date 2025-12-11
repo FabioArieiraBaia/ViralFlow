@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Modality } from "@google/genai";
-import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeminiTTSModel, GeneratedScriptItem, ViralMetadataResult } from "../types";
+import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeminiTTSModel, GeneratedScriptItem, ViralMetadataResult, ALL_GEMINI_VOICES } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
 import { getProjectDir, saveBase64File } from "./fileSystem";
 
@@ -275,11 +275,24 @@ export const generateSpeech = async (
         // Map internal voice IDs to Gemini Voice names
         let voiceName = 'Fenrir';
         const lowerProfile = voiceProfile.toLowerCase();
-        if (lowerProfile.includes('puck') || lowerProfile.includes('suave')) voiceName = 'Puck';
-        else if (lowerProfile.includes('charon') || lowerProfile.includes('grave')) voiceName = 'Charon';
-        else if (lowerProfile.includes('kore') || lowerProfile.includes('tech')) voiceName = 'Kore';
-        else if (lowerProfile.includes('aoede') || lowerProfile.includes('dramática')) voiceName = 'Aoede';
-        else if (lowerProfile.includes('zephyr') || lowerProfile.includes('calmo')) voiceName = 'Zephyr';
+
+        // 1. Check direct match against ALL_GEMINI_VOICES
+        const directMatch = ALL_GEMINI_VOICES.find(v => v.id.toLowerCase() === lowerProfile || v.label.toLowerCase() === lowerProfile);
+        
+        if (directMatch) {
+            voiceName = directMatch.id;
+        } 
+        else {
+            // 2. Legacy Fallback Matching
+            if (lowerProfile.includes('puck') || lowerProfile.includes('suave')) voiceName = 'Puck';
+            else if (lowerProfile.includes('charon') || lowerProfile.includes('grave')) voiceName = 'Charon';
+            else if (lowerProfile.includes('kore') || lowerProfile.includes('tech')) voiceName = 'Kore';
+            else if (lowerProfile.includes('aoede') || lowerProfile.includes('dramática')) voiceName = 'Aoede';
+            else if (lowerProfile.includes('zephyr') || lowerProfile.includes('calmo')) voiceName = 'Zephyr';
+            // New fallback checks for common categories if exact match fails
+            else if (lowerProfile.includes('narrador') || lowerProfile.includes('male')) voiceName = 'Fenrir';
+            else if (lowerProfile.includes('female')) voiceName = 'Puck';
+        }
 
         const finalContent = stylePrompt ? `(Acting Direction: ${stylePrompt}) ${text}` : text;
 

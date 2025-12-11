@@ -5,20 +5,8 @@ import {
   Loader2, Wand2, FolderOpen, TriangleAlert, Clapperboard, ChevronRight, Edit2, Zap, Mic,
   Video, Image
 } from 'lucide-react';
-import { Language, VideoStyle, VideoPacing, VideoDuration, VideoFormat, ImageProvider, UserTier, VideoTransition, VisualIntensity, GeminiTTSModel, PollinationsModel } from '../../types';
+import { Language, VideoStyle, VideoPacing, VideoDuration, VideoFormat, ImageProvider, UserTier, VideoTransition, VisualIntensity, GeminiTTSModel, PollinationsModel, ALL_GEMINI_VOICES } from '../../types';
 import { translations } from '../../services/translations';
-
-// Reusing voice options locally or importing if centralized
-const VOICE_OPTIONS = [
-  { id: 'Auto', label: '🤖 Elenco Automático' },
-  { id: 'Fenrir', label: '🎙️ Fenrir (Masc. Épico)' },
-  { id: 'Charon', label: '💀 Charon (Masc. Grave)' },
-  { id: 'Zephyr', label: '🌬️ Zephyr (Masc. Calmo)' },
-  { id: 'Puck', label: '👩 Puck (Fem. Suave)' },
-  { id: 'Kore', label: '🧬 Kore (Fem. Tech)' },
-  { id: 'Aoede', label: '🎭 Aoede (Fem. Dramática)' },
-  { id: 'Custom', label: '✏️ Outra / Personalizada...' }
-];
 
 interface CreateTabProps {
   lang: Language;
@@ -266,24 +254,48 @@ export const CreateTab: React.FC<CreateTabProps> = ({
                     <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-2">
                         {t.narrator} {userTier === UserTier.FREE && <Lock className="w-3 h-3" />}
                     </label>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                        {VOICE_OPTIONS.map(v => (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar">
+                        <button
+                            onClick={() => setVoice('Auto')}
+                            className={`text-left px-3 py-2 rounded-lg text-xs border transition-all ${
+                            voice === 'Auto'
+                                ? 'bg-indigo-50 dark:bg-indigo-600/20 border-indigo-500 text-indigo-700 dark:text-white'
+                                : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
+                            }`}
+                        >
+                            🤖 Elenco Automático
+                        </button>
+                        
+                        {ALL_GEMINI_VOICES.map(v => (
                         <button
                             key={v.id}
                             onClick={() => {
-                            if (userTier === UserTier.PRO || v.id === 'Auto') setVoice(v.id);
+                            if (userTier === UserTier.PRO || v.id === 'Fenrir') setVoice(v.id);
                             else setShowUpgradeModal(true);
                             }}
                             className={`text-left px-3 py-2 rounded-lg text-xs border transition-all ${
                             voice === v.id
-                                ? 'bg-indigo-50 dark:bg-indigo-600/20 border-indigo-500 text-indigo-700 dark:text-white'
+                                ? 'bg-indigo-5 dark:bg-indigo-600/20 border-indigo-500 text-indigo-700 dark:text-white'
                                 : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
-                            } ${userTier === UserTier.FREE && v.id !== 'Auto' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            } ${userTier === UserTier.FREE && v.id !== 'Fenrir' ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             {v.label}
                         </button>
                         ))}
                     </div>
+                    <button
+                        onClick={() => {
+                           if (userTier === UserTier.PRO) setVoice('Custom');
+                           else setShowUpgradeModal(true);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded-lg text-xs border mt-2 ${
+                            voice === 'Custom' 
+                                ? 'bg-indigo-5 dark:bg-indigo-600/20 border-indigo-500' 
+                                : 'bg-zinc-50 dark:bg-black/30 border-zinc-200 dark:border-zinc-800'
+                        } ${userTier === UserTier.FREE ? 'opacity-50' : ''}`}
+                    >
+                        ✏️ Personalizada (Outra)...
+                    </button>
                     {voice === 'Custom' && userTier === UserTier.PRO && (
                         <input type="text" value={customVoice} onChange={(e) => setCustomVoice(e.target.value)} placeholder="Nome da voz (ex: en-US-Studio-M)" className="w-full mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none" />
                     )}

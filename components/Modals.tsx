@@ -1,18 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle, CameraMovement, AudioLayer, LayerAnimation, GeminiTTSModel } from '../types';
+import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle, CameraMovement, AudioLayer, LayerAnimation, GeminiTTSModel, ALL_GEMINI_VOICES } from '../types';
 import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera, Speaker, Clapperboard, Timer, MoveRight, Image } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
-
-// VOICE OPTIONS CONSTANT (Reused here for the modal)
-const VOICE_OPTIONS = [
-  { id: 'Fenrir', label: '🎙️ Fenrir (Masc. Épico)' },
-  { id: 'Charon', label: '💀 Charon (Masc. Grave)' },
-  { id: 'Zephyr', label: '🌬️ Zephyr (Masc. Calmo)' },
-  { id: 'Puck', label: '👩 Puck (Fem. Suave)' },
-  { id: 'Kore', label: '🧬 Kore (Fem. Tech)' },
-  { id: 'Aoede', label: '🎭 Aoede (Fem. Dramática)' }
-];
 
 export const WelcomeModal: React.FC<{ onClose: () => void, lang: Language, t: any }> = ({ onClose, lang, t }) => {
     const WEBSITE_LINK = "https://fabioarieira.com";
@@ -699,7 +689,7 @@ export const EditSceneModal: React.FC<{
                                     <div>
                                         <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Voz do Personagem</label>
                                         <select value={localScene.assignedVoice || 'Fenrir'} onChange={(e) => setLocalScene({...localScene, assignedVoice: e.target.value})} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none">
-                                            {VOICE_OPTIONS.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+                                            {ALL_GEMINI_VOICES.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
                                         </select>
                                     </div>
                                     <div>

@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, GeminiModel, Scene, ViralMetadataResult, CameraMovement, VFXConfig, SubtitleSettings, VisualIntensity, LayerConfig, GeminiTTSModel } from './types';
+import { VideoStyle, VideoDuration, VideoPacing, VideoFormat, VideoMetadata, SubtitleStyle, ImageProvider, UserTier, VideoFilter, Language, Theme, OverlayConfig, VideoTransition, PollinationsModel, GeminiModel, Scene, ViralMetadataResult, CameraMovement, VFXConfig, SubtitleSettings, VisualIntensity, LayerConfig, GeminiTTSModel, ALL_GEMINI_VOICES } from './types';
 import { generateVideoScript, generateSpeech, generateSceneImage, generateThumbnails, generateMetadata, getApiKeyCount, saveManualKeys, getManualKeys, savePexelsKey, getPexelsKey, savePollinationsToken, getPollinationsToken, generateMovieOutline, generateViralMetadata, generateVisualVariations } from './services/geminiService';
 import { translations } from './services/translations';
 import { decodeBase64, decodeAudioData, base64ToBlobUrl, audioBufferToWav, getAudioContext } from './services/audioUtils';
@@ -66,24 +67,46 @@ const generateLicenseKey = (type: LicenseType = 'VF-L'): string => {
 const performAutoCasting = (scenes: Scene[], style: VideoStyle): Scene[] => {
   const uniqueSpeakers = Array.from(new Set(scenes.map(s => s.speaker)));
   const cast: Record<string, string> = {};
-  const maleVoices = ['Fenrir', 'Charon', 'Zephyr'];
-  const femaleVoices = ['Puck', 'Kore', 'Aoede'];
-  const narratorVoice = 'Fenrir';
+  
+  // Categorize voices from the centralized list
+  const maleVoices = ALL_GEMINI_VOICES.filter(v => v.gender === 'male').map(v => v.id);
+  const femaleVoices = ALL_GEMINI_VOICES.filter(v => v.gender === 'female').map(v => v.id);
+  
+  const narratorVoice = 'Fenrir'; // Default epic narrator
+  
+  // Pre-assignments based on style
   if (style === VideoStyle.DEBATE) { cast['Host'] = 'Zephyr'; cast['Proponent'] = 'Kore'; cast['Opponent'] = 'Charon'; }
   else if (style === VideoStyle.KIDS_STORY) { cast['Narrator'] = 'Puck'; cast['Wolf'] = 'Fenrir'; cast['Bear'] = 'Charon'; cast['Fairy'] = 'Aoede'; cast['Princess'] = 'Kore'; }
   else if (style === VideoStyle.NEWS) { cast['Anchor'] = 'Fenrir'; cast['Reporter'] = 'Puck'; cast['Witness'] = 'Zephyr'; }
+  
   let maleIdx = 0, femaleIdx = 0, neutralIdx = 0;
+  
   uniqueSpeakers.forEach(speaker => {
      if (cast[speaker]) return;
      const lower = speaker.toLowerCase();
      let assigned = '';
-     const isFemale = lower.match(/(mulher|woman|ela|rainha|queen|senhora|menina|girl|deusa|mae|chapeuzinho|maria|ana|julia|princesa|bruxa|fairy|fada|witch|avó|grandma|reporter|repórter|little red)/);
-     const isMale = lower.match(/(homem|man|ele|rei|king|senhor|menino|boy|deus|pai|lobo|joao|pedro|general|soldado|principe|cacador|wolf|bear|urso|fox|raposa|professor|teacher|anchor|âncora)/);
+     
+     const isFemale = lower.match(/(mulher|woman|ela|rainha|queen|senhora|menina|girl|deusa|mae|chapeuzinho|maria|ana|julia|princesa|bruxa|fairy|fada|witch|avó|grandma|reporter|repórter|little red|jane|sarah|linda)/);
+     const isMale = lower.match(/(homem|man|ele|rei|king|senhor|menino|boy|deus|pai|lobo|joao|pedro|general|soldado|principe|cacador|wolf|bear|urso|fox|raposa|professor|teacher|anchor|âncora|joe|john)/);
      const isNarrator = lower.includes('narrador') || lower.includes('narrator');
-     if (isNarrator) { assigned = narratorVoice; } 
-     else if (isFemale) { assigned = femaleVoices[femaleIdx % femaleVoices.length]; femaleIdx++; } 
-     else if (isMale) { assigned = maleVoices[maleIdx % maleVoices.length]; maleIdx++; } 
-     else { const neutralVoices = [...maleVoices, ...femaleVoices]; assigned = neutralVoices[neutralIdx % neutralVoices.length]; neutralIdx++; }
+     
+     if (isNarrator) { 
+         assigned = narratorVoice; 
+     } 
+     else if (isFemale) { 
+         assigned = femaleVoices[femaleIdx % femaleVoices.length]; 
+         femaleIdx++; 
+     } 
+     else if (isMale) { 
+         assigned = maleVoices[maleIdx % maleVoices.length]; 
+         maleIdx++; 
+     } 
+     else { 
+         const neutralVoices = [...maleVoices, ...femaleVoices]; 
+         // Shuffle neutral slightly to vary
+         assigned = neutralVoices[(neutralIdx + Math.floor(Math.random()*5)) % neutralVoices.length]; 
+         neutralIdx++; 
+     }
      cast[speaker] = assigned;
   });
   return scenes.map(scene => ({ ...scene, assignedVoice: cast[scene.speaker] || 'Fenrir' }));

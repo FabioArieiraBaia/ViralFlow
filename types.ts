@@ -23,6 +23,45 @@ export type PollinationsModel =
 export type GeminiModel = 'gemini-2.5-flash-image' | 'imagen-3.0-generate-001'; // Deprecated but kept for type safety in old signatures
 export type GeminiTTSModel = 'gemini-2.5-flash-preview-tts' | 'gemini-2.5-pro-tts';
 
+// --- GOOGLE GEMINI VOICE LIST ---
+export const ALL_GEMINI_VOICES = [
+  // Masc / Deep / Authoritative
+  { id: 'Fenrir', label: '🎙️ Fenrir (Masc. Épico/Claro)', gender: 'male' },
+  { id: 'Charon', label: '💀 Charon (Masc. Grave/Confiável)', gender: 'male' },
+  { id: 'Orus', label: '👔 Orus (Masc. Firme/Autoridade)', gender: 'male' },
+  { id: 'Zubenelgenubi', label: '🦁 Zubenelgenubi (Masc. Profundo/Sério)', gender: 'male' },
+  { id: 'Algenib', label: '🗿 Algenib (Masc. Rouco/Gravelly)', gender: 'male' },
+  { id: 'Alnilam', label: '🛡️ Alnilam (Masc. Firme)', gender: 'male' },
+  { id: 'Iapetus', label: '📢 Iapetus (Masc. Limpo)', gender: 'male' },
+  { id: 'Umbriel', label: '🔊 Umbriel (Masc. Ressonante)', gender: 'male' },
+  { id: 'Gacrux', label: '👨‍💼 Gacrux (Masc. Adulto)', gender: 'male' },
+  { id: 'Achernar', label: '🧔 Achernar (Masc. Suave)', gender: 'male' },
+  
+  // Fem / Soft / Bright
+  { id: 'Puck', label: '👩 Puck (Fem. Animada/Alegre)', gender: 'female' },
+  { id: 'Kore', label: '🧬 Kore (Fem. Tech/Firme)', gender: 'female' },
+  { id: 'Aoede', label: '🎭 Aoede (Fem. Dramática/Leve)', gender: 'female' },
+  { id: 'Leda', label: '👧 Leda (Fem. Jovem)', gender: 'female' },
+  { id: 'Autonoe', label: '✨ Autonoe (Fem. Brilhante)', gender: 'female' },
+  { id: 'Callirrhoe', label: '🍃 Callirrhoe (Fem. Tranquila)', gender: 'female' },
+  { id: 'Despina', label: '🌊 Despina (Fem. Suave)', gender: 'female' },
+  { id: 'Erinome', label: '💎 Erinome (Fem. Limpa)', gender: 'female' },
+  { id: 'Laomedeia', label: '🎉 Laomedeia (Fem. Animada/Upbeat)', gender: 'female' },
+  { id: 'Pulcherrima', label: '🎤 Pulcherrima (Fem. Projetada)', gender: 'female' },
+  { id: 'Sulafat', label: '🔥 Sulafat (Fem. Quente)', gender: 'female' },
+  { id: 'Vindemiatrix', label: '🤍 Vindemiatrix (Fem. Gentil)', gender: 'female' },
+  
+  // Neutral / Varied / Specialized
+  { id: 'Zephyr', label: '🌬️ Zephyr (Masc. Calmo/Brilhante)', gender: 'male' },
+  { id: 'Achird', label: '🤝 Achird (Amigável)', gender: 'male' },
+  { id: 'Algieba', label: '🎷 Algieba (Suave/Smooth)', gender: 'male' },
+  { id: 'Enceladus', label: '💨 Enceladus (Sopro/Breathy)', gender: 'male' },
+  { id: 'Rasalgethi', label: '📚 Rasalgethi (Informativa)', gender: 'male' },
+  { id: 'Sadachbia', label: '⚡ Sadachbia (Vivaz)', gender: 'female' },
+  { id: 'Sadaltager', label: '🧠 Sadaltager (Conhecedora)', gender: 'female' },
+  { id: 'Schedar', label: '⚖️ Schedar (Uniforme)', gender: 'male' }
+];
+
 export enum VideoStyle {
   SCARY = 'Terror Analógico (Creepypasta)',
   DOCUMENTARY = 'Cinematográfico Realista (Estilo NatGeo/BBC)',
