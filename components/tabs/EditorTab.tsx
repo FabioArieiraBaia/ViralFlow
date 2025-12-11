@@ -7,7 +7,7 @@ import {
 import { 
   Palette, Music, Zap, Download, Smartphone, Monitor, Music2, ImagePlus, 
   RefreshCcw, Layers, ImagePlus as ImageIcon, Volume2, Trash2, CheckSquare, 
-  Square as SquareIcon, MicOff, Edit2, Plus, Crown, Lock, Save, Film 
+  Square as SquareIcon, MicOff, Edit2, Plus, Crown, Lock, Save, Film, ListMusic 
 } from 'lucide-react';
 import { translations } from '../../services/translations';
 import { Loader2, AlertCircle } from 'lucide-react';
@@ -21,8 +21,13 @@ interface EditorTabProps {
   setIsPlaying: (v: boolean) => void;
   format: VideoFormat;
   setFormat: (v: VideoFormat) => void;
+  
+  // Music Playlist
   bgMusicUrl: string;
   setBgMusicUrl: (v: string) => void;
+  bgMusicPlaylist: string[];
+  setBgMusicPlaylist: (v: string[]) => void;
+  
   bgMusicVolume: number;
   setBgMusicVolume: (v: number) => void;
   showSubtitles: boolean;
@@ -65,9 +70,29 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
   const musicInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
+  // Handle single or multiple files
   const handleMusicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) props.setBgMusicUrl(URL.createObjectURL(file));
+    const files = e.target.files;
+    if (files && files.length > 0) {
+        const newUrls = Array.from(files).map((f: any) => URL.createObjectURL(f));
+        
+        // If playlist is empty, first file is main url (legacy compat)
+        if (props.bgMusicPlaylist.length === 0 && newUrls.length > 0) {
+            props.setBgMusicUrl(newUrls[0]);
+        }
+        
+        props.setBgMusicPlaylist([...props.bgMusicPlaylist, ...newUrls]);
+    }
+  };
+
+  const removeTrack = (index: number) => {
+      const newList = props.bgMusicPlaylist.filter((_, i) => i !== index);
+      props.setBgMusicPlaylist(newList);
+      if (newList.length > 0) {
+          props.setBgMusicUrl(newList[0]);
+      } else {
+          props.setBgMusicUrl("");
+      }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -101,6 +126,7 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                         setIsPlaying={props.setIsPlaying}
                         format={props.format}
                         bgMusicUrl={props.bgMusicUrl}
+                        bgMusicPlaylist={props.bgMusicPlaylist}
                         bgMusicVolume={props.bgMusicVolume}
                         showSubtitles={props.showSubtitles}
                         subtitleStyle={props.subtitleStyle}
@@ -247,14 +273,25 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                              <div className="space-y-5 animate-in fade-in slide-in-from-right-2 duration-300">
                                 <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-lg border border-zinc-200 dark:border-zinc-800 text-center cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors" onClick={() => musicInputRef.current?.click()}>
                                     <Music2 className="w-6 h-6 text-indigo-500 mx-auto mb-2" />
-                                    <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{props.bgMusicUrl ? "Música Carregada (Trocar)" : "Carregar Música de Fundo"}</p>
-                                    <p className="text-[10px] text-zinc-400 mt-1">MP3 ou WAV</p>
-                                    <input type="file" ref={musicInputRef} onChange={handleMusicUpload} className="hidden" accept="audio/*" />
+                                    <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Adicionar Música à Playlist</p>
+                                    <p className="text-[10px] text-zinc-400 mt-1">MP3 ou WAV (Múltiplos arquivos)</p>
+                                    <input type="file" multiple ref={musicInputRef} onChange={handleMusicUpload} className="hidden" accept="audio/*" />
                                 </div>
-                                {props.bgMusicUrl && (
+                                
+                                {props.bgMusicPlaylist.length > 0 && (
                                     <div className="space-y-4">
+                                        <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 max-h-40 overflow-y-auto custom-scrollbar">
+                                            <h4 className="text-[10px] font-bold text-zinc-500 uppercase mb-2 flex items-center gap-1 px-2"><ListMusic className="w-3 h-3"/> Playlist ({props.bgMusicPlaylist.length})</h4>
+                                            {props.bgMusicPlaylist.map((url, idx) => (
+                                                <div key={idx} className="flex items-center justify-between p-2 rounded bg-white dark:bg-black mb-1 border border-zinc-100 dark:border-zinc-900">
+                                                    <span className="text-xs text-zinc-700 dark:text-zinc-300 font-mono truncate w-40">Faixa {idx + 1}</span>
+                                                    <button onClick={() => removeTrack(idx)} className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded"><Trash2 className="w-3 h-3"/></button>
+                                                </div>
+                                            ))}
+                                        </div>
+
                                         <div>
-                                            <div className="flex justify-between text-xs mb-2 font-medium"><span>Volume da Música</span><span>{Math.round(props.bgMusicVolume * 100)}%</span></div>
+                                            <div className="flex justify-between text-xs mb-2 font-medium"><span>Volume Geral</span><span>{Math.round(props.bgMusicVolume * 100)}%</span></div>
                                             <input type="range" min="0" max="0.5" step="0.01" value={props.bgMusicVolume} onChange={(e) => props.setBgMusicVolume(parseFloat(e.target.value))} className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
                                         </div>
                                     </div>

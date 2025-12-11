@@ -12,7 +12,8 @@ interface VideoPlayerProps {
   isPlaying: boolean;
   setIsPlaying: (playing: boolean) => void;
   format: VideoFormat;
-  bgMusicUrl?: string;
+  bgMusicUrl?: string; // Legacy fallback
+  bgMusicPlaylist?: string[]; // New Playlist Prop
   bgMusicVolume: number;
   showSubtitles: boolean;
   subtitleStyle: SubtitleStyle;
@@ -58,6 +59,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   setIsPlaying,
   format,
   bgMusicUrl,
+  bgMusicPlaylist = [],
   bgMusicVolume,
   showSubtitles,
   subtitleStyle,
@@ -86,7 +88,10 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const musicSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const musicGainRef = useRef<GainNode | null>(null);
   const musicBufferCacheRef = useRef<Map<string, AudioBuffer>>(new Map());
-  const currentMusicUrlRef = useRef<string | null>(null); 
+  
+  // Music Playlist Refs
+  const currentMusicIndexRef = useRef<number>(0);
+  const effectivePlaylistRef = useRef<string[]>([]);
   
   const sfxSourcesRef = useRef<Map<string, AudioBufferSourceNode>>(new Map());
   const sfxBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -109,8 +114,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const HEIGHT = (format === VideoFormat.PORTRAIT ? 1280 : 720) * renderScale;
 
   // Refs for Loop State to avoid re-triggering effect on every prop change
-  // Note: We intentionally exclude 'scenes' from here as the render logic
-  // handles scenes via props or ref depending on mode.
   const showSubtitlesRef = useRef(showSubtitles); 
   const subtitleStyleRef = useRef(subtitleStyle);
   const subtitleSettingsRef = useRef(subtitleSettings);
@@ -128,15 +131,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const chunksRef = useRef<Blob[]>([]);
   const isRecordingRef = useRef(false);
   
-  // Ref to track the mime type used for recording
   const recordingMimeTypeRef = useRef<string>('video/webm');
 
   const startTimeRef = useRef<number>(0);
   const rafRef = useRef<number>(0);
   const audioDataArrayRef = useRef<Uint8Array>(new Uint8Array(0));
   
-  // Use a ref for scenes to avoid effect re-runs when editing, 
-  // but keep it updated for the render loop
   const scenesRef = useRef<Scene[]>(scenes);
 
   // Init Audio Context once
@@ -216,38 +216,47 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
   }, [bgMusicVolume]);
 
-  // Load Music
+  // Construct Effective Playlist
   useEffect(() => {
-      const loadMusic = async () => {
-          if (!bgMusicUrl) {
+      if (bgMusicPlaylist && bgMusicPlaylist.length > 0) {
+          effectivePlaylistRef.current = bgMusicPlaylist;
+      } else if (bgMusicUrl) {
+          effectivePlaylistRef.current = [bgMusicUrl];
+      } else {
+          effectivePlaylistRef.current = [];
+      }
+  }, [bgMusicPlaylist, bgMusicUrl]);
+
+  // Load All Music in Playlist
+  useEffect(() => {
+      const loadPlaylist = async () => {
+          const playlist = effectivePlaylistRef.current;
+          if (playlist.length === 0) {
               if (musicSourceRef.current) {
                   try { musicSourceRef.current.stop(); } catch(e){}
                   musicSourceRef.current = null;
-                  currentMusicUrlRef.current = null;
               }
               return;
           }
-          if (currentMusicUrlRef.current === bgMusicUrl && isPlaying) return;
 
-          let buffer = musicBufferCacheRef.current.get(bgMusicUrl);
-          if (!buffer) {
-              try {
-                  const resp = await fetch(bgMusicUrl);
-                  const arrayBuffer = await resp.arrayBuffer();
-                  const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
-                  if (decoded) {
-                    buffer = decoded;
-                    musicBufferCacheRef.current.set(bgMusicUrl, buffer);
-                  }
-              } catch (e) {
-                  console.error("Failed to load music", e);
-                  return;
+          // Preload all
+          for (const url of playlist) {
+              if (!musicBufferCacheRef.current.has(url)) {
+                  try {
+                      const resp = await fetch(url);
+                      const arrayBuffer = await resp.arrayBuffer();
+                      const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
+                      if (decoded) {
+                          musicBufferCacheRef.current.set(url, decoded);
+                      }
+                  } catch (e) { console.error(`Failed to load music ${url}`, e); }
               }
           }
-          if (isPlaying && buffer && buffer instanceof AudioBuffer) playMusic(buffer, bgMusicUrl);
+
+          // If playing and nothing playing, start (but typically controlled by play/pause toggle)
       };
-      loadMusic();
-  }, [bgMusicUrl, isPlaying]);
+      loadPlaylist();
+  }, [bgMusicPlaylist, bgMusicUrl]);
 
   // Load SFX for current Scene
   useEffect(() => {
@@ -266,23 +275,36 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
   }, [currentSceneIndex, scenes]);
 
-  const playMusic = (buffer: AudioBuffer, url: string) => {
-      if (!buffer || !(buffer instanceof AudioBuffer)) return;
+  const playMusicSequence = (index: number) => {
+      const playlist = effectivePlaylistRef.current;
+      if (playlist.length === 0) return;
+
+      const safeIndex = index % playlist.length;
+      currentMusicIndexRef.current = safeIndex;
+      const url = playlist[safeIndex];
+      const buffer = musicBufferCacheRef.current.get(url);
+
+      if (!buffer) return; // Not loaded yet
 
       const ctx = getAudioContext();
-      if (currentMusicUrlRef.current === url && musicSourceRef.current) return;
-
       if (musicSourceRef.current) {
            try { musicSourceRef.current.stop(); } catch(e){}
       }
 
       musicSourceRef.current = ctx.createBufferSource();
-      try {
-        musicSourceRef.current.buffer = buffer;
-      } catch (err) {
-        return;
+      musicSourceRef.current.buffer = buffer;
+      
+      // If only 1 track, loop it. If multiple, play next on ended.
+      if (playlist.length === 1) {
+          musicSourceRef.current.loop = true;
+      } else {
+          musicSourceRef.current.loop = false;
+          musicSourceRef.current.onended = () => {
+              if (isPlaying) {
+                  playMusicSequence(currentMusicIndexRef.current + 1);
+              }
+          };
       }
-      musicSourceRef.current.loop = true;
       
       if (!musicGainRef.current) {
           musicGainRef.current = ctx.createGain();
@@ -292,7 +314,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       musicSourceRef.current.connect(musicGainRef.current);
       musicSourceRef.current.start(0);
       musicGainRef.current.gain.value = bgMusicVolume;
-      currentMusicUrlRef.current = url;
   };
 
   const playSpeech = (buffer: AudioBuffer) => {
@@ -351,6 +372,10 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         setCurrentSceneIndex(0);
         setRenderScale(highQuality ? 2 : 1); 
         startTimeRef.current = performance.now();
+        
+        // Reset music to start of playlist for export
+        currentMusicIndexRef.current = 0;
+        
         setIsPlaying(true);
 
         const canvas = canvasRef.current;
@@ -383,7 +408,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
 
         mediaRecorderRef.current.onstop = () => {
             console.log("Recorder Stopped. Exporting Blob...");
-            // Use the stored mimeType to ensure correct file creation
             const blob = new Blob(chunksRef.current, { type: recordingMimeTypeRef.current });
             triggerBrowserDownload(blob, `viralflow_video_${Date.now()}.webm`);
             setIsExporting(false);
@@ -590,172 +614,225 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     ctx.globalAlpha = 1;
   };
 
+  // --- REFACTORED SUBTITLE RENDERER (Professional & Paginated) ---
   const drawSubtitles = (ctx: CanvasRenderingContext2D, text: string, style: SubtitleStyle, width: number, height: number, progress: number) => {
       if (!text || style === SubtitleStyle.NONE) return;
 
-      const settings = subtitleSettingsRef.current || { fontSizeMultiplier: 1.0, yPosition: 0.9, fontFamily: 'Inter' };
+      const settings = subtitleSettingsRef.current || { fontSizeMultiplier: 1.0, yPosition: 0.85, fontFamily: 'Inter' };
       const fontSizeMultiplier = settings.fontSizeMultiplier;
-      const yPosFactor = settings.yPosition;
       const userFontFamily = settings.fontFamily || 'Inter';
-
-      if (style === SubtitleStyle.WORD_BY_WORD) {
-          const allWords = text.split(/\s+/);
-          const totalWords = allWords.length;
-          const currentWordIdx = Math.min(Math.floor(progress * totalWords), totalWords - 1);
-          const word = allWords[currentWordIdx] || "";
-          
-          if (!word) return;
-
-          const baseFontSize = width * 0.1;
-          const fontSize = Math.min(baseFontSize * fontSizeMultiplier, 200);
-
-          ctx.font = `900 ${fontSize}px '${userFontFamily}', sans-serif`;
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          
-          const x = width / 2;
-          const y = height * (yPosFactor > 0.8 ? 0.5 : yPosFactor); 
-
-          const measure = ctx.measureText(word);
-          const padding = 20 * fontSizeMultiplier;
-          ctx.fillStyle = 'rgba(0,0,0,0.7)';
-          ctx.roundRect(x - measure.width/2 - padding, y - fontSize/2 - padding, measure.width + padding*2, fontSize + padding*2, 10);
-          ctx.fill();
-
-          ctx.fillStyle = '#facc15'; 
-          ctx.fillText(word, x, y);
-          return;
-      }
-
-      let baseSize = width * 0.05;
-      let fontSize = Math.min(baseSize, 48) * fontSizeMultiplier;
       
-      let fontFamily = `'${userFontFamily}', sans-serif`;
-      let color = 'white';
+      // Calculate responsive font size
+      const isPortrait = width < height;
+      const baseFontSize = isPortrait ? width * 0.065 : width * 0.04;
+      const fontSize = Math.max(24, Math.min(baseFontSize * fontSizeMultiplier, 120));
       
-      if (style === SubtitleStyle.COMIC) {
-          fontSize = fontSize * 1.1;
-          color = '#fef08a';
-      } else if (style === SubtitleStyle.GLITCH) {
-          color = '#ffffff';
-      }
+      // Font Definition
+      const fontWeight = '800'; // Extra bold for pro look
+      ctx.font = `${fontWeight} ${fontSize}px '${userFontFamily}', sans-serif`;
+      
+      // 1. Text Pagination Logic (Chunking)
+      const allWords = text.trim().split(/\s+/);
+      const totalWords = allWords.length;
+      const currentWordIdx = Math.min(Math.floor(progress * totalWords), totalWords - 1);
+      
+      // Determine batch size (how many words per screen)
+      // Portrait needs fewer words per screen to avoid tiny text
+      const WORDS_PER_BATCH = isPortrait ? 5 : 9; 
+      const batchIndex = Math.floor(currentWordIdx / WORDS_PER_BATCH);
+      const startWord = batchIndex * WORDS_PER_BATCH;
+      const endWord = Math.min((batchIndex + 1) * WORDS_PER_BATCH, totalWords);
+      
+      const visibleWords = allWords.slice(startWord, endWord);
+      const visibleText = visibleWords.join(' ');
+      
+      // Highlight logic relative to current batch
+      const highlightIndex = currentWordIdx - startWord;
 
-      ctx.font = `900 ${fontSize}px ${fontFamily}`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom'; 
-      
-      const words = text.split(' ');
+      // 2. Line Wrapping Logic for the Current Batch
       const lines: string[] = [];
-      let currentLine = words[0];
+      const wordObjects: { text: string, line: number, x: number, width: number, isHighlighted: boolean }[] = [];
       
-      for (let i = 1; i < words.length; i++) {
-          const w = ctx.measureText(currentLine + " " + words[i]).width;
-          if (w < width * 0.8) {
-              currentLine += " " + words[i];
+      const maxLineWidth = width * 0.85;
+      let currentLine = "";
+      
+      // Preliminary wrap to determine lines
+      const batchWords = visibleText.split(' ');
+      let tempLine = batchWords[0];
+      
+      for (let i = 1; i < batchWords.length; i++) {
+          const w = ctx.measureText(tempLine + " " + batchWords[i]).width;
+          if (w < maxLineWidth) {
+              tempLine += " " + batchWords[i];
           } else {
-              lines.push(currentLine);
-              currentLine = words[i];
+              lines.push(tempLine);
+              tempLine = batchWords[i];
           }
       }
-      lines.push(currentLine);
+      lines.push(tempLine);
 
-      const lineHeight = fontSize * 1.3;
-      const totalTextHeight = lines.length * lineHeight;
-      const startY = (height * yPosFactor) - totalTextHeight + lineHeight; 
+      // 3. Positioning
+      const lineHeight = fontSize * 1.4;
+      const totalBlockHeight = lines.length * lineHeight;
+      const yBottomAnchor = height * settings.yPosition; 
+      const startY = yBottomAnchor - totalBlockHeight;
 
-      const allWords = text.split(/\s+/);
-      const activeWordCount = Math.floor(progress * allWords.length);
-      let wordCounter = 0;
+      // 4. Render Styles
+      
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
 
-      lines.forEach((line, index) => {
-          const y = startY + (index * lineHeight);
+      lines.forEach((line, lineIndex) => {
+          const y = startY + (lineIndex * lineHeight);
           const x = width / 2;
           
+          if (style === SubtitleStyle.WORD_BY_WORD) {
+              // Special case: Single big word center screen
+              const bigWord = allWords[currentWordIdx] || "";
+              const bigFontSize = fontSize * 2.5;
+              ctx.font = `900 ${bigFontSize}px '${userFontFamily}', sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              
+              // Shadow/Stroke
+              ctx.shadowColor = 'rgba(0,0,0,0.8)';
+              ctx.shadowBlur = 20;
+              ctx.lineWidth = 8;
+              ctx.strokeStyle = 'black';
+              ctx.strokeText(bigWord, width/2, height/2);
+              ctx.shadowBlur = 0;
+              
+              // Fill
+              const gradient = ctx.createLinearGradient(0, height/2 - bigFontSize, 0, height/2 + bigFontSize);
+              gradient.addColorStop(0, '#ffffff');
+              gradient.addColorStop(1, '#facc15'); // Yellow tint
+              ctx.fillStyle = gradient;
+              ctx.fillText(bigWord, width/2, height/2);
+              
+              // Reset
+              ctx.font = `${fontWeight} ${fontSize}px '${userFontFamily}', sans-serif`;
+              return; 
+          }
+
           if (style === SubtitleStyle.MODERN) {
-              const bgWidth = ctx.measureText(line).width + (40 * fontSizeMultiplier);
-              ctx.fillStyle = 'rgba(0,0,0,0.7)';
-              ctx.roundRect(x - bgWidth/2, y - fontSize, bgWidth, fontSize + (10 * fontSizeMultiplier), 10);
-              ctx.fill();
-              ctx.fillStyle = 'white';
-              ctx.fillText(line, x, y);
-          } 
-          else if (style === SubtitleStyle.NEON) {
-              ctx.shadowColor = '#00ffcc';
-              ctx.shadowBlur = 15;
-              ctx.strokeStyle = '#00ffcc';
-              ctx.lineWidth = 2;
-              ctx.strokeText(line, x, y);
-              ctx.fillStyle = 'white';
+              // Instagram/TikTok Style: Rounded background, white text
+              const metrics = ctx.measureText(line);
+              const bgPaddingX = 20;
+              const bgPaddingY = 8;
+              const bgW = metrics.width + (bgPaddingX * 2);
+              const bgH = fontSize + (bgPaddingY * 2);
+              
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'; // Semi-transparent dark
+              
+              // Draw rounded rect manually if roundRect not supported (safeguard), though typical modern browsers have it
+              if (ctx.roundRect) {
+                  ctx.beginPath();
+                  ctx.roundRect(x - bgW/2, y - bgPaddingY, bgW, bgH, 12);
+                  ctx.fill();
+              } else {
+                  ctx.fillRect(x - bgW/2, y - bgPaddingY, bgW, bgH);
+              }
+
+              ctx.shadowColor = 'rgba(0,0,0,0.5)';
+              ctx.shadowBlur = 4;
+              ctx.fillStyle = '#ffffff';
               ctx.fillText(line, x, y);
               ctx.shadowBlur = 0;
           } 
-          else if (style === SubtitleStyle.COMIC) {
+          else if (style === SubtitleStyle.CLASSIC) {
+              // Netflix Style: White text, Drop Shadow + Thin Stroke
+              ctx.shadowColor = 'rgba(0,0,0,0.9)';
+              ctx.shadowBlur = 4;
+              ctx.shadowOffsetX = 2;
+              ctx.shadowOffsetY = 2;
+              
               ctx.strokeStyle = 'black';
-              ctx.lineWidth = 6 * fontSizeMultiplier;
-              ctx.lineJoin = 'round';
+              ctx.lineWidth = fontSize * 0.1;
               ctx.strokeText(line, x, y);
-              ctx.fillStyle = '#fde047'; 
+              
+              ctx.fillStyle = '#ffffff'; // White usually reads better for classic
               ctx.fillText(line, x, y);
+              
+              // Reset shadow
+              ctx.shadowColor = 'transparent';
+              ctx.shadowOffsetX = 0;
+              ctx.shadowOffsetY = 0;
+          }
+          else if (style === SubtitleStyle.NEON) {
+              // Multi-pass glow
+              ctx.strokeStyle = '#00ffcc';
+              ctx.lineWidth = 3;
+              
+              // Glow layers
+              ctx.shadowColor = '#00ffcc';
+              ctx.shadowBlur = 20;
+              ctx.strokeText(line, x, y);
+              
+              ctx.shadowBlur = 10;
+              ctx.strokeText(line, x, y);
+              
+              ctx.fillStyle = '#ffffff';
+              ctx.fillText(line, x, y);
+              
+              ctx.shadowBlur = 0;
           }
           else if (style === SubtitleStyle.GLITCH) {
-              const offsetX = (Math.random() - 0.5) * 5;
-              const offsetY = (Math.random() - 0.5) * 2;
+              // Chromatic Aberration
+              const offset = Math.random() * 4;
               ctx.fillStyle = 'cyan';
-              ctx.fillText(line, x - 3 + offsetX, y + offsetY);
+              ctx.fillText(line, x - offset, y);
               ctx.fillStyle = 'magenta';
-              ctx.fillText(line, x + 3 - offsetX, y - offsetY);
-              ctx.fillStyle = 'white';
+              ctx.fillText(line, x + offset, y);
+              ctx.fillStyle = '#ffffff';
               ctx.fillText(line, x, y);
           }
           else if (style === SubtitleStyle.KARAOKE) {
+              // Word-level rendering for highlighting
+              // We need to re-measure words to place them correctly in the line
+              const wordsInLine = line.split(' ');
+              let totalLineWidth = 0;
+              const wWidths = wordsInLine.map(w => {
+                  const wm = ctx.measureText(w + " ").width;
+                  totalLineWidth += wm;
+                  return wm;
+              });
+              
+              let currentX = x - (totalLineWidth / 2);
+              
+              // Find which global word index corresponds to the start of this line
+              // This is tricky with wrapping. Simplified approximation:
+              // We know 'highlightIndex' is relative to the BATCH.
+              // We need to count how many words were in previous lines of this batch.
+              let wordsPriorInBatch = 0;
+              for(let k=0; k<lineIndex; k++) {
+                  wordsPriorInBatch += lines[k].split(' ').length;
+              }
+
+              wordsInLine.forEach((w, wIdx) => {
+                  const isPlayed = (wordsPriorInBatch + wIdx) <= highlightIndex;
+                  
+                  ctx.fillStyle = isPlayed ? '#facc15' : 'rgba(255, 255, 255, 0.7)';
+                  ctx.strokeStyle = 'black';
+                  ctx.lineWidth = fontSize * 0.15;
+                  ctx.lineJoin = 'round';
+                  
+                  ctx.strokeText(w, currentX + (wWidths[wIdx]/2), y);
+                  ctx.fillText(w, currentX + (wWidths[wIdx]/2), y);
+                  
+                  currentX += wWidths[wIdx];
+              });
+          }
+          else if (style === SubtitleStyle.COMIC) {
               ctx.strokeStyle = 'black';
-              ctx.lineWidth = 6 * fontSizeMultiplier;
+              ctx.lineWidth = fontSize * 0.15;
               ctx.lineJoin = 'round';
               ctx.strokeText(line, x, y);
               
-              ctx.fillStyle = 'white';
+              // Yellow fill with slight orange shadow
+              ctx.fillStyle = '#fde047'; 
               ctx.fillText(line, x, y);
-
-              const lineWords = line.split(' ');
-              wordCounter += lineWords.length;
-          }
-          else {
-               ctx.strokeStyle = 'black';
-               ctx.lineWidth = 5 * fontSizeMultiplier;
-               ctx.lineJoin = 'round';
-               ctx.strokeText(line, x, y);
-               ctx.fillStyle = 'white';
-               ctx.fillText(line, x, y);
           }
       });
-
-      if (style === SubtitleStyle.KARAOKE) {
-           let kWordCounter = 0;
-           lines.forEach((line, index) => {
-               const y = startY + (index * lineHeight);
-               const lineWords = line.split(' ');
-               
-               let totalW = 0;
-               const wordWidths = lineWords.map(w => {
-                   const width = ctx.measureText(w + " ").width;
-                   totalW += width;
-                   return width;
-               });
-               
-               let startX = (width / 2) - (totalW / 2);
-               
-               lineWords.forEach((w, wIdx) => {
-                    if (kWordCounter < activeWordCount) {
-                        ctx.fillStyle = '#facc15';
-                        ctx.textAlign = 'left'; 
-                        ctx.fillText(w, startX, y);
-                    }
-                    startX += wordWidths[wIdx];
-                    kWordCounter++;
-               });
-               ctx.textAlign = 'center';
-           });
-      }
   };
 
   const drawScene = (ctx: CanvasRenderingContext2D, scene: Scene, scale: number, progress: number, isPlaying: boolean, elapsedTimeMs: number) => {
@@ -1104,14 +1181,15 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       stopAllSFX();
 
       if (isPlaying) {
-          const buffer = bgMusicUrl ? musicBufferCacheRef.current.get(bgMusicUrl) : null;
-          if (buffer && buffer instanceof AudioBuffer && bgMusicUrl) playMusic(buffer, bgMusicUrl);
+          // If using playlist, playMusicSequence will be called via useEffect dependency or manually
+          // If only bgMusicUrl is present, useEffect handles it as a playlist of 1
+          playMusicSequence(currentMusicIndexRef.current);
           
           sceneStartTime = performance.now();
           startTimeRef.current = sceneStartTime;
       } else {
           if (speechSourceRef.current) { try{speechSourceRef.current.stop();}catch(e){} speechSourceRef.current = null; }
-          if (musicSourceRef.current) { try{musicSourceRef.current.stop();}catch(e){} musicSourceRef.current = null; currentMusicUrlRef.current = null; }
+          if (musicSourceRef.current) { try{musicSourceRef.current.stop();}catch(e){} musicSourceRef.current = null; }
           stopAllSFX();
           hasStartedAudio = false;
           videoCacheRef.current.forEach(v => v.pause());
@@ -1231,7 +1309,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           if (rafRef.current) cancelAnimationFrame(rafRef.current);
       };
       
-  }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format]); 
+  }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format, bgMusicPlaylist]); 
 
   return (
     <div 

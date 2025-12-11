@@ -150,7 +150,11 @@ const App: React.FC = () => {
   const [scenes, setScenes] = useState<Scene[]>([]);
   const [metadata, setMetadata] = useState<VideoMetadata | null>(null);
   const [thumbnails, setThumbnails] = useState<string[]>([]);
+  
+  // Music State (Legacy & Playlist)
   const [bgMusicUrl, setBgMusicUrl] = useState<string>("");
+  const [bgMusicPlaylist, setBgMusicPlaylist] = useState<string[]>([]);
+  
   const [bgMusicVolume, setBgMusicVolume] = useState<number>(0.15);
   const [channelLogo, setChannelLogo] = useState<OverlayConfig | undefined>(undefined);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -554,7 +558,9 @@ const App: React.FC = () => {
            <EditorTab 
              scenes={scenes} setScenes={setScenes} currentSceneIndex={currentSceneIndex} setCurrentSceneIndex={setCurrentSceneIndex}
              isPlaying={isPlaying} setIsPlaying={setIsPlaying} format={format} setFormat={setFormat}
-             bgMusicUrl={bgMusicUrl} setBgMusicUrl={setBgMusicUrl} bgMusicVolume={bgMusicVolume} setBgMusicVolume={setBgMusicVolume}
+             bgMusicUrl={bgMusicUrl} setBgMusicUrl={setBgMusicUrl} 
+             bgMusicPlaylist={bgMusicPlaylist} setBgMusicPlaylist={setBgMusicPlaylist}
+             bgMusicVolume={bgMusicVolume} setBgMusicVolume={setBgMusicVolume}
              showSubtitles={showSubtitles} setShowSubtitles={setShowSubtitles} subtitleStyle={subtitleStyle} setSubtitleStyle={setSubtitleStyle}
              subtitleSettings={subtitleSettings} setSubtitleSettings={setSubtitleSettings}
              activeFilter={activeFilter} setActiveFilter={setActiveFilter} globalTransition={globalTransition} setGlobalTransition={setGlobalTransition}
