@@ -1,8 +1,8 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { Scene, Language, UserTier, ImageProvider, MusicAction, SceneMusicConfig, VideoTransition, PollinationsModel, GeminiModel, VFXConfig, VideoFormat, LayerConfig, ColorGradingPreset, Keyframe, SubtitleStyle, CameraMovement, AudioLayer, LayerAnimation, GeminiTTSModel, ALL_GEMINI_VOICES } from '../types';
-import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera, Speaker, Clapperboard, Timer, MoveRight, Image } from 'lucide-react';
+import { ShieldCheck, Crown, Key, Loader2, X, Edit2, RefreshCcw, ImagePlus, Music2, FileAudio, Zap, Clock, Layers, Play, Pause, Maximize2, MoveUp, MoveDown, Trash2, Plus, Video, Palette, Type, Scissors, Diamond, CheckCircle2, ChevronRight, Wand2, Upload, Mic, AlertCircle, Volume2, MicOff, ArrowRightLeft, Camera, Speaker, Clapperboard, Timer, MoveRight, Image, User } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
+import { fileToBase64 } from '../services/audioUtils';
 
 export const WelcomeModal: React.FC<{ onClose: () => void, lang: Language, t: any }> = ({ onClose, lang, t }) => {
     const WEBSITE_LINK = "https://fabioarieira.com";
@@ -291,15 +291,19 @@ export const EditSceneModal: React.FC<{
         }));
     };
 
-    const handleBaseVisualUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleBaseVisualUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
             const url = URL.createObjectURL(file);
             const isVideo = file.type.startsWith('video/');
+            const base64 = await fileToBase64(file);
+            
             setLocalScene(prev => ({
                 ...prev,
                 imageUrl: isVideo ? "https://placehold.co/1280x720/000000/FFFFFF.png?text=VIDEO+READY" : url,
+                imageBase64: isVideo ? undefined : base64, // If image, save base64
                 videoUrl: isVideo ? url : undefined,
+                videoBase64: isVideo ? base64 : undefined, // If video, save base64
                 mediaType: isVideo ? 'video' : 'image',
                 isGeneratingImage: false
             }));
@@ -523,7 +527,13 @@ export const EditSceneModal: React.FC<{
             // Force Pollinations
             const result = await onRegenerateAsset(localScene, selectedProvider, pollinationsModel, undefined);
             if(result.success) {
-                setLocalScene(prev => ({ ...prev, imageUrl: result.imageUrl, videoUrl: result.videoUrl, mediaType: result.mediaType }));
+                setLocalScene(prev => ({ 
+                    ...prev, 
+                    imageUrl: result.imageUrl, 
+                    videoUrl: result.videoUrl, 
+                    mediaType: result.mediaType,
+                    imageBase64: result.base64 // Save base64 for export
+                }));
             }
         } catch(e) { console.error(e); }
         setIsRegeneratingVisual(false);
@@ -541,6 +551,7 @@ export const EditSceneModal: React.FC<{
                     ...prev, 
                     audioUrl: res.url, 
                     audioBuffer: res.buffer,
+                    audioBase64: res.base64, // Ensure base64 is updated
                     durationEstimate: dur 
                 }));
                 setAudioGenStatus('success');
@@ -685,6 +696,19 @@ export const EditSceneModal: React.FC<{
                                     <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Roteiro (Texto da Fala)</label>
                                     <textarea value={localScene.text} onChange={(e) => setLocalScene({...localScene, text: e.target.value})} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none resize-none h-32" placeholder="Digite o texto que será falado nesta cena..." />
                                 </div>
+                                
+                                {/* SPEAKER NAME INPUT */}
+                                <div>
+                                    <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Nome do Personagem (Speaker Tag)</label>
+                                    <input 
+                                        type="text" 
+                                        value={localScene.speaker} 
+                                        onChange={(e) => setLocalScene({...localScene, speaker: e.target.value})} 
+                                        className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white outline-none focus:border-indigo-500"
+                                        placeholder="Nome que aparece na tag (ex: Narrador, Batman...)"
+                                    />
+                                </div>
+
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="text-xs font-bold text-zinc-500 uppercase mb-2 block">Voz do Personagem</label>

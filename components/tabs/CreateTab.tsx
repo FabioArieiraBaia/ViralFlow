@@ -1,11 +1,12 @@
 
+
 import React from 'react';
 import { 
   Globe, Smartphone, Monitor, Youtube, Lock, AlertCircle, CheckCircle2, 
   Loader2, Wand2, FolderOpen, TriangleAlert, Clapperboard, ChevronRight, Edit2, Zap, Mic,
-  Video, Image
+  Video, Image, Save, Play
 } from 'lucide-react';
-import { Language, VideoStyle, VideoPacing, VideoDuration, VideoFormat, ImageProvider, UserTier, VideoTransition, VisualIntensity, GeminiTTSModel, PollinationsModel, ALL_GEMINI_VOICES } from '../../types';
+import { Language, VideoStyle, VideoPacing, VideoDuration, VideoFormat, ImageProvider, UserTier, VideoTransition, VisualIntensity, GeminiTTSModel, PollinationsModel, ALL_GEMINI_VOICES, GenerationPhase } from '../../types';
 import { translations } from '../../services/translations';
 
 interface CreateTabProps {
@@ -52,6 +53,11 @@ interface CreateTabProps {
   pollinationsModel?: PollinationsModel;
   setPollinationsModel?: (v: PollinationsModel) => void;
   isAdmin?: boolean;
+  
+  // NEW SEQUENTIAL FLOW PROPS
+  generationPhase: GenerationPhase;
+  runVisualPhase: () => void;
+  handleExportScript: () => void;
 }
 
 export const CreateTab: React.FC<CreateTabProps> = ({
@@ -62,7 +68,8 @@ export const CreateTab: React.FC<CreateTabProps> = ({
   userTier, isGenerating, progress, handleGenerateVideo, setShowUpgradeModal,
   setActiveTab, importClick, handleCreateManualProject,
   ttsModel, setTtsModel, globalTtsStyle, setGlobalTtsStyle,
-  pollinationsModel, setPollinationsModel, isAdmin
+  pollinationsModel, setPollinationsModel, isAdmin,
+  generationPhase, runVisualPhase, handleExportScript
 }) => {
   const t = translations[lang];
 
@@ -85,6 +92,74 @@ export const CreateTab: React.FC<CreateTabProps> = ({
                 <FolderOpen className="w-4 h-4" /> Carregar JSON
             </button>
         </div>
+
+        {/* --- SEQUENTIAL GENERATION FEEDBACK UI --- */}
+        {(isGenerating || generationPhase === 'ready_for_visuals') && generationPhase !== 'script_approval' && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
+                <div className="bg-zinc-900 border border-zinc-700 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center space-y-6">
+                    
+                    {/* AUDIO / SCRIPT PHASE */}
+                    {(generationPhase === 'scripting' || generationPhase === 'audio_processing') && (
+                        <div className="space-y-4">
+                            <div className="mx-auto w-16 h-16 relative">
+                                <div className="absolute inset-0 border-4 border-indigo-500/30 rounded-full"></div>
+                                <div className="absolute inset-0 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                                <Mic className="absolute inset-0 m-auto w-6 h-6 text-indigo-400 animate-pulse" />
+                            </div>
+                            <h3 className="text-xl font-bold text-white">Criando Roteiro & Vozes</h3>
+                            <p className="text-zinc-400 text-sm">{progress}</p>
+                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
+                                <div className="h-full bg-indigo-500 animate-pulse w-full origin-left scale-x-50 transition-transform"></div>
+                            </div>
+                            <p className="text-[10px] text-zinc-500">Respeitando limite de API (1s delay)...</p>
+                        </div>
+                    )}
+
+                    {/* READY FOR VISUALS (CHECKPOINT) */}
+                    {generationPhase === 'ready_for_visuals' && (
+                        <div className="space-y-6 animate-in zoom-in duration-300">
+                            <div className="mx-auto w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center border border-emerald-500">
+                                <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+                            </div>
+                            <div>
+                                <h3 className="text-2xl font-bold text-white mb-2">Áudios Gerados!</h3>
+                                <p className="text-zinc-400 text-sm">O roteiro e as vozes estão prontos. Você pode salvar o projeto agora (backup) ou continuar para gerar as imagens.</p>
+                            </div>
+                            
+                            <div className="flex flex-col gap-3">
+                                <button 
+                                    onClick={runVisualPhase} 
+                                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 transform hover:scale-[1.02] transition-all"
+                                >
+                                    <Image className="w-5 h-5" /> Gerar Imagens (Cena 1 em diante)
+                                </button>
+                                <button 
+                                    onClick={handleExportScript} 
+                                    className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-xl flex items-center justify-center gap-2"
+                                >
+                                    <Save className="w-4 h-4" /> Salvar Projeto JSON (Backup)
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* VISUAL PHASE */}
+                    {generationPhase === 'visual_processing' && (
+                        <div className="space-y-4">
+                            <div className="mx-auto w-16 h-16 relative">
+                                <div className="absolute inset-0 border-4 border-pink-500/30 rounded-full"></div>
+                                <div className="absolute inset-0 border-4 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
+                                <Image className="absolute inset-0 m-auto w-6 h-6 text-pink-400 animate-pulse" />
+                            </div>
+                            <h3 className="text-xl font-bold text-white">Gerando Visuais</h3>
+                            <p className="text-zinc-400 text-sm">{progress}</p>
+                            <p className="text-[10px] text-zinc-500">Renderizando cenas sequencialmente (2s delay)...</p>
+                        </div>
+                    )}
+
+                </div>
+            </div>
+        )}
 
         {/* Quick Actions (Cards) */}
         {!isGenerating && (
@@ -404,7 +479,6 @@ export const CreateTab: React.FC<CreateTabProps> = ({
 
         <div className="pt-8 flex flex-col items-center gap-4">
           <button
-            id="tour-generate-btn"
             onClick={handleGenerateVideo}
             disabled={isGenerating}
             className={`w-full md:w-auto group relative px-8 py-4 rounded-full font-black text-lg shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100 ${

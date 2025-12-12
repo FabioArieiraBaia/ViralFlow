@@ -1,4 +1,5 @@
 
+
 export type Language = 'pt' | 'en' | 'es';
 export type Theme = 'light' | 'dark';
 
@@ -24,11 +25,14 @@ export type GeminiModel = 'gemini-2.5-flash-image' | 'imagen-3.0-generate-001'; 
 export type GeminiTTSModel = 'gemini-2.5-flash-preview-tts' | 'gemini-2.5-pro-tts';
 
 // --- GOOGLE GEMINI VOICE LIST ---
+// Atualizado conforme documentação oficial
 export const ALL_GEMINI_VOICES = [
-  // Masc / Deep / Authoritative
+  // --- MASCULINO (MALE) ---
   { id: 'Fenrir', label: '🎙️ Fenrir (Masc. Épico/Claro)', gender: 'male' },
+  { id: 'Puck', label: '👦 Puck (Masc. Animado/Jovem)', gender: 'male' }, // CORRIGIDO: Puck é masculino
   { id: 'Charon', label: '💀 Charon (Masc. Grave/Confiável)', gender: 'male' },
   { id: 'Orus', label: '👔 Orus (Masc. Firme/Autoridade)', gender: 'male' },
+  { id: 'Enceladus', label: '💨 Enceladus (Masc. Sopro/Breathy)', gender: 'male' }, // Confirmado Masc
   { id: 'Zubenelgenubi', label: '🦁 Zubenelgenubi (Masc. Profundo/Sério)', gender: 'male' },
   { id: 'Algenib', label: '🗿 Algenib (Masc. Rouco/Gravelly)', gender: 'male' },
   { id: 'Alnilam', label: '🛡️ Alnilam (Masc. Firme)', gender: 'male' },
@@ -36,9 +40,13 @@ export const ALL_GEMINI_VOICES = [
   { id: 'Umbriel', label: '🔊 Umbriel (Masc. Ressonante)', gender: 'male' },
   { id: 'Gacrux', label: '👨‍💼 Gacrux (Masc. Adulto)', gender: 'male' },
   { id: 'Achernar', label: '🧔 Achernar (Masc. Suave)', gender: 'male' },
+  { id: 'Achird', label: '🤝 Achird (Masc. Amigável)', gender: 'male' },
+  { id: 'Algieba', label: '🎷 Algieba (Masc. Suave/Smooth)', gender: 'male' },
+  { id: 'Rasalgethi', label: '📚 Rasalgethi (Masc. Informativo)', gender: 'male' },
+  { id: 'Schedar', label: '⚖️ Schedar (Masc. Uniforme)', gender: 'male' },
   
-  // Fem / Soft / Bright
-  { id: 'Puck', label: '👩 Puck (Fem. Animada/Alegre)', gender: 'female' },
+  // --- FEMININO (FEMALE) ---
+  { id: 'Zephyr', label: '🌬️ Zephyr (Fem. Calma/Suave)', gender: 'female' }, // CORRIGIDO: Zephyr é feminino
   { id: 'Kore', label: '🧬 Kore (Fem. Tech/Firme)', gender: 'female' },
   { id: 'Aoede', label: '🎭 Aoede (Fem. Dramática/Leve)', gender: 'female' },
   { id: 'Leda', label: '👧 Leda (Fem. Jovem)', gender: 'female' },
@@ -50,17 +58,11 @@ export const ALL_GEMINI_VOICES = [
   { id: 'Pulcherrima', label: '🎤 Pulcherrima (Fem. Projetada)', gender: 'female' },
   { id: 'Sulafat', label: '🔥 Sulafat (Fem. Quente)', gender: 'female' },
   { id: 'Vindemiatrix', label: '🤍 Vindemiatrix (Fem. Gentil)', gender: 'female' },
-  
-  // Neutral / Varied / Specialized
-  { id: 'Zephyr', label: '🌬️ Zephyr (Masc. Calmo/Brilhante)', gender: 'male' },
-  { id: 'Achird', label: '🤝 Achird (Amigável)', gender: 'male' },
-  { id: 'Algieba', label: '🎷 Algieba (Suave/Smooth)', gender: 'male' },
-  { id: 'Enceladus', label: '💨 Enceladus (Sopro/Breathy)', gender: 'male' },
-  { id: 'Rasalgethi', label: '📚 Rasalgethi (Informativa)', gender: 'male' },
-  { id: 'Sadachbia', label: '⚡ Sadachbia (Vivaz)', gender: 'female' },
-  { id: 'Sadaltager', label: '🧠 Sadaltager (Conhecedora)', gender: 'female' },
-  { id: 'Schedar', label: '⚖️ Schedar (Uniforme)', gender: 'male' }
+  { id: 'Sadachbia', label: '⚡ Sadachbia (Fem. Vivaz)', gender: 'female' },
+  { id: 'Sadaltager', label: '🧠 Sadaltager (Fem. Conhecedora)', gender: 'female' }
 ];
+
+export type GenerationPhase = 'idle' | 'scripting' | 'script_approval' | 'audio_processing' | 'ready_for_visuals' | 'visual_processing' | 'done';
 
 export enum VideoStyle {
   SCARY = 'Terror Analógico (Creepypasta)',
@@ -114,6 +116,14 @@ export enum SubtitleStyle {
   COMIC = 'Comic (Quadrinhos)',
   WORD_BY_WORD = 'Palavra por Palavra (Speed Reading)',
   NONE = 'Desativado' 
+}
+
+export enum SpeakerTagStyle {
+  CINEMATIC = 'Cinematic (Clean)',
+  BOXED = 'Boxed (Solid Tag)',
+  NEON = 'Neon Glow',
+  BUBBLE = 'Speech Bubble',
+  TV_NEWS = 'TV News (Lower Third)'
 }
 
 export enum VideoFilter {
@@ -329,6 +339,7 @@ export interface Scene {
   imageUrl?: string; // Usado para preview na sidebar e fallback
   imageBase64?: string; // SAVED FOR JSON EXPORT
   videoUrl?: string; // Usado se mediaType for video
+  videoBase64?: string; // SAVED FOR JSON EXPORT
   
   imagePath?: string; // Caminho local
   audioUrl?: string; 
@@ -399,6 +410,10 @@ export interface ProjectState {
   subtitleStyle: SubtitleStyle;
   subtitleSettings?: SubtitleSettings;
   
+  // Speaker Tag
+  showSpeakerTags: boolean;
+  speakerTagStyle: SpeakerTagStyle;
+
   // Output
   metadata?: VideoMetadata;
   thumbnails: string[]; // Lista de URLs/Paths das thumbnails geradas
@@ -413,4 +428,5 @@ export interface GeneratedScriptItem {
   text: string;
   visual_prompt: string;
   cameraMovement?: string;
+  gender?: 'male' | 'female'; // NEW: For better voice assignment
 }

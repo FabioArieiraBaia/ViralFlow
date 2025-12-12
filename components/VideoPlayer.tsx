@@ -1,6 +1,5 @@
-
 import React, { useRef, useEffect, useState, useImperativeHandle, forwardRef, useCallback } from 'react';
-import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe, VFXConfig, SubtitleSettings, AudioLayer, LayerAnimation } from '../types';
+import { Scene, VideoFormat, SubtitleStyle, UserTier, VideoFilter, LayerConfig, OverlayConfig, VideoTransition, ParticleEffect, CameraMovement, Keyframe, VFXConfig, SubtitleSettings, AudioLayer, LayerAnimation, SpeakerTagStyle } from '../types';
 import { Play, Pause, Maximize2, Minimize2 } from 'lucide-react';
 import { getAudioContext } from '../services/audioUtils';
 import { triggerBrowserDownload } from '../services/fileSystem';
@@ -27,7 +26,9 @@ interface VideoPlayerProps {
   channelLogo?: OverlayConfig;
   onUpdateChannelLogo?: (config: OverlayConfig) => void;
   onUpdateSceneOverlay?: (sceneId: string, config: OverlayConfig) => void;
-  scrubProgress?: number; 
+  scrubProgress?: number;
+  showSpeakerTags?: boolean;
+  speakerTagStyle?: SpeakerTagStyle;
 }
 
 export interface VideoPlayerRef {
@@ -73,7 +74,9 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   channelLogo,
   onUpdateChannelLogo,
   onUpdateSceneOverlay,
-  scrubProgress = 0
+  scrubProgress = 0,
+  showSpeakerTags = false,
+  speakerTagStyle = SpeakerTagStyle.CINEMATIC
 }, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -92,6 +95,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   // Music Playlist Refs
   const currentMusicIndexRef = useRef<number>(0);
   const effectivePlaylistRef = useRef<string[]>([]);
+  const isMusicPlayingRef = useRef<boolean>(false);
   
   const sfxSourcesRef = useRef<Map<string, AudioBufferSourceNode>>(new Map());
   const sfxBuffersRef = useRef<Map<string, AudioBuffer>>(new Map());
@@ -113,15 +117,17 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const WIDTH = (format === VideoFormat.PORTRAIT ? 720 : 1280) * renderScale;
   const HEIGHT = (format === VideoFormat.PORTRAIT ? 1280 : 720) * renderScale;
 
-  // Refs for Loop State to avoid re-triggering effect on every prop change
+  // Refs for Loop State
   const showSubtitlesRef = useRef(showSubtitles); 
   const subtitleStyleRef = useRef(subtitleStyle);
   const subtitleSettingsRef = useRef(subtitleSettings);
   const channelLogoRef = useRef(channelLogo);
   const activeFilterRef = useRef(activeFilter);
   const globalVfxRef = useRef(globalVfx);
-  const scrubProgressRef = useRef(scrubProgress);
   const globalTransitionRef = useRef(globalTransition);
+  const showSpeakerTagsRef = useRef(showSpeakerTags);
+  const speakerTagStyleRef = useRef(speakerTagStyle);
+  const bgMusicVolumeRef = useRef(bgMusicVolume);
   
   // Media Caches
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -130,13 +136,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const isRecordingRef = useRef(false);
-  
   const recordingMimeTypeRef = useRef<string>('video/webm');
 
   const startTimeRef = useRef<number>(0);
   const rafRef = useRef<number>(0);
   const audioDataArrayRef = useRef<Uint8Array>(new Uint8Array(0));
-  
   const scenesRef = useRef<Scene[]>(scenes);
 
   // Init Audio Context once
@@ -183,15 +187,19 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   useEffect(() => { channelLogoRef.current = channelLogo; }, [channelLogo]);
   useEffect(() => { activeFilterRef.current = activeFilter; }, [activeFilter]);
   useEffect(() => { globalVfxRef.current = globalVfx; }, [globalVfx]);
-  useEffect(() => { scrubProgressRef.current = scrubProgress; }, [scrubProgress]);
   useEffect(() => { globalTransitionRef.current = globalTransition; }, [globalTransition]);
+  useEffect(() => { showSpeakerTagsRef.current = showSpeakerTags; }, [showSpeakerTags]);
+  useEffect(() => { speakerTagStyleRef.current = speakerTagStyle; }, [speakerTagStyle]);
+  useEffect(() => { bgMusicVolumeRef.current = bgMusicVolume; }, [bgMusicVolume]);
 
-  // Handle Fullscreen
+  // Handle Music Volume Realtime
   useEffect(() => {
-      const handleFsChange = () => setIsFullscreen(!!document.fullscreenElement);
-      document.addEventListener('fullscreenchange', handleFsChange);
-      return () => document.removeEventListener('fullscreenchange', handleFsChange);
-  }, []);
+      if (musicGainRef.current) {
+          const ctx = getAudioContext();
+          musicGainRef.current.gain.cancelScheduledValues(ctx.currentTime);
+          musicGainRef.current.gain.setTargetAtTime(bgMusicVolume, ctx.currentTime, 0.1);
+      }
+  }, [bgMusicVolume]);
 
   const toggleFullscreen = (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -209,13 +217,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       setIsPlaying(!isPlaying);
   };
 
-  // Handle Music Volume
-  useEffect(() => {
-      if (musicGainRef.current) {
-          musicGainRef.current.gain.setTargetAtTime(bgMusicVolume, getAudioContext().currentTime, 0.1);
-      }
-  }, [bgMusicVolume]);
-
   // Construct Effective Playlist
   useEffect(() => {
       if (bgMusicPlaylist && bgMusicPlaylist.length > 0) {
@@ -231,15 +232,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
   useEffect(() => {
       const loadPlaylist = async () => {
           const playlist = effectivePlaylistRef.current;
-          if (playlist.length === 0) {
-              if (musicSourceRef.current) {
-                  try { musicSourceRef.current.stop(); } catch(e){}
-                  musicSourceRef.current = null;
-              }
-              return;
-          }
-
-          // Preload all
           for (const url of playlist) {
               if (!musicBufferCacheRef.current.has(url)) {
                   try {
@@ -252,28 +244,26 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                   } catch (e) { console.error(`Failed to load music ${url}`, e); }
               }
           }
-
-          // If playing and nothing playing, start (but typically controlled by play/pause toggle)
       };
       loadPlaylist();
   }, [bgMusicPlaylist, bgMusicUrl]);
 
-  // Load SFX for current Scene
-  useEffect(() => {
-      const scene = scenes[currentSceneIndex];
-      if (scene && scene.audioLayers) {
-          scene.audioLayers.forEach(async (layer) => {
-              if (!sfxBuffersRef.current.has(layer.url)) {
-                  try {
-                      const resp = await fetch(layer.url);
-                      const arrayBuffer = await resp.arrayBuffer();
-                      const decoded = await getAudioContext().decodeAudioData(arrayBuffer);
-                      sfxBuffersRef.current.set(layer.url, decoded);
-                  } catch (e) { console.error("SFX load failed", e); }
-              }
-          });
+  // Stop Music Helper
+  const stopMusic = (fadeOutDuration = 0.5) => {
+      const ctx = getAudioContext();
+      if (musicGainRef.current) {
+          musicGainRef.current.gain.cancelScheduledValues(ctx.currentTime);
+          musicGainRef.current.gain.setValueAtTime(musicGainRef.current.gain.value, ctx.currentTime);
+          musicGainRef.current.gain.linearRampToValueAtTime(0, ctx.currentTime + fadeOutDuration);
       }
-  }, [currentSceneIndex, scenes]);
+      setTimeout(() => {
+          if (musicSourceRef.current) {
+              try { musicSourceRef.current.stop(); } catch(e){}
+              musicSourceRef.current = null;
+          }
+          isMusicPlayingRef.current = false;
+      }, fadeOutDuration * 1000);
+  };
 
   const playMusicSequence = (index: number) => {
       const playlist = effectivePlaylistRef.current;
@@ -284,9 +274,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       const url = playlist[safeIndex];
       const buffer = musicBufferCacheRef.current.get(url);
 
-      if (!buffer) return; // Not loaded yet
+      if (!buffer) return;
 
       const ctx = getAudioContext();
+      
+      // Stop previous if exists (hard stop if switching tracks quickly)
       if (musicSourceRef.current) {
            try { musicSourceRef.current.stop(); } catch(e){}
       }
@@ -294,41 +286,43 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       musicSourceRef.current = ctx.createBufferSource();
       musicSourceRef.current.buffer = buffer;
       
-      // If only 1 track, loop it. If multiple, play next on ended.
+      // Setup loop or sequence
       if (playlist.length === 1) {
           musicSourceRef.current.loop = true;
       } else {
           musicSourceRef.current.loop = false;
           musicSourceRef.current.onended = () => {
-              if (isPlaying) {
+              if (isMusicPlayingRef.current) {
                   playMusicSequence(currentMusicIndexRef.current + 1);
               }
           };
       }
       
+      // Create Gain if not exists
       if (!musicGainRef.current) {
           musicGainRef.current = ctx.createGain();
           musicGainRef.current.connect(masterGainRef.current!);
       }
       
       musicSourceRef.current.connect(musicGainRef.current);
+      
+      // Smooth fade in
+      musicGainRef.current.gain.cancelScheduledValues(ctx.currentTime);
+      musicGainRef.current.gain.setValueAtTime(0, ctx.currentTime);
+      musicGainRef.current.gain.linearRampToValueAtTime(bgMusicVolumeRef.current, ctx.currentTime + 1.0);
+      
       musicSourceRef.current.start(0);
-      musicGainRef.current.gain.value = bgMusicVolume;
+      isMusicPlayingRef.current = true;
   };
 
   const playSpeech = (buffer: AudioBuffer) => {
       if (!buffer || !(buffer instanceof AudioBuffer)) return;
-
       const ctx = getAudioContext();
       if (speechSourceRef.current) {
            try { speechSourceRef.current.stop(); } catch(e){}
       }
       speechSourceRef.current = ctx.createBufferSource();
-      try {
-        speechSourceRef.current.buffer = buffer;
-      } catch (err) {
-        return;
-      }
+      speechSourceRef.current.buffer = buffer;
       speechSourceRef.current.connect(masterGainRef.current!);
       speechSourceRef.current.start(0);
   };
@@ -350,16 +344,11 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       source.start(0);
       const key = `${layer.id}-${Date.now()}`;
       sfxSourcesRef.current.set(key, source);
-      
-      source.onended = () => {
-          sfxSourcesRef.current.delete(key);
-      };
+      source.onended = () => { sfxSourcesRef.current.delete(key); };
   };
 
   const stopAllSFX = () => {
-      sfxSourcesRef.current.forEach(src => {
-          try { src.stop(); } catch(e){}
-      });
+      sfxSourcesRef.current.forEach(src => { try { src.stop(); } catch(e){} });
       sfxSourcesRef.current.clear();
       sfxPlayedRef.current.clear();
   };
@@ -373,7 +362,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         setRenderScale(highQuality ? 2 : 1); 
         startTimeRef.current = performance.now();
         
-        // Reset music to start of playlist for export
+        // Restart music from beginning
+        stopMusic(0);
         currentMusicIndexRef.current = 0;
         
         setIsPlaying(true);
@@ -389,11 +379,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         let mimeType = 'video/webm;codecs=vp9';
         if (!MediaRecorder.isTypeSupported(mimeType)) {
              mimeType = 'video/webm;codecs=vp8';
-             if (!MediaRecorder.isTypeSupported(mimeType)) {
-                 mimeType = 'video/webm';
-             }
+             if (!MediaRecorder.isTypeSupported(mimeType)) mimeType = 'video/webm';
         }
-        
         recordingMimeTypeRef.current = mimeType;
 
         mediaRecorderRef.current = new MediaRecorder(stream, {
@@ -407,16 +394,15 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
         };
 
         mediaRecorderRef.current.onstop = () => {
-            console.log("Recorder Stopped. Exporting Blob...");
             const blob = new Blob(chunksRef.current, { type: recordingMimeTypeRef.current });
             triggerBrowserDownload(blob, `viralflow_video_${Date.now()}.webm`);
             setIsExporting(false);
             setRenderScale(1);
             isRecordingRef.current = false;
+            stopMusic(1.0); // Fade out music
         };
 
         mediaRecorderRef.current.start();
-        console.log("Recording started...");
     },
     stopRecording: () => {
         if(mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -440,7 +426,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           videoCacheRef.current.set(url, v);
           v.load();
       }
-      if (v.readyState === 0) v.load();
       return v;
   };
 
@@ -500,6 +485,73 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
   };
 
+  const drawSpeakerTag = (ctx: CanvasRenderingContext2D, text: string, style: SpeakerTagStyle, width: number, height: number) => {
+      if (!text) return;
+      const isPortrait = width < height;
+      const baseFontSize = isPortrait ? width * 0.045 : width * 0.025;
+      const paddingX = baseFontSize * 1.5;
+      const paddingY = baseFontSize * 0.8;
+      const margin = width * 0.05;
+      const xRight = width - margin;
+      const yTop = margin;
+
+      ctx.font = `bold ${baseFontSize}px 'Inter', sans-serif`;
+      const metrics = ctx.measureText(text);
+      const textWidth = metrics.width;
+      const boxWidth = textWidth + (paddingX * 2);
+      const boxHeight = baseFontSize + (paddingY * 2);
+      const x = xRight - boxWidth;
+      const y = yTop;
+
+      ctx.save();
+      switch(style) {
+          case SpeakerTagStyle.CINEMATIC:
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+              ctx.fillRect(x, y, boxWidth, boxHeight);
+              ctx.fillStyle = '#facc15'; 
+              ctx.fillRect(x, y, 4, boxHeight);
+              ctx.fillStyle = 'white';
+              ctx.textBaseline = 'middle';
+              ctx.textAlign = 'center';
+              ctx.font = `bold ${baseFontSize}px 'Oswald', sans-serif`;
+              ctx.fillText(text.toUpperCase(), x + (boxWidth / 2), y + (boxHeight / 2));
+              break;
+          case SpeakerTagStyle.BOXED:
+              ctx.fillStyle = '#4f46e5'; 
+              if(ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, boxWidth, boxHeight, 8); ctx.fill(); } else { ctx.fillRect(x, y, boxWidth, boxHeight); }
+              ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 10;
+              ctx.fillStyle = 'white';
+              ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+              ctx.fillText(text, x + (boxWidth / 2), y + (boxHeight / 2));
+              break;
+          case SpeakerTagStyle.NEON:
+              ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 15; ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2;
+              ctx.strokeRect(x, y, boxWidth, boxHeight);
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'; ctx.shadowBlur = 0;
+              ctx.fillRect(x, y, boxWidth, boxHeight);
+              ctx.fillStyle = '#00ffcc'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+              ctx.fillText(text, x + (boxWidth / 2), y + (boxHeight / 2));
+              break;
+          case SpeakerTagStyle.BUBBLE:
+              ctx.fillStyle = 'white';
+              if(ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x, y, boxWidth, boxHeight, 20); ctx.fill(); } else { ctx.fillRect(x, y, boxWidth, boxHeight); }
+              ctx.beginPath(); ctx.moveTo(x + 20, y + boxHeight); ctx.lineTo(x + 10, y + boxHeight + 10); ctx.lineTo(x + 35, y + boxHeight); ctx.fill();
+              ctx.fillStyle = 'black'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+              ctx.font = `bold ${baseFontSize}px 'Comic Neue', sans-serif`;
+              ctx.fillText(text, x + (boxWidth / 2), y + (boxHeight / 2));
+              break;
+          case SpeakerTagStyle.TV_NEWS:
+              const barHeight = boxHeight * 0.8;
+              ctx.fillStyle = '#18181b'; ctx.transform(1, 0, -0.2, 1, 0, 0); ctx.fillRect(x, y, boxWidth, barHeight);
+              ctx.fillStyle = '#ef4444'; ctx.fillRect(x, y + barHeight, boxWidth, 4);
+              ctx.transform(1, 0, 0.2, 1, 0, 0); 
+              ctx.fillStyle = 'white'; ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+              ctx.fillText(text.toUpperCase(), x + (boxWidth / 2) - (boxWidth * 0.05), y + (barHeight / 2));
+              break;
+      }
+      ctx.restore();
+  };
+
   const drawFilmGrain = (ctx: CanvasRenderingContext2D, intensity: number, width: number, height: number) => {
     if (intensity <= 0) return;
     if (!grainCanvasRef.current || grainCanvasRef.current.width !== 256) {
@@ -509,28 +561,17 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
     }
     const gCtx = grainCanvasRef.current.getContext('2d');
     if (!gCtx) return;
-
     if (Math.random() > 0.5) {
         const idata = gCtx.createImageData(256, 256);
         const buffer = new Uint32Array(idata.data.buffer);
         for (let i = 0; i < buffer.length; i++) {
-            if (Math.random() < 0.5) {
-                buffer[i] = 0xff000000 | (Math.random() * 255); 
-            } else {
-                 buffer[i] = 0x00000000;
-            }
+            if (Math.random() < 0.5) buffer[i] = 0xff000000 | (Math.random() * 255); else buffer[i] = 0x00000000;
         }
         gCtx.putImageData(idata, 0, 0);
     }
-
-    ctx.save();
-    ctx.globalAlpha = intensity;
-    ctx.globalCompositeOperation = 'overlay';
+    ctx.save(); ctx.globalAlpha = intensity; ctx.globalCompositeOperation = 'overlay';
     const pattern = ctx.createPattern(grainCanvasRef.current, 'repeat');
-    if (pattern) {
-        ctx.fillStyle = pattern;
-        ctx.fillRect(0, 0, width, height);
-    }
+    if (pattern) { ctx.fillStyle = pattern; ctx.fillRect(0, 0, width, height); }
     ctx.restore();
   };
 
@@ -540,15 +581,12 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       const gradient = ctx.createRadialGradient(width / 2, height / 2, width * 0.3, width / 2, height / 2, width * 0.8);
       gradient.addColorStop(0, "rgba(0,0,0,0)");
       gradient.addColorStop(1, `rgba(0,0,0,${Math.min(intensity, 0.9)})`);
-      ctx.fillStyle = gradient;
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.fillRect(0, 0, width, height);
-      ctx.restore();
+      ctx.fillStyle = gradient; ctx.globalCompositeOperation = 'multiply';
+      ctx.fillRect(0, 0, width, height); ctx.restore();
   };
 
   const drawParticles = (ctx: CanvasRenderingContext2D, effect: ParticleEffect, width: number, height: number, isStatic: boolean) => {
     if (effect === ParticleEffect.NONE) return;
-
     if (particlesRef.current.length < 50 && !isStatic) {
         let typeObj = { color: 'white', size: 2, speed: 1, emoji: '' };
         switch (effect) {
@@ -561,609 +599,363 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
             case ParticleEffect.FLOATING_STARS: typeObj = { color: '', size: 30, speed: -1, emoji: '⭐' }; break;
             case ParticleEffect.FLOATING_MUSIC: typeObj = { color: '', size: 30, speed: -1, emoji: '🎵' }; break;
         }
-
         particlesRef.current.push({
-            x: Math.random() * width,
-            y: typeObj.speed > 0 ? -10 : height + 10,
-            vx: (Math.random() - 0.5) * 2,
-            vy: typeObj.speed * (Math.random() * 0.5 + 0.8),
-            size: typeObj.size * (Math.random() * 0.5 + 0.5),
-            color: typeObj.color,
-            alpha: 1,
-            life: 100,
-            decay: 0.5,
-            type: effect,
-            emoji: typeObj.emoji
+            x: Math.random() * width, y: typeObj.speed > 0 ? -10 : height + 10,
+            vx: (Math.random() - 0.5) * 2, vy: typeObj.speed * (Math.random() * 0.5 + 0.8),
+            size: typeObj.size * (Math.random() * 0.5 + 0.5), color: typeObj.color,
+            alpha: 1, life: 100, decay: 0.5, type: effect, emoji: typeObj.emoji
         });
     }
-
-    // DRAW PARTICLES
     for (let i = particlesRef.current.length - 1; i >= 0; i--) {
         const p = particlesRef.current[i];
-        
-        // UPDATE PHYSICS ONLY IF PLAYING
-        if (!isStatic) {
-            p.x += p.vx;
-            p.y += p.vy;
-            p.life -= p.decay;
-        }
-
-        if (p.y > height + 20 || p.y < -20 || p.life <= 0) {
-            if (!isStatic) particlesRef.current.splice(i, 1);
-            continue;
-        }
-
+        if (!isStatic) { p.x += p.vx; p.y += p.vy; p.life -= p.decay; }
+        if (p.y > height + 20 || p.y < -20 || p.life <= 0) { if (!isStatic) particlesRef.current.splice(i, 1); continue; }
         ctx.globalAlpha = p.alpha * (p.life / 100);
-        if (p.emoji) {
-             ctx.font = `${p.size}px Arial`;
-             ctx.fillText(p.emoji, p.x, p.y);
-        } else if (p.type === ParticleEffect.RAIN) {
-             ctx.strokeStyle = p.color;
-             ctx.lineWidth = 1;
-             ctx.beginPath();
-             ctx.moveTo(p.x, p.y);
-             ctx.lineTo(p.x + p.vx, p.y + p.vy * 4);
-             ctx.stroke();
-        } else {
-             ctx.fillStyle = p.color;
-             ctx.beginPath();
-             ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-             ctx.fill();
-        }
+        if (p.emoji) { ctx.font = `${p.size}px Arial`; ctx.fillText(p.emoji, p.x, p.y); } 
+        else if (p.type === ParticleEffect.RAIN) { ctx.strokeStyle = p.color; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.vx, p.y + p.vy * 4); ctx.stroke(); } 
+        else { ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill(); }
     }
     ctx.globalAlpha = 1;
   };
 
-  // --- REFACTORED SUBTITLE RENDERER (Professional & Paginated) ---
   const drawSubtitles = (ctx: CanvasRenderingContext2D, text: string, style: SubtitleStyle, width: number, height: number, progress: number) => {
       if (!text || style === SubtitleStyle.NONE) return;
-
       const settings = subtitleSettingsRef.current || { fontSizeMultiplier: 1.0, yPosition: 0.85, fontFamily: 'Inter' };
       const fontSizeMultiplier = settings.fontSizeMultiplier;
       const userFontFamily = settings.fontFamily || 'Inter';
-      
-      // Calculate responsive font size
       const isPortrait = width < height;
       const baseFontSize = isPortrait ? width * 0.065 : width * 0.04;
       const fontSize = Math.max(24, Math.min(baseFontSize * fontSizeMultiplier, 120));
-      
-      // Font Definition
-      const fontWeight = '800'; // Extra bold for pro look
+      const fontWeight = '800'; 
       ctx.font = `${fontWeight} ${fontSize}px '${userFontFamily}', sans-serif`;
       
-      // 1. Text Pagination Logic (Chunking)
       const allWords = text.trim().split(/\s+/);
       const totalWords = allWords.length;
       const currentWordIdx = Math.min(Math.floor(progress * totalWords), totalWords - 1);
-      
-      // Determine batch size (how many words per screen)
-      // Portrait needs fewer words per screen to avoid tiny text
       const WORDS_PER_BATCH = isPortrait ? 5 : 9; 
       const batchIndex = Math.floor(currentWordIdx / WORDS_PER_BATCH);
       const startWord = batchIndex * WORDS_PER_BATCH;
       const endWord = Math.min((batchIndex + 1) * WORDS_PER_BATCH, totalWords);
-      
       const visibleWords = allWords.slice(startWord, endWord);
       const visibleText = visibleWords.join(' ');
-      
-      // Highlight logic relative to current batch
       const highlightIndex = currentWordIdx - startWord;
 
-      // 2. Line Wrapping Logic for the Current Batch
       const lines: string[] = [];
-      const wordObjects: { text: string, line: number, x: number, width: number, isHighlighted: boolean }[] = [];
-      
       const maxLineWidth = width * 0.85;
-      let currentLine = "";
-      
-      // Preliminary wrap to determine lines
       const batchWords = visibleText.split(' ');
       let tempLine = batchWords[0];
-      
       for (let i = 1; i < batchWords.length; i++) {
           const w = ctx.measureText(tempLine + " " + batchWords[i]).width;
-          if (w < maxLineWidth) {
-              tempLine += " " + batchWords[i];
-          } else {
-              lines.push(tempLine);
-              tempLine = batchWords[i];
-          }
+          if (w < maxLineWidth) { tempLine += " " + batchWords[i]; } else { lines.push(tempLine); tempLine = batchWords[i]; }
       }
       lines.push(tempLine);
 
-      // 3. Positioning
       const lineHeight = fontSize * 1.4;
       const totalBlockHeight = lines.length * lineHeight;
       const yBottomAnchor = height * settings.yPosition; 
       const startY = yBottomAnchor - totalBlockHeight;
-
-      // 4. Render Styles
-      
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
 
       lines.forEach((line, lineIndex) => {
           const y = startY + (lineIndex * lineHeight);
           const x = width / 2;
-          
           if (style === SubtitleStyle.WORD_BY_WORD) {
-              // Special case: Single big word center screen
               const bigWord = allWords[currentWordIdx] || "";
               const bigFontSize = fontSize * 2.5;
-              ctx.font = `900 ${bigFontSize}px '${userFontFamily}', sans-serif`;
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              
-              // Shadow/Stroke
-              ctx.shadowColor = 'rgba(0,0,0,0.8)';
-              ctx.shadowBlur = 20;
-              ctx.lineWidth = 8;
-              ctx.strokeStyle = 'black';
-              ctx.strokeText(bigWord, width/2, height/2);
-              ctx.shadowBlur = 0;
-              
-              // Fill
+              ctx.font = `900 ${bigFontSize}px '${userFontFamily}', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+              ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 20; ctx.lineWidth = 8; ctx.strokeStyle = 'black'; ctx.strokeText(bigWord, width/2, height/2); ctx.shadowBlur = 0;
               const gradient = ctx.createLinearGradient(0, height/2 - bigFontSize, 0, height/2 + bigFontSize);
-              gradient.addColorStop(0, '#ffffff');
-              gradient.addColorStop(1, '#facc15'); // Yellow tint
-              ctx.fillStyle = gradient;
-              ctx.fillText(bigWord, width/2, height/2);
-              
-              // Reset
-              ctx.font = `${fontWeight} ${fontSize}px '${userFontFamily}', sans-serif`;
-              return; 
+              gradient.addColorStop(0, '#ffffff'); gradient.addColorStop(1, '#facc15'); ctx.fillStyle = gradient; ctx.fillText(bigWord, width/2, height/2);
+              ctx.font = `${fontWeight} ${fontSize}px '${userFontFamily}', sans-serif`; return; 
           }
-
           if (style === SubtitleStyle.MODERN) {
-              // Instagram/TikTok Style: Rounded background, white text
-              const metrics = ctx.measureText(line);
-              const bgPaddingX = 20;
-              const bgPaddingY = 8;
-              const bgW = metrics.width + (bgPaddingX * 2);
-              const bgH = fontSize + (bgPaddingY * 2);
-              
-              ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'; // Semi-transparent dark
-              
-              // Draw rounded rect manually if roundRect not supported (safeguard), though typical modern browsers have it
-              if (ctx.roundRect) {
-                  ctx.beginPath();
-                  ctx.roundRect(x - bgW/2, y - bgPaddingY, bgW, bgH, 12);
-                  ctx.fill();
-              } else {
-                  ctx.fillRect(x - bgW/2, y - bgPaddingY, bgW, bgH);
-              }
-
-              ctx.shadowColor = 'rgba(0,0,0,0.5)';
-              ctx.shadowBlur = 4;
-              ctx.fillStyle = '#ffffff';
-              ctx.fillText(line, x, y);
-              ctx.shadowBlur = 0;
+              const metrics = ctx.measureText(line); const bgW = metrics.width + 40; const bgH = fontSize + 16;
+              ctx.fillStyle = 'rgba(0, 0, 0, 0.65)'; if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(x - bgW/2, y - 8, bgW, bgH, 12); ctx.fill(); } else { ctx.fillRect(x - bgW/2, y - 8, bgW, bgH); }
+              ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 4; ctx.fillStyle = '#ffffff'; ctx.fillText(line, x, y); ctx.shadowBlur = 0;
           } 
           else if (style === SubtitleStyle.CLASSIC) {
-              // Netflix Style: White text, Drop Shadow + Thin Stroke
-              ctx.shadowColor = 'rgba(0,0,0,0.9)';
-              ctx.shadowBlur = 4;
-              ctx.shadowOffsetX = 2;
-              ctx.shadowOffsetY = 2;
-              
-              ctx.strokeStyle = 'black';
-              ctx.lineWidth = fontSize * 0.1;
-              ctx.strokeText(line, x, y);
-              
-              ctx.fillStyle = '#ffffff'; // White usually reads better for classic
-              ctx.fillText(line, x, y);
-              
-              // Reset shadow
-              ctx.shadowColor = 'transparent';
-              ctx.shadowOffsetX = 0;
-              ctx.shadowOffsetY = 0;
+              ctx.shadowColor = 'rgba(0,0,0,0.9)'; ctx.shadowBlur = 4; ctx.shadowOffsetX = 2; ctx.shadowOffsetY = 2;
+              ctx.strokeStyle = 'black'; ctx.lineWidth = fontSize * 0.1; ctx.strokeText(line, x, y);
+              ctx.fillStyle = '#ffffff'; ctx.fillText(line, x, y); ctx.shadowColor = 'transparent'; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
           }
           else if (style === SubtitleStyle.NEON) {
-              // Multi-pass glow
-              ctx.strokeStyle = '#00ffcc';
-              ctx.lineWidth = 3;
-              
-              // Glow layers
-              ctx.shadowColor = '#00ffcc';
-              ctx.shadowBlur = 20;
-              ctx.strokeText(line, x, y);
-              
-              ctx.shadowBlur = 10;
-              ctx.strokeText(line, x, y);
-              
-              ctx.fillStyle = '#ffffff';
-              ctx.fillText(line, x, y);
-              
-              ctx.shadowBlur = 0;
+              ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 3; ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 20; ctx.strokeText(line, x, y); ctx.shadowBlur = 10; ctx.strokeText(line, x, y); ctx.fillStyle = '#ffffff'; ctx.fillText(line, x, y); ctx.shadowBlur = 0;
           }
           else if (style === SubtitleStyle.GLITCH) {
-              // Chromatic Aberration
-              const offset = Math.random() * 4;
-              ctx.fillStyle = 'cyan';
-              ctx.fillText(line, x - offset, y);
-              ctx.fillStyle = 'magenta';
-              ctx.fillText(line, x + offset, y);
-              ctx.fillStyle = '#ffffff';
-              ctx.fillText(line, x, y);
+              const offset = Math.random() * 4; ctx.fillStyle = 'cyan'; ctx.fillText(line, x - offset, y); ctx.fillStyle = 'magenta'; ctx.fillText(line, x + offset, y); ctx.fillStyle = '#ffffff'; ctx.fillText(line, x, y);
           }
           else if (style === SubtitleStyle.KARAOKE) {
-              // Word-level rendering for highlighting
-              // We need to re-measure words to place them correctly in the line
-              const wordsInLine = line.split(' ');
-              let totalLineWidth = 0;
-              const wWidths = wordsInLine.map(w => {
-                  const wm = ctx.measureText(w + " ").width;
-                  totalLineWidth += wm;
-                  return wm;
-              });
-              
+              const wordsInLine = line.split(' '); let totalLineWidth = 0;
+              const wWidths = wordsInLine.map(w => { const wm = ctx.measureText(w + " ").width; totalLineWidth += wm; return wm; });
               let currentX = x - (totalLineWidth / 2);
-              
-              // Find which global word index corresponds to the start of this line
-              // This is tricky with wrapping. Simplified approximation:
-              // We know 'highlightIndex' is relative to the BATCH.
-              // We need to count how many words were in previous lines of this batch.
-              let wordsPriorInBatch = 0;
-              for(let k=0; k<lineIndex; k++) {
-                  wordsPriorInBatch += lines[k].split(' ').length;
-              }
-
+              let wordsPriorInBatch = 0; for(let k=0; k<lineIndex; k++) { wordsPriorInBatch += lines[k].split(' ').length; }
               wordsInLine.forEach((w, wIdx) => {
                   const isPlayed = (wordsPriorInBatch + wIdx) <= highlightIndex;
-                  
-                  ctx.fillStyle = isPlayed ? '#facc15' : 'rgba(255, 255, 255, 0.7)';
-                  ctx.strokeStyle = 'black';
-                  ctx.lineWidth = fontSize * 0.15;
-                  ctx.lineJoin = 'round';
-                  
-                  ctx.strokeText(w, currentX + (wWidths[wIdx]/2), y);
-                  ctx.fillText(w, currentX + (wWidths[wIdx]/2), y);
-                  
+                  ctx.fillStyle = isPlayed ? '#facc15' : 'rgba(255, 255, 255, 0.7)'; ctx.strokeStyle = 'black'; ctx.lineWidth = fontSize * 0.15; ctx.lineJoin = 'round';
+                  ctx.strokeText(w, currentX + (wWidths[wIdx]/2), y); ctx.fillText(w, currentX + (wWidths[wIdx]/2), y);
                   currentX += wWidths[wIdx];
               });
           }
           else if (style === SubtitleStyle.COMIC) {
-              ctx.strokeStyle = 'black';
-              ctx.lineWidth = fontSize * 0.15;
-              ctx.lineJoin = 'round';
-              ctx.strokeText(line, x, y);
-              
-              // Yellow fill with slight orange shadow
-              ctx.fillStyle = '#fde047'; 
-              ctx.fillText(line, x, y);
+              ctx.strokeStyle = 'black'; ctx.lineWidth = fontSize * 0.15; ctx.lineJoin = 'round'; ctx.strokeText(line, x, y); ctx.fillStyle = '#fde047'; ctx.fillText(line, x, y);
           }
       });
   };
 
-  const drawScene = (ctx: CanvasRenderingContext2D, scene: Scene, scale: number, progress: number, isPlaying: boolean, elapsedTimeMs: number) => {
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-      ctx.filter = getCanvasFilter(activeFilterRef.current);
-
-      ctx.save();
-      const move = scene.cameraMovement || CameraMovement.STATIC;
-      const t = progress; 
+  const drawScene = useCallback((
+      ctx: CanvasRenderingContext2D, 
+      scene: Scene, 
+      scale: number, 
+      progress: number, 
+      isTransitioning: boolean, 
+      elapsedTimeMs: number
+  ) => {
+      const width = ctx.canvas.width;
+      const height = ctx.canvas.height;
       
-      let scaleFactor = 1;
-      let transX = 0;
-      let transY = 0;
-      let rot = 0;
+      // Clear
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, width, height);
 
-      ctx.translate(WIDTH/2, HEIGHT/2);
-
-      // ONLY APPLY MOVEMENT IF PLAYING
-      if (isPlaying) {
-        if (move === CameraMovement.ZOOM_IN) {
-            scaleFactor = 1.05 + (0.25 * t); 
-        } 
-        else if (move === CameraMovement.ZOOM_OUT) {
-            scaleFactor = 1.3 - (0.25 * t); 
-        } 
-        else if (move === CameraMovement.PAN_LEFT) {
-            scaleFactor = 1.2; 
-            transX = (WIDTH * 0.08) - ((WIDTH * 0.16) * t); 
-        } 
-        else if (move === CameraMovement.PAN_RIGHT) {
-            scaleFactor = 1.2;
-            transX = -(WIDTH * 0.08) + ((WIDTH * 0.16) * t);
-        } 
-        else if (move === CameraMovement.ROTATE_CW) {
-            scaleFactor = 1.3;
-            rot = (2 * Math.PI / 180) * t * 3;
-        } 
-        else if (move === CameraMovement.ROTATE_CCW) {
-            scaleFactor = 1.3;
-            rot = -(2 * Math.PI / 180) * t * 3;
-        }
-        else if (move === CameraMovement.HANDHELD) {
-            scaleFactor = 1.1;
-            const shake = globalVfxRef.current?.shakeIntensity || 0;
-            const baseShake = 0.01 + (shake * 0.01); 
-            transX = Math.sin(elapsedTimeMs * 0.002) * (WIDTH * baseShake);
-            transY = Math.cos(elapsedTimeMs * 0.003) * (HEIGHT * baseShake);
-            rot = Math.sin(elapsedTimeMs * 0.001) * 0.005;
-        }
-      } else {
-         // Default scale for editing visibility
-         if (move === CameraMovement.PAN_LEFT || move === CameraMovement.PAN_RIGHT) scaleFactor = 1.1;
+      // 1. Determine Background Source (Main Scene Asset OR Temporal Layer)
+      // Checks if there's an active layer marked as 'isBackground' for the current time
+      let bgUrl = scene.imageUrl;
+      let bgType = scene.mediaType;
+      let bgIsVideo = scene.mediaType === 'video';
+      
+      if (scene.layers) {
+          const currentSec = elapsedTimeMs / 1000;
+          const activeLayer = scene.layers.find(l => 
+              l.isBackground && 
+              (l.startTime ?? 0) <= currentSec && 
+              (l.endTime ?? 9999) > currentSec
+          );
+          if (activeLayer && activeLayer.url) {
+              bgUrl = activeLayer.url;
+              bgType = activeLayer.type as 'image' | 'video';
+              bgIsVideo = activeLayer.type === 'video';
+          }
       }
 
-      ctx.scale(scaleFactor, scaleFactor);
-      ctx.rotate(rot);
-      ctx.translate(transX, transY);
-      ctx.translate(-WIDTH/2, -HEIGHT/2);
-
-      const mainAssetLayer: LayerConfig | null = (scene.mediaType === 'video' && scene.videoUrl) ? {
-          id: 'main-bg-video', type: 'video', url: scene.videoUrl, name: 'Background', x:0.5, y:0.5, scale:1, rotation:0, opacity:1
-      } : (scene.imageUrl) ? {
-          id: 'main-bg-image', type: 'image', url: scene.imageUrl, name: 'Background', x:0.5, y:0.5, scale:1, rotation:0, opacity:1
-      } : null;
-
-      const userLayers = scene.layers || (scene.overlay ? [{ ...scene.overlay, id: 'legacy', type: 'image' as const, name: 'Legacy Overlay', rotation:0, opacity: scene.overlay.opacity ?? 1 }] : []);
-      const allLayers = mainAssetLayer ? [mainAssetLayer, ...userLayers] : userLayers;
-
-      allLayers.forEach((baseLayer, idx) => {
-          const layerStart = baseLayer.startTime || 0;
-          const layerEnd = baseLayer.endTime !== undefined ? baseLayer.endTime : (scene.durationEstimate || 5);
-          const currentSec = elapsedTimeMs / 1000;
-          
-          if (currentSec < layerStart || currentSec > layerEnd) return;
-
-          // Check if this layer should be treated as a background (Cover)
-          const isMainBg = baseLayer.id === 'main-bg-video' || baseLayer.id === 'main-bg-image' || baseLayer.isBackground;
-          
-          const layer = getInterpolatedLayer(baseLayer, progress);
-          
-          // --- ANIMATION IN/OUT LOGIC ---
-          // Use specific durations or default to 1.0s if undefined, for compatibility
-          const entryDur = baseLayer.entryDuration !== undefined ? baseLayer.entryDuration : (baseLayer.animationDuration || 1.0);
-          const exitDur = baseLayer.exitDuration !== undefined ? baseLayer.exitDuration : (baseLayer.animationDuration || 1.0);
-
-          let animProgress = 1; // 1 = fully visible
-          let isEntering = false;
-          let isExiting = false;
-
-          // Entry Logic
-          if (baseLayer.entryEffect && baseLayer.entryEffect !== LayerAnimation.NONE) {
-               if (currentSec < layerStart + entryDur) {
-                   isEntering = true;
-                   animProgress = easeOutCubic((currentSec - layerStart) / entryDur);
-               }
-          }
-          
-          // Exit Logic
-          if (!isEntering && baseLayer.exitEffect && baseLayer.exitEffect !== LayerAnimation.NONE) {
-              if (currentSec > layerEnd - exitDur) {
-                  isExiting = true;
-                  animProgress = easeOutCubic((layerEnd - currentSec) / exitDur); // 1 -> 0
-              }
-          }
-
-          const activeEffect = isEntering ? baseLayer.entryEffect : (isExiting ? baseLayer.exitEffect : LayerAnimation.NONE);
-
-          ctx.save();
-          
-          if (isMainBg) {
-               if (layer.type === 'image' && layer.url) {
-                   const img = imageCacheRef.current.get(layer.url);
-                   if (!img && !imageCacheRef.current.has(layer.url)) {
-                       const i = new Image(); i.crossOrigin = "anonymous"; i.src = layer.url; i.onload = () => imageCacheRef.current.set(layer.url!, i);
-                   }
-                   if (img && img.complete && img.naturalWidth > 0) {
-                      const imgRatio = img.width / img.height;
-                      const canvasRatio = WIDTH / HEIGHT;
-                      let drawW = WIDTH, drawH = HEIGHT, offsetX = 0, offsetY = 0;
-                      if (imgRatio > canvasRatio) { drawH = HEIGHT; drawW = HEIGHT * imgRatio; offsetX = (WIDTH - drawW) / 2; } 
-                      else { drawW = WIDTH; drawH = WIDTH / imgRatio; offsetY = (HEIGHT - drawH) / 2; }
-                      
-                      // Background Animation logic (simple fade usually)
-                      if (activeEffect === LayerAnimation.FADE) ctx.globalAlpha = layer.opacity * animProgress;
-                      else ctx.globalAlpha = layer.opacity;
-
-                      ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
-                   }
-               } else if (layer.type === 'video' && layer.url) {
-                   const v = getVideoElement(layer.url);
-                   if (isPlaying && v.paused) v.play().catch(e => {});
-                   else if (!isPlaying && !v.paused) v.pause();
-
-                   if (v.readyState >= 2) { 
-                       const vidRatio = v.videoWidth / v.videoHeight;
-                       const canvasRatio = WIDTH / HEIGHT;
-                       let drawW = WIDTH, drawH = HEIGHT, offsetX = 0, offsetY = 0;
-                       if (vidRatio > canvasRatio) { drawH = HEIGHT; drawW = HEIGHT * vidRatio; offsetX = (WIDTH - drawW) / 2; } 
-                       else { drawW = WIDTH; drawH = WIDTH / vidRatio; offsetY = (HEIGHT - drawH) / 2; }
-                       
-                       if (activeEffect === LayerAnimation.FADE) ctx.globalAlpha = layer.opacity * animProgress;
-                       else ctx.globalAlpha = layer.opacity;
-
-                       ctx.drawImage(v, offsetX, offsetY, drawW, drawH);
-                   }
-               }
-          } else {
-              const lx = layer.x * WIDTH;
-              const ly = layer.y * HEIGHT;
+      // Draw Background
+      let mediaDrawn = false;
+      
+      // Video (Main or Layer)
+      if (bgIsVideo && bgUrl) {
+          const vid = getVideoElement(bgUrl);
+          if (vid && vid.readyState >= 2) {
+              if (vid.paused && isPlaying) vid.play().catch(() => {});
               
-              let offsetX = 0;
-              let offsetY = 0;
-              let scaleX = layer.scale;
-              let scaleY = layer.scale;
-              let alpha = layer.opacity;
-              let typeWriterLimit = 1000; // Text chars
+              // Draw video with object-cover logic
+              const vRatio = vid.videoWidth / vid.videoHeight;
+              const cRatio = width / height;
+              let sWidth, sHeight, sx, sy;
+              
+              if (vRatio > cRatio) {
+                  sHeight = vid.videoHeight;
+                  sWidth = sHeight * cRatio;
+                  sy = 0;
+                  sx = (vid.videoWidth - sWidth) / 2;
+              } else {
+                  sWidth = vid.videoWidth;
+                  sHeight = sWidth / cRatio;
+                  sx = 0;
+                  sy = (vid.videoHeight - sHeight) / 2;
+              }
+              
+              ctx.drawImage(vid, sx, sy, sWidth, sHeight, 0, 0, width, height);
+              mediaDrawn = true;
+          }
+      } 
+      // Image (Main or Layer)
+      else if (bgUrl) {
+           let img = imageCacheRef.current.get(bgUrl);
+           if (!img) {
+               img = new Image();
+               img.src = bgUrl;
+               img.crossOrigin = "anonymous";
+               imageCacheRef.current.set(bgUrl, img);
+           }
+           
+           if (img.complete && img.naturalWidth > 0) {
+               ctx.save();
+               
+               // Camera Movement (Ken Burns)
+               const moveType = scene.cameraMovement || CameraMovement.STATIC;
+               let scaleFactor = 1.0;
+               let translateX = 0;
+               let translateY = 0;
+               
+               // Easing for smooth movement
+               const t = progress; 
+               
+               if (moveType === CameraMovement.ZOOM_IN) {
+                   scaleFactor = 1.0 + (0.15 * t);
+               } else if (moveType === CameraMovement.ZOOM_OUT) {
+                   scaleFactor = 1.15 - (0.15 * t);
+               } else if (moveType === CameraMovement.PAN_LEFT) {
+                   scaleFactor = 1.1;
+                   translateX = - (width * 0.05 * t);
+               } else if (moveType === CameraMovement.PAN_RIGHT) {
+                   scaleFactor = 1.1;
+                   translateX = (width * 0.05 * t);
+               } else if (moveType === CameraMovement.ROTATE_CW) {
+                    scaleFactor = 1.1;
+                    ctx.rotate((0.5 * t * Math.PI) / 180);
+               } else if (moveType === CameraMovement.HANDHELD) {
+                    scaleFactor = 1.05;
+                    const shakeX = Math.sin(t * 10) * 5;
+                    const shakeY = Math.cos(t * 12) * 5;
+                    translateX = shakeX;
+                    translateY = shakeY;
+               }
 
-              if (activeEffect !== LayerAnimation.NONE) {
-                  const p = animProgress; 
-                  // Logic for transition effects
+               ctx.translate(width/2, height/2);
+               ctx.scale(scaleFactor, scaleFactor);
+               ctx.translate(-width/2 + translateX, -height/2 + translateY);
+
+               // Draw Image Cover
+               const iRatio = img.naturalWidth / img.naturalHeight;
+               const cRatio = width / height;
+               let dWidth, dHeight;
+               if (iRatio > cRatio) {
+                   dHeight = height;
+                   dWidth = height * iRatio;
+               } else {
+                   dWidth = width;
+                   dHeight = width / iRatio;
+               }
+               
+               const dx = (width - dWidth)/2;
+               const dy = (height - dHeight)/2;
+               
+               ctx.drawImage(img, dx, dy, dWidth, dHeight);
+               ctx.restore();
+               mediaDrawn = true;
+           }
+      }
+
+      // Filter
+      const activeFilter = activeFilterRef.current || VideoFilter.NONE;
+      if (activeFilter !== VideoFilter.NONE) {
+          const filterStr = getCanvasFilter(activeFilter);
+          ctx.save();
+          ctx.filter = filterStr;
+          ctx.globalCompositeOperation = 'copy';
+          ctx.drawImage(ctx.canvas, 0, 0);
+          ctx.restore();
+      }
+
+      // Layers (Interpolated)
+      if (scene.layers) {
+          scene.layers.forEach(layer => {
+              if (layer.isBackground) return; // Skip bg layers as they are handled above
+              
+              const layerStart = layer.startTime || 0;
+              const layerEnd = layer.endTime || 9999;
+              const currentSec = elapsedTimeMs / 1000;
+              
+              if (currentSec >= layerStart && currentSec <= layerEnd) {
+                  ctx.save();
+                  const l = getInterpolatedLayer(layer, progress);
                   
-                  switch (activeEffect) {
-                      case LayerAnimation.FADE:
-                          alpha *= p;
-                          break;
-                      case LayerAnimation.SCALE:
-                          scaleX *= p;
-                          scaleY *= p;
-                          break;
-                      case LayerAnimation.SLIDE_UP:
-                           if (isEntering) offsetY += (1 - p) * 200; 
-                           else offsetY -= (1 - p) * 200;
-                           alpha *= p; // Also fade a bit
-                          break;
-                      case LayerAnimation.SLIDE_DOWN:
-                           if (isEntering) offsetY -= (1 - p) * 200;
-                           else offsetY += (1 - p) * 200;
-                           alpha *= p;
-                          break;
-                      case LayerAnimation.SLIDE_LEFT:
-                           if (isEntering) offsetX += (1 - p) * 200;
-                           else offsetX -= (1 - p) * 200;
-                           alpha *= p;
-                          break;
-                      case LayerAnimation.SLIDE_RIGHT:
-                           if (isEntering) offsetX -= (1 - p) * 200;
-                           else offsetX += (1 - p) * 200;
-                           alpha *= p;
-                          break;
-                      case LayerAnimation.TYPEWRITER:
-                           if (layer.type === 'text' && layer.text) {
-                               typeWriterLimit = Math.floor(layer.text.length * p);
-                           }
-                           break;
-                  }
-              }
-
-              ctx.translate(lx + offsetX, ly + offsetY);
-              ctx.rotate((layer.rotation * Math.PI) / 180);
-              ctx.scale(scaleX, scaleY);
-              ctx.globalAlpha = alpha;
-              ctx.globalCompositeOperation = layer.blendMode || 'source-over';
-
-              if (layer.shadowColor && layer.type !== 'text') {
-                  ctx.shadowColor = layer.shadowColor;
-                  ctx.shadowBlur = layer.shadowBlur || 0;
-                  ctx.shadowOffsetX = layer.shadowOffsetX || 0;
-                  ctx.shadowOffsetY = layer.shadowOffsetY || 0;
-              }
-
-              if (layer.type === 'text' && layer.text) {
-                  const displayText = activeEffect === LayerAnimation.TYPEWRITER ? layer.text.substring(0, typeWriterLimit) : layer.text;
-
-                  ctx.font = `${layer.fontWeight || 'bold'} ${layer.fontSize || 50}px '${layer.fontFamily || 'Inter'}'`;
-                  ctx.textAlign = 'center';
-                  ctx.textBaseline = 'middle';
-                  if (layer.textShadow) {
-                       ctx.lineJoin = "round";
-                       ctx.lineWidth = 4;
-                       ctx.strokeStyle = "black";
-                       ctx.strokeText(displayText, 0, 0);
-                  }
-                  ctx.fillStyle = layer.fontColor || '#ffffff';
-                  ctx.fillText(displayText, 0, 0);
-              } 
-              else if (layer.type === 'image' && layer.url) {
-                  const lImg = imageCacheRef.current.get(layer.url);
-                  if (!lImg && !imageCacheRef.current.has(layer.url)) {
-                      const i = new Image(); i.src = layer.url; i.onload = () => imageCacheRef.current.set(layer.url!, i);
-                  }
-                  if (lImg && lImg.complete && lImg.naturalWidth > 0) ctx.drawImage(lImg, -lImg.width/2, -lImg.height/2);
-              }
-              else if (layer.type === 'video' && layer.url) {
-                   const v = getVideoElement(layer.url);
-                   if (v.readyState >= 2) {
-                       const trimStart = layer.trimStart || 0;
-                       const trimEnd = layer.trimEnd || v.duration;
-                       const loopDuration = trimEnd - trimStart;
-                       if (loopDuration > 0) {
-                           const expectedTime = trimStart + (elapsedTimeMs / 1000) % loopDuration;
-                           if (Math.abs(v.currentTime - expectedTime) > 0.3) {
-                               v.currentTime = expectedTime;
-                           }
+                  ctx.globalAlpha = l.opacity;
+                  const lx = l.x * width;
+                  const ly = l.y * height;
+                  
+                  ctx.translate(lx, ly);
+                  ctx.rotate((l.rotation * Math.PI) / 180);
+                  ctx.scale(l.scale, l.scale);
+                  
+                  if (l.type === 'text' && l.text) {
+                      ctx.font = `${l.fontWeight || 'bold'} ${l.fontSize}px ${l.fontFamily || 'Inter'}`;
+                      ctx.fillStyle = l.fontColor || 'white';
+                      ctx.textAlign = 'center';
+                      ctx.textBaseline = 'middle';
+                      if (l.textShadow) {
+                          ctx.shadowColor = 'black';
+                          ctx.shadowBlur = 4;
+                          ctx.lineWidth = 3;
+                          ctx.strokeText(l.text, 0, 0);
+                      }
+                      ctx.fillText(l.text, 0, 0);
+                  } else if (l.url) {
+                       let layImg = imageCacheRef.current.get(l.url);
+                       if (!layImg && l.type === 'image') {
+                           layImg = new Image();
+                           layImg.src = l.url;
+                           imageCacheRef.current.set(l.url, layImg);
                        }
-                       if (isPlaying && v.paused) v.play().catch(e=>{});
-                       else if (!isPlaying && !v.paused) v.pause();
-
-                       const aspect = v.videoWidth / v.videoHeight;
-                       const baseW = 400;
-                       const baseH = 400 / aspect;
-                       ctx.drawImage(v, -baseW/2, -baseH/2, baseW, baseH);
-                   }
+                       
+                       if (l.type === 'video') {
+                           const v = getVideoElement(l.url);
+                           if (v.readyState >= 2) {
+                               if (v.paused && isPlaying) v.play();
+                               const asp = v.videoWidth / v.videoHeight;
+                               const baseW = width * 0.3; // arbitrary base size
+                               const baseH = baseW / asp;
+                               ctx.drawImage(v, -baseW/2, -baseH/2, baseW, baseH);
+                           }
+                       } else if (layImg && layImg.complete) {
+                           const asp = layImg.naturalWidth / layImg.naturalHeight;
+                           const baseW = width * 0.3; 
+                           const baseH = baseW / asp;
+                           ctx.drawImage(layImg, -baseW/2, -baseH/2, baseW, baseH);
+                       }
+                  }
+                  ctx.restore();
               }
+          });
+      }
+
+      // Global VFX
+      const gVfx = globalVfxRef.current;
+      if (gVfx) {
+          if (gVfx.filmGrain > 0) drawFilmGrain(ctx, gVfx.filmGrain, width, height);
+          if (gVfx.vignetteIntensity > 0) drawVignette(ctx, gVfx.vignetteIntensity, width, height);
+      }
+      
+      // Particles
+      if (scene.particleEffect) {
+          drawParticles(ctx, scene.particleEffect, width, height, !isPlaying);
+      }
+
+      // Speaker Tag
+      if (showSpeakerTagsRef.current && scene.speaker) {
+           drawSpeakerTag(ctx, scene.speaker, speakerTagStyleRef.current || SpeakerTagStyle.CINEMATIC, width, height);
+      }
+
+      // Subtitles
+      if (showSubtitlesRef.current) {
+          drawSubtitles(ctx, scene.text, subtitleStyleRef.current || SubtitleStyle.MODERN, width, height, progress);
+      }
+
+      // Channel Logo
+      const logo = channelLogoRef.current;
+      if (logo && logo.url) {
+          ctx.save();
+          let lImg = imageCacheRef.current.get(logo.url);
+          if (!lImg) {
+              lImg = new Image();
+              lImg.src = logo.url;
+              imageCacheRef.current.set(logo.url, lImg);
+          }
+          if (lImg.complete) {
+              const lx = logo.x * width;
+              const ly = logo.y * height;
+              const ls = logo.scale * (width * 0.15); 
+              const asp = lImg.naturalWidth / lImg.naturalHeight;
+              
+              ctx.globalAlpha = logo.opacity ?? 1;
+              ctx.translate(lx, ly);
+              ctx.drawImage(lImg, -ls/2, -ls/ (2*asp), ls, ls/asp);
           }
           ctx.restore();
-      });
-
-      ctx.restore(); 
-
-      ctx.filter = 'none';
-
-      if (scene.particleEffect) {
-          drawParticles(ctx, scene.particleEffect, WIDTH, HEIGHT, !isPlaying);
       }
 
-      if (globalVfxRef.current) {
-          if (globalVfxRef.current.vignetteIntensity > 0) drawVignette(ctx, globalVfxRef.current.vignetteIntensity, WIDTH, HEIGHT);
-          if (globalVfxRef.current.filmGrain > 0) drawFilmGrain(ctx, globalVfxRef.current.filmGrain, WIDTH, HEIGHT);
-      }
+  }, [isPlaying]);
 
-      if (channelLogoRef.current) {
-          const logo = channelLogoRef.current;
-          const lImg = imageCacheRef.current.get(logo.url);
-          if (!lImg && !imageCacheRef.current.has(logo.url)) {
-                const i = new Image(); i.src = logo.url; i.onload = () => imageCacheRef.current.set(logo.url, i);
-          }
-          if (lImg) {
-              ctx.save();
-              ctx.globalAlpha = logo.opacity ?? 1;
-              const w = lImg.width * (logo.scale || 0.2);
-              const h = lImg.height * (logo.scale || 0.2);
-              ctx.drawImage(lImg, logo.x * WIDTH, logo.y * HEIGHT, w, h);
-              ctx.restore();
-          }
-      }
-
-      if (showSubtitlesRef.current && scene.text) {
-          drawSubtitles(ctx, scene.text, subtitleStyleRef.current, WIDTH, HEIGHT, progress);
-      }
-  };
-
-  // --- STATIC RENDER EFFECT (REAL-TIME EDIT PREVIEW) ---
-  useEffect(() => {
-      if (isPlaying) return;
-
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return;
-
-      // Ensure dimensions match
-      if (canvas.width !== WIDTH || canvas.height !== HEIGHT) {
-          canvas.width = WIDTH;
-          canvas.height = HEIGHT;
-      }
-
-      const activeProgress = scrubProgressRef.current || 0;
-      const scene = scenes[currentSceneIndex];
-
-      if (scene) {
-          const durationMs = (scene.durationEstimate || 5) * 1000;
-          const simulatedElapsed = activeProgress * durationMs;
-          
-          ctx.clearRect(0, 0, WIDTH, HEIGHT);
-          drawScene(ctx, scene, renderScale, activeProgress, false, simulatedElapsed);
-      }
-  }, [
-      isPlaying,
-      scenes, // Triggers redraw when any layer property changes in EditSceneModal
-      currentSceneIndex,
-      scrubProgress,
-      renderScale,
-      activeFilter,
-      globalVfx,
-      channelLogo,
-      showSubtitles,
-      format
-  ]);
-
+  // --- MAIN RENDER LOOP ---
   useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -1173,31 +965,38 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       canvas.width = WIDTH;
       canvas.height = HEIGHT;
 
+      // Reset state for new playback
       let sceneStartTime = performance.now();
       let currentIdx = currentSceneIndex;
-      let hasStartedAudio = false;
+      let hasStartedAudio = false; 
+      // Track the ID of the scene we've started audio for, to prevent repeats if index jumps around
+      let lastAudioSceneId: string | null = null; 
 
       particlesRef.current = [];
       stopAllSFX();
 
       if (isPlaying) {
-          // If using playlist, playMusicSequence will be called via useEffect dependency or manually
-          // If only bgMusicUrl is present, useEffect handles it as a playlist of 1
-          playMusicSequence(currentMusicIndexRef.current);
-          
+          if (!isMusicPlayingRef.current) playMusicSequence(currentMusicIndexRef.current);
           sceneStartTime = performance.now();
           startTimeRef.current = sceneStartTime;
       } else {
+          stopMusic(0.1);
           if (speechSourceRef.current) { try{speechSourceRef.current.stop();}catch(e){} speechSourceRef.current = null; }
-          if (musicSourceRef.current) { try{musicSourceRef.current.stop();}catch(e){} musicSourceRef.current = null; }
           stopAllSFX();
           hasStartedAudio = false;
           videoCacheRef.current.forEach(v => v.pause());
+          // Render a static frame of current scene
+          const scene = scenesRef.current[currentSceneIndex];
+          if (scene) {
+             const durationMs = (scene.durationEstimate || 5) * 1000;
+             const scrubTime = (scrubProgress || 0) * durationMs;
+             drawScene(ctx, scene, renderScale, scrubProgress || 0, false, scrubTime);
+          }
+          return;
       }
 
-      // ANIMATION LOOP - ONLY RUNS IF PLAYING
       const render = (time: number) => {
-          if (!isPlaying) return; // Exit loop if stopped
+          if (!isPlaying) return;
 
           if (analyserRef.current) analyserRef.current.getByteFrequencyData(audioDataArrayRef.current as any);
 
@@ -1207,29 +1006,41 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           ctx.clearRect(0, 0, WIDTH, HEIGHT);
 
           const scene = scenesRef.current[currentIdx];
+          
           if (!scene) {
+                // End of video
+                if (isRecordingRef.current && mediaRecorderRef.current?.state === 'recording') {
+                    mediaRecorderRef.current.stop();
+                }
                 setIsPlaying(false);
-                setIsExporting(false);
+                if (onPlaybackComplete) onPlaybackComplete();
                 return;
           }
 
+          // DURATION CALCULATION: Priority to audio buffer
           const audioDur = scene.audioBuffer?.duration;
-          const targetDurationSec = scene.durationEstimate > 0 ? scene.durationEstimate : (audioDur || 5);
+          // IMPORTANT: If audio exists, use its duration exactly. If not, use estimate.
+          // Add small padding (0.1s) just to avoid cutting the very last millisecond of audio reverb.
+          const targetDurationSec = audioDur ? audioDur : (scene.durationEstimate || 5);
           
           const durationMs = targetDurationSec * 1000;
           const elapsed = time - sceneStartTime;
+          
+          // Clamp progress to 1.0 to prevent overshooting visual
           const progress = Math.min(elapsed / durationMs, 1.0);
           const elapsedSec = elapsed / 1000;
 
           if (onProgress) onProgress(progress);
 
-          if (!hasStartedAudio && scene.audioBuffer) {
+          // Audio Trigger Logic
+          if (scene.id !== lastAudioSceneId && scene.audioBuffer) {
                 if (scene.audioBuffer instanceof AudioBuffer) {
                     playSpeech(scene.audioBuffer);
-                    hasStartedAudio = true;
+                    lastAudioSceneId = scene.id;
                 }
           }
 
+          // SFX Trigger Logic
           if (scene.audioLayers) {
                 scene.audioLayers.forEach(layer => {
                     const key = `${layer.id}-${currentIdx}`; 
@@ -1243,7 +1054,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           const TRANSITION_DURATION = 1000; 
           const timeRemaining = durationMs - elapsed;
           const nextScene = scenesRef.current[currentIdx + 1];
-          
           const activeTransition = scene.transition || globalTransitionRef.current || VideoTransition.NONE; 
           const inTransitionZone = timeRemaining < TRANSITION_DURATION && nextScene && activeTransition !== VideoTransition.NONE;
 
@@ -1251,26 +1061,14 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                 drawScene(ctx, scene, 1, progress, true, elapsed);
                 const t = 1 - (timeRemaining / TRANSITION_DURATION); 
                 ctx.save();
-                if (activeTransition === VideoTransition.FADE) {
-                    ctx.globalAlpha = t;
-                } else if (activeTransition === VideoTransition.SLIDE) {
-                    const offset = WIDTH * (1 - t);
-                    ctx.translate(offset, 0);
-                } else if (activeTransition === VideoTransition.ZOOM) {
-                    const scale = 0.5 + (0.5 * t);
-                    ctx.translate(WIDTH/2, HEIGHT/2);
-                    ctx.scale(scale, scale);
-                    ctx.translate(-WIDTH/2, -HEIGHT/2);
-                    ctx.globalAlpha = t;
-                } else if (activeTransition === VideoTransition.WIPE) {
-                        ctx.beginPath();
-                        ctx.rect(0, 0, WIDTH * t, HEIGHT);
-                        ctx.clip();
-                }
+                // Transition Drawing Logic...
+                if (activeTransition === VideoTransition.FADE) { ctx.globalAlpha = t; } 
+                else if (activeTransition === VideoTransition.SLIDE) { const offset = WIDTH * (1 - t); ctx.translate(offset, 0); } 
+                else if (activeTransition === VideoTransition.ZOOM) { const scale = 0.5 + (0.5 * t); ctx.translate(WIDTH/2, HEIGHT/2); ctx.scale(scale, scale); ctx.translate(-WIDTH/2, -HEIGHT/2); ctx.globalAlpha = t; } 
+                else if (activeTransition === VideoTransition.WIPE) { ctx.beginPath(); ctx.rect(0, 0, WIDTH * t, HEIGHT); ctx.clip(); }
 
                 drawScene(ctx, nextScene, 1, 0, false, 0);
                 ctx.restore();
-
           } else {
                 drawScene(ctx, scene, 1, progress, true, elapsed);
           }
@@ -1280,24 +1078,28 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
                 setExportProgress(Math.min(Math.round(totalProgress), 99));
           }
 
+          // SCENE SWITCH LOGIC
           if (elapsed >= durationMs) {
                 if (currentIdx < scenesRef.current.length - 1) {
                     currentIdx++;
                     setCurrentSceneIndex(currentIdx);
-                    sceneStartTime = time;
-                    hasStartedAudio = false;
+                    // Reset time base for next scene
+                    sceneStartTime = time; 
                     stopAllSFX(); 
                     particlesRef.current = [];
+                    // Ensure the audio trigger resets for the new scene ID
+                    // lastAudioSceneId will be updated in next frame
                 } else {
-                    if (isRecordingRef.current) {
-                        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-                            mediaRecorderRef.current.stop();
-                        }
+                    // Fully complete
+                    if (isRecordingRef.current && mediaRecorderRef.current?.state === 'recording') {
+                        mediaRecorderRef.current.stop();
                     }
                     setIsPlaying(false);
                     if (onPlaybackComplete) onPlaybackComplete();
+                    return; // Stop RAF
                 }
           }
+          
           rafRef.current = requestAnimationFrame(render);
       };
 
@@ -1311,6 +1113,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       
   }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format, bgMusicPlaylist]); 
 
+  // --- RENDER COMPONENT ---
   return (
     <div 
         ref={containerRef} 

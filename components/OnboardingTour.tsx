@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Language } from '../types';
 import { translations } from '../services/translations';
-import { X, ChevronRight, ChevronLeft, CheckCircle2 } from 'lucide-react';
+import { X, ChevronRight, ChevronLeft } from 'lucide-react';
 
 export interface TourStep {
   targetId: string;
@@ -27,35 +27,53 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
   useEffect(() => {
     if (!isOpen) return;
 
+    const step = steps[currentStep];
+    if (!step) return;
+
+    if (step.onEnter) step.onEnter();
+
+    // Função para calcular a posição
     const updatePosition = () => {
-        const step = steps[currentStep];
-        if (!step) return;
-
-        if (step.onEnter) step.onEnter();
-
-        // Wait a bit for DOM updates (tabs switching)
-        setTimeout(() => {
-            const element = document.getElementById(step.targetId);
-            if (element) {
-                const rect = element.getBoundingClientRect();
-                setCoords({
-                    top: rect.top + window.scrollY,
-                    left: rect.left + window.scrollX,
-                    width: rect.width,
-                    height: rect.height
-                });
-                // Scroll to element
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            } else {
-                // Fallback center if element not found
-                setCoords(null); 
-            }
-        }, 300);
+        const element = document.getElementById(step.targetId);
+        if (element) {
+            const rect = element.getBoundingClientRect();
+            // FIX: Usamos rect.top direto (viewport relative) pois o container pai é 'fixed'.
+            // Não somar window.scrollY aqui.
+            setCoords({
+                top: rect.top,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height
+            });
+        } else {
+            // Se o elemento não existe (ex: aba fechada), centraliza ou esconde
+            setCoords(null); 
+        }
     };
 
+    // 1. Tentar focar no elemento
+    const element = document.getElementById(step.targetId);
+    if (element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    // 2. Atualizar posição imediatamente
     updatePosition();
+
+    // 3. Adicionar listeners para acompanhar o scroll e resize em tempo real
     window.addEventListener('resize', updatePosition);
-    return () => window.removeEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, { capture: true, passive: true });
+
+    // 4. Polling temporário para garantir que a posição atualize durante a animação de scroll suave
+    const intervalId = setInterval(updatePosition, 16); // ~60fps update
+    const timeoutId = setTimeout(() => clearInterval(intervalId), 1000); // Para após 1s (tempo suficiente para o scroll)
+
+    return () => {
+        window.removeEventListener('resize', updatePosition);
+        window.removeEventListener('scroll', updatePosition, { capture: true });
+        clearInterval(intervalId);
+        clearTimeout(timeoutId);
+    };
   }, [currentStep, isOpen, steps]);
 
   const handleNext = () => {
@@ -82,12 +100,16 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
   if (!isOpen) return null;
 
   const step = steps[currentStep];
+  if (!step) return null;
 
   // Tooltip Position Logic
   const getTooltipStyle = () => {
       if (!coords) return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
       
-      const gap = 12;
+      const gap = 16;
+      // Precisamos garantir que o tooltip não saia da tela
+      // Logica simplificada, mas funcional
+      
       let top = 0;
       let left = 0;
       let transform = '';
@@ -117,13 +139,24 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
               return { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
       }
 
+      // Verificação de bordas básica para manter o tooltip na tela
+      const winH = window.innerHeight;
+      const winW = window.innerWidth;
+      
+      // Se estiver muito embaixo, joga pra cima (fallback simples)
+      if (top > winH - 100 && step.position === 'bottom') {
+           top = coords.top - gap;
+           transform = 'translate(-50%, -100%)';
+      }
+
       return { top, left, transform };
   };
 
   return (
     <div className="fixed inset-0 z-[100] overflow-hidden">
        {/* Backdrop with cutout effect */}
-       <div className="absolute inset-0 bg-black/70 transition-all duration-300" style={coords ? {
+       {/* Removido transition-all do backdrop para evitar lag visual enquanto rola a página */}
+       <div className="absolute inset-0 bg-black/70" style={coords ? {
            clipPath: `polygon(
              0% 0%, 0% 100%, 
              ${coords.left}px 100%, 
@@ -139,7 +172,7 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
        {/* Highlight Border */}
        {coords && (
            <div 
-             className="absolute border-4 border-indigo-500 rounded-lg shadow-[0_0_20px_rgba(99,102,241,0.6)] transition-all duration-300 pointer-events-none"
+             className="absolute border-4 border-indigo-500 rounded-lg shadow-[0_0_20px_rgba(99,102,241,0.6)] pointer-events-none"
              style={{
                  top: coords.top,
                  left: coords.left,
@@ -157,10 +190,10 @@ const OnboardingTour: React.FC<OnboardingTourProps> = ({ isOpen, onClose, steps,
            <div className="flex justify-between items-start">
                 <div>
                     <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 tracking-wider uppercase mb-1 block">
-                        {step.translationKey === 'tourWelcome' ? t.tutorial : `${t.tutorial} ${currentStep} / ${steps.length - 1}`}
+                        {step.translationKey === 'tourWelcome' ? t.tutorial : `${t.tutorial} ${currentStep + 1} / ${steps.length}`}
                     </span>
                     <h3 className="text-lg font-bold text-zinc-900 dark:text-white leading-tight">
-                        {translations[lang][step.translationKey]}
+                        {translations[lang][step.translationKey] || step.translationKey}
                     </h3>
                 </div>
                 <button onClick={onClose} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white">

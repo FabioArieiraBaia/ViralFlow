@@ -1,4 +1,5 @@
 
+
 import { GoogleGenAI, Modality } from "@google/genai";
 import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeminiTTSModel, GeneratedScriptItem, ViralMetadataResult, ALL_GEMINI_VOICES } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
@@ -205,7 +206,13 @@ export const generateVideoScript = async (
               Language: ${langName}.
               
               Format: Strictly JSON Array of objects.
-              Objects: { "speaker": "Name", "text": "Dialogue...", "visual_prompt": "Cinematic description...", "cameraMovement": "ZOOM_IN" }.
+              Objects: { 
+                "speaker": "Name", 
+                "gender": "male" | "female",
+                "text": "Dialogue...", 
+                "visual_prompt": "Cinematic description...", 
+                "cameraMovement": "ZOOM_IN" 
+              }.
               Make it detailed, engaging, and suitable for the middle of a movie.
              `;
         } else {
@@ -219,11 +226,13 @@ export const generateVideoScript = async (
               [
                 { 
                   "speaker": "Narrator" or Character Name,
+                  "gender": "male" | "female",
                   "text": "The spoken content...",
                   "visual_prompt": "Detailed image generation prompt for this scene...",
                   "cameraMovement": "ZOOM_IN" | "ZOOM_OUT" | "PAN_LEFT" | "PAN_RIGHT" | "STATIC"
                 }
               ]
+              IMPORTANT: The "gender" field is mandatory for correct voice assignment.
               Do not include markdown code blocks. Just the raw JSON string.
              `;
         }
@@ -284,14 +293,15 @@ export const generateSpeech = async (
         } 
         else {
             // 2. Legacy Fallback Matching
-            if (lowerProfile.includes('puck') || lowerProfile.includes('suave')) voiceName = 'Puck';
+            if (lowerProfile.includes('puck') || lowerProfile.includes('suave')) voiceName = 'Puck'; // Puck is Male
             else if (lowerProfile.includes('charon') || lowerProfile.includes('grave')) voiceName = 'Charon';
             else if (lowerProfile.includes('kore') || lowerProfile.includes('tech')) voiceName = 'Kore';
             else if (lowerProfile.includes('aoede') || lowerProfile.includes('dramática')) voiceName = 'Aoede';
-            else if (lowerProfile.includes('zephyr') || lowerProfile.includes('calmo')) voiceName = 'Zephyr';
+            else if (lowerProfile.includes('zephyr') || lowerProfile.includes('calmo')) voiceName = 'Zephyr'; // Zephyr is Female
+            
             // New fallback checks for common categories if exact match fails
             else if (lowerProfile.includes('narrador') || lowerProfile.includes('male')) voiceName = 'Fenrir';
-            else if (lowerProfile.includes('female')) voiceName = 'Puck';
+            else if (lowerProfile.includes('female')) voiceName = 'Aoede'; // Changed from Puck to Aoede/Kore since Puck is male
         }
 
         const finalContent = stylePrompt ? `(Acting Direction: ${stylePrompt}) ${text}` : text;

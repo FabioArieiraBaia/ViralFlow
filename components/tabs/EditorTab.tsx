@@ -1,13 +1,16 @@
-import React, { useRef, useState } from 'react';
+
+
+import React, { useRef, useState, useEffect } from 'react';
 import VideoPlayer, { VideoPlayerRef } from '../VideoPlayer';
 import { 
   Scene, VideoFormat, VideoFilter, VideoTransition, SubtitleStyle, UserTier, OverlayConfig, 
-  Language, MusicAction, ImageProvider, GeminiModel, PollinationsModel, VFXConfig, SubtitleSettings
+  Language, MusicAction, ImageProvider, GeminiModel, PollinationsModel, VFXConfig, SubtitleSettings, SpeakerTagStyle, ALL_GEMINI_VOICES, GenerationPhase
 } from '../../types';
 import { 
   Palette, Music, Zap, Download, Smartphone, Monitor, Music2, ImagePlus, 
   RefreshCcw, Layers, ImagePlus as ImageIcon, Volume2, Trash2, CheckSquare, 
-  Square as SquareIcon, MicOff, Edit2, Plus, Crown, Lock, Save, Film, ListMusic 
+  Square as SquareIcon, MicOff, Edit2, Plus, Crown, Lock, Save, Film, ListMusic, User, Users,
+  ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, ThumbsUp, X
 } from 'lucide-react';
 import { translations } from '../../services/translations';
 import { Loader2, AlertCircle } from 'lucide-react';
@@ -53,6 +56,12 @@ interface EditorTabProps {
   lang: Language;
   setShowUpgradeModal: (v: boolean) => void;
   
+  // Speaker Tags
+  showSpeakerTags: boolean;
+  setShowSpeakerTags: (v: boolean) => void;
+  speakerTagStyle: SpeakerTagStyle;
+  setSpeakerTagStyle: (v: SpeakerTagStyle) => void;
+  
   // Timeline Actions
   selectedSceneIds: Set<string>;
   handleToggleSelectScene: (id: string) => void;
@@ -62,13 +71,58 @@ interface EditorTabProps {
   handleAddScene: () => void;
   regenerateSceneAsset: (index: number, type: 'image') => void;
   setEditingScene: (s: Scene) => void;
+  
+  // New Approval Flow
+  generationPhase?: GenerationPhase;
+  onApproveScript?: () => void;
 }
 
 export const EditorTab: React.FC<EditorTabProps> = (props) => {
   const t = translations[props.lang];
-  const [activeStudioTab, setActiveStudioTab] = useState<'visual'|'audio'|'brand'|'export'>('visual');
+  const [activeStudioTab, setActiveStudioTab] = useState<'visual'|'audio'|'brand'|'export'|'cast'>('visual');
   const musicInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Stats for Reviewer
+  const totalDuration = props.scenes.reduce((acc, s) => acc + (s.audioBuffer ? s.audioBuffer.duration : s.durationEstimate), 0);
+  const missingAudioCount = props.scenes.filter(s => !s.audioUrl).length;
+  const missingVisualCount = props.scenes.filter(s => !s.imageUrl && !s.videoUrl).length;
+  const isReady = missingAudioCount === 0 && missingVisualCount === 0 && props.scenes.length > 0;
+
+  // Cast Management State
+  const [castList, setCastList] = useState<{original: string, newName: string, voice: string}[]>([]);
+
+  // Initialize Cast List when scenes change
+  useEffect(() => {
+      const uniqueSpeakers = new Set(props.scenes.map(s => s.speaker));
+      const cast = Array.from(uniqueSpeakers).map(speaker => {
+          // Find first occurrence to get current assigned voice
+          const scene = props.scenes.find(s => s.speaker === speaker);
+          return {
+              original: speaker,
+              newName: speaker,
+              voice: scene?.assignedVoice || 'Fenrir'
+          };
+      });
+      setCastList(cast);
+  }, [props.scenes.length]); // Only reset if scene count changes or initial load
+
+  const handleUpdateCast = () => {
+      props.setScenes(prev => prev.map(scene => {
+          const castMember = castList.find(c => c.original === scene.speaker);
+          if (castMember) {
+              return {
+                  ...scene,
+                  speaker: castMember.newName, // Update displayed name
+                  assignedVoice: castMember.voice // Update assigned voice for future regens
+              };
+          }
+          return scene;
+      }));
+      // Update original keys to match new names so subsequent edits work
+      setCastList(prev => prev.map(c => ({...c, original: c.newName})));
+      alert("Elenco atualizado! (Regenere o áudio se mudou a voz)");
+  };
 
   // Handle single or multiple files
   const handleMusicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,6 +191,8 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                         userTier={props.userTier}
                         onPlaybackComplete={() => props.setIsPlaying(false)}
                         channelLogo={props.channelLogo}
+                        showSpeakerTags={props.showSpeakerTags}
+                        speakerTagStyle={props.speakerTagStyle}
                         onUpdateChannelLogo={props.setChannelLogo}
                         onUpdateSceneOverlay={(id, cfg) => {
                             props.setScenes(prev => prev.map(s => s.id === id ? { ...s, overlay: cfg } : s));
@@ -146,22 +202,65 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
             </div>
 
             {/* STUDIO TABS */}
-            <div className="w-full p-6 pt-6">
+            <div className="w-full p-6 pt-6 pb-20 md:pb-6"> {/* Added padding bottom for mobile if approval bar exists */}
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
-                    <div className="flex border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
+                    <div className="flex border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 overflow-x-auto">
                         {[
                             { id: 'visual', label: 'Visual', icon: Palette },
                             { id: 'audio', label: 'Áudio', icon: Music },
+                            { id: 'cast', label: 'Elenco', icon: Users },
                             { id: 'brand', label: 'Brand', icon: Zap },
                             { id: 'export', label: 'Baixar', icon: Download }
                         ].map(tab => (
-                            <button key={tab.id} onClick={() => setActiveStudioTab(tab.id as any)} className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 ${activeStudioTab === tab.id ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
+                            <button key={tab.id} onClick={() => setActiveStudioTab(tab.id as any)} className={`flex-1 min-w-[70px] py-3 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 ${activeStudioTab === tab.id ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
                                 <tab.icon className="w-3 h-3" /> {tab.label}
                             </button>
                         ))}
                     </div>
 
                     <div className="p-5 space-y-5 min-h-[250px]">
+                        
+                        {/* CAST (ELENCO) */}
+                        {activeStudioTab === 'cast' && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
+                                <h4 className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-2"><Users className="w-4 h-4"/> Editar Personagens em Massa</h4>
+                                <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar p-1">
+                                    {castList.map((member, idx) => (
+                                        <div key={idx} className="bg-zinc-50 dark:bg-zinc-950 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 space-y-2">
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[9px] font-bold text-zinc-400 uppercase">Nome (Todas as Cenas)</label>
+                                                <input 
+                                                    value={member.newName} 
+                                                    onChange={(e) => {
+                                                        const newVal = e.target.value;
+                                                        setCastList(prev => prev.map((c, i) => i === idx ? {...c, newName: newVal} : c));
+                                                    }}
+                                                    className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1.5 text-xs font-bold"
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[9px] font-bold text-zinc-400 uppercase">Voz Atribuída</label>
+                                                <select 
+                                                    value={member.voice}
+                                                    onChange={(e) => {
+                                                        const newVal = e.target.value;
+                                                        setCastList(prev => prev.map((c, i) => i === idx ? {...c, voice: newVal} : c));
+                                                    }}
+                                                    className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1.5 text-[10px]"
+                                                >
+                                                    {ALL_GEMINI_VOICES.map(v => (
+                                                        <option key={v.id} value={v.id}>{v.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={handleUpdateCast} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md transition-colors">Aplicar Mudanças</button>
+                                <p className="text-[9px] text-zinc-400 text-center">Nota: Mudar o nome não afeta áudio. Mudar a voz requer "Regenerar Tudo".</p>
+                            </div>
+                        )}
+
                         {/* VISUAL */}
                         {activeStudioTab === 'visual' && (
                             <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
@@ -186,6 +285,23 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                                         </select>
                                     </div>
                                 </div>
+                                
+                                {/* Speaker Tag Control */}
+                                <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1"><User className="w-3 h-3"/> {t.showSpeaker}</label>
+                                        <button onClick={() => props.setShowSpeakerTags(!props.showSpeakerTags)} className={`w-8 h-4 rounded-full transition-colors relative ${props.showSpeakerTags ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'}`}><div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${props.showSpeakerTags ? 'translate-x-4' : 'translate-x-0'}`}></div></button>
+                                    </div>
+                                    {props.showSpeakerTags && (
+                                        <div className="animate-in slide-in-from-top-2">
+                                            <label className="text-[9px] font-bold text-zinc-400 mb-1 block">{t.speakerStyle}</label>
+                                            <select value={props.speakerTagStyle} onChange={(e) => props.setSpeakerTagStyle(e.target.value as SpeakerTagStyle)} className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs">
+                                                {Object.values(SpeakerTagStyle).map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+
                                 <div>
                                     <div className="flex items-center justify-between mb-2">
                                         <label className="text-[10px] font-bold text-zinc-500 uppercase">Legendas Globais</label>
@@ -330,6 +446,39 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                         {/* EXPORT */}
                         {activeStudioTab === 'export' && (
                             <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
+                                
+                                {/* REVISOR FINAL */}
+                                <div className={`p-4 rounded-xl border ${isReady ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800' : 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800'} space-y-3`}>
+                                    <div className="flex items-center gap-2 border-b border-black/5 dark:border-white/5 pb-2">
+                                        <ClipboardCheck className={`w-4 h-4 ${isReady ? 'text-emerald-600' : 'text-amber-600'}`} />
+                                        <h4 className={`text-xs font-bold uppercase ${isReady ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>Revisor Final de Qualidade</h4>
+                                    </div>
+                                    <ul className="space-y-1">
+                                        <li className="flex items-center justify-between text-xs">
+                                            <span className="text-zinc-600 dark:text-zinc-400">Total de Cenas:</span>
+                                            <span className="font-bold">{props.scenes.length}</span>
+                                        </li>
+                                        <li className="flex items-center justify-between text-xs">
+                                            <span className="text-zinc-600 dark:text-zinc-400">Duração Estimada:</span>
+                                            <span className="font-bold">{totalDuration.toFixed(1)}s</span>
+                                        </li>
+                                        <li className="flex items-center justify-between text-xs">
+                                            <span className="text-zinc-600 dark:text-zinc-400">Status do Áudio:</span>
+                                            <span className={`font-bold flex items-center gap-1 ${missingAudioCount === 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                {missingAudioCount === 0 ? <CheckCircle2 className="w-3 h-3"/> : <AlertTriangle className="w-3 h-3"/>}
+                                                {missingAudioCount === 0 ? "Completo" : `${missingAudioCount} faltando`}
+                                            </span>
+                                        </li>
+                                        <li className="flex items-center justify-between text-xs">
+                                            <span className="text-zinc-600 dark:text-zinc-400">Status Visual:</span>
+                                            <span className={`font-bold flex items-center gap-1 ${missingVisualCount === 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                {missingVisualCount === 0 ? <CheckCircle2 className="w-3 h-3"/> : <AlertTriangle className="w-3 h-3"/>}
+                                                {missingVisualCount === 0 ? "Completo" : `${missingVisualCount} faltando`}
+                                            </span>
+                                        </li>
+                                    </ul>
+                                </div>
+
                                 <button onClick={() => props.playerRef.current?.startRecording(false)} disabled={props.isGenerating || props.isPlaying || props.isReviewing} className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold transition-all text-sm disabled:opacity-50 shadow-lg"><Download className="w-5 h-5" /> Exportar HD (720p)</button>
                                 <button onClick={() => { if(props.userTier === UserTier.FREE) { props.setShowUpgradeModal(true); } else { props.playerRef.current?.startRecording(true); } }} disabled={props.isGenerating || props.isPlaying || props.isReviewing} className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-black font-bold transition-all text-sm relative overflow-hidden group disabled:opacity-50 shadow-lg hover:shadow-amber-500/20"><Crown className="w-5 h-5" /> Exportar 4K Ultra HD {props.userTier === UserTier.FREE && ( <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity"><Lock className="w-5 h-5 text-white" /></div> )}</button>
                                 <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
@@ -399,6 +548,31 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
                 <button onClick={props.handleAddScene} className="w-full py-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl flex items-center justify-center gap-2 text-zinc-400 hover:text-indigo-500 hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all group"><Plus className="w-6 h-6 group-hover:scale-110 transition-transform" /><span className="font-bold text-sm">Adicionar Nova Cena</span></button>
             </div>
         </div>
+
+        {/* --- APPROVAL BAR (Sticky Footer) --- */}
+        {props.generationPhase === 'script_approval' && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-500 w-[90%] max-w-2xl">
+                <div className="bg-zinc-900/90 backdrop-blur-md border border-indigo-500/50 shadow-2xl rounded-2xl p-4 flex flex-col md:flex-row items-center gap-4">
+                    <div className="flex-1 text-center md:text-left">
+                        <h3 className="text-white font-bold text-lg flex items-center justify-center md:justify-start gap-2">
+                            <CheckCircle2 className="w-5 h-5 text-indigo-400" /> Aprovação do Roteiro
+                        </h3>
+                        <p className="text-zinc-400 text-xs mt-1">
+                            Revise o texto de cada cena acima. Você pode editar clicando no ícone de lápis (<Edit2 className="w-3 h-3 inline"/>).
+                            <br/>Quando estiver pronto, clique em Aprovar para gerar as vozes.
+                        </p>
+                    </div>
+                    <div className="flex gap-2 w-full md:w-auto">
+                        <button 
+                            onClick={props.onApproveScript}
+                            className="flex-1 md:flex-none px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 transition-transform hover:scale-105"
+                        >
+                            <ThumbsUp className="w-4 h-4" /> Aprovar e Gerar Áudio
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 };

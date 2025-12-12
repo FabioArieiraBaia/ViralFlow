@@ -1,5 +1,4 @@
 
-
 import { Language } from "../types";
 
 type Translations = {
@@ -116,7 +115,7 @@ export const translations: Translations = {
         dragToMove: "Arraste para mover, Scroll para redimensionar",
         resetPos: "Resetar Posição",
         transitions: "Transiciones (VFX)",
-        transitionType: "Tipo de Transição",
+        transitionType: "Tipo de Transición",
         globalTrans: "Transição Global",
         sceneTrans: "Transição desta Cena",
         autoTrans: "🤖 IA Auto",
@@ -128,7 +127,15 @@ export const translations: Translations = {
         copy: "Copiar",
         copied: "Copiado!",
         providerNone: "⛔ Apenas Roteiro (Sem Imagem)",
-        providerNoneSub: "Rápido / Placeholder / Manual"
+        providerNoneSub: "Rápido / Placeholder / Manual",
+        showSpeaker: "Exibir Nome do Personagem",
+        speakerStyle: "Estilo da Tag",
+        // Tour Translations
+        tutorial: "Tutorial",
+        next: "Próximo",
+        finish: "Concluir",
+        dontShowAgain: "Não mostrar novamente",
+        tourWelcome: "Bem-vindo ao Tour!"
     },
     en: {
         welcomeTitle: "Welcome to ViralFlow AI",
@@ -249,7 +256,15 @@ export const translations: Translations = {
         copy: "Copy",
         copied: "Copied!",
         providerNone: "⛔ Script & Audio Only",
-        providerNoneSub: "Fast / Placeholder / Manual"
+        providerNoneSub: "Fast / Placeholder / Manual",
+        showSpeaker: "Show Speaker Name",
+        speakerStyle: "Tag Style",
+        // Tour Translations
+        tutorial: "Tutorial",
+        next: "Next",
+        finish: "Finish",
+        dontShowAgain: "Don't show again",
+        tourWelcome: "Welcome to the Tour!"
     },
     es: {
         welcomeTitle: "Bienvenido a ViralFlow AI",
@@ -370,6 +385,14 @@ export const translations: Translations = {
         copy: "Copiar",
         copied: "¡Copiado!",
         providerNone: "⛔ Solo Guion (Sin Imagen)",
-        providerNoneSub: "Rápido / Placeholder / Manual"
+        providerNoneSub: "Rápido / Placeholder / Manual",
+        showSpeaker: "Mostrar Nombre del Personaje",
+        speakerStyle: "Estilo de la Etiqueta",
+        // Tour Translations
+        tutorial: "Tutorial",
+        next: "Siguiente",
+        finish: "Finalizar",
+        dontShowAgain: "No mostrar de nuevo",
+        tourWelcome: "¡Bienvenido al Tour!"
     }
 };

@@ -1,4 +1,5 @@
 
+
 // Shared AudioContext to prevent "max number of hardware contexts reached" error
 let sharedAudioContext: AudioContext | null = null;
 
@@ -16,10 +17,27 @@ export function getAudioContext(): AudioContext {
   return sharedAudioContext;
 }
 
+// Converts File object to Base64 string
+export function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // Remove data URL prefix (e.g., "data:image/png;base64,") to get raw base64
+      const base64 = result.split(',')[1];
+      resolve(base64);
+    };
+    reader.onerror = error => reject(error);
+    reader.readAsDataURL(file);
+  });
+}
+
 // Decodes base64 string to raw bytes
 export function decodeBase64(base64: string): Uint8Array {
   try {
-    const binaryString = atob(base64);
+    // If it has a prefix like data:audio/wav;base64, strip it
+    const cleanBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+    const binaryString = atob(cleanBase64);
     const len = binaryString.length;
     const bytes = new Uint8Array(len);
     for (let i = 0; i < len; i++) {
@@ -35,7 +53,9 @@ export function decodeBase64(base64: string): Uint8Array {
 // Helper to convert Base64 Image to Blob URL (Much lighter on RAM than large Base64 strings)
 export function base64ToBlobUrl(base64: string, mimeType: string = 'image/png'): string {
   try {
-      const byteCharacters = atob(base64);
+      // Clean prefix if exists
+      const cleanBase64 = base64.includes(',') ? base64.split(',')[1] : base64;
+      const byteCharacters = atob(cleanBase64);
       const byteNumbers = new Array(byteCharacters.length);
       for (let i = 0; i < byteCharacters.length; i++) {
         byteNumbers[i] = byteCharacters.charCodeAt(i);
