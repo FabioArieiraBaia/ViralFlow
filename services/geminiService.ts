@@ -1,5 +1,3 @@
-
-
 import { GoogleGenAI, Modality } from "@google/genai";
 import { VideoStyle, VideoPacing, VideoFormat, VideoMetadata, ImageProvider, Language, PollinationsModel, GeminiModel, GeminiTTSModel, GeneratedScriptItem, ViralMetadataResult, ALL_GEMINI_VOICES } from "../types";
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from "./audioUtils";
@@ -181,6 +179,58 @@ function cleanPrompt(prompt: string): string {
 
 // --- GENERATION FUNCTIONS ---
 
+export interface Chapter {
+    title: string;
+    summary: string;
+}
+
+// AGENT 1: ARCHITECT (Creates the Outline)
+export const generateMovieOutline = async (
+    topic: string, 
+    channelName: string, 
+    lang: Language, 
+    checkCancelled: () => boolean
+): Promise<Chapter[]> => {
+    return withRetry(async (ai) => {
+        const langName = lang === 'pt' ? 'Portuguese' : lang === 'es' ? 'Spanish' : 'English';
+        
+        // This prompts the "Architect Agent" to structure a long-form video
+        const prompt = `
+            Act as a Senior Movie Director and Screenwriter.
+            Task: Create a detailed chapter outline for a long-form documentary/movie about: "${topic}".
+            Channel Name: ${channelName}.
+            Language: ${langName}.
+            
+            Structure requirements:
+            - Create between 8 to 15 chapters (depending on topic depth).
+            - Ensure a narrative arc (Introduction, Rising Action, Climax, Conclusion).
+            
+            Output strictly JSON:
+            {
+                "chapters": [
+                    { "title": "Chapter 1: The Beginning", "summary": "Detailed summary of what happens in this chapter..." },
+                    { "title": "Chapter 2: ...", "summary": "..." }
+                ]
+            }
+        `;
+
+        const response = await generateWithFallback(ai, 'gemini-2.5-flash', {
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        }, 'gemini-1.5-flash');
+
+        const text = response.text || '{"chapters": []}';
+        try {
+            const json = JSON.parse(text);
+            return json.chapters || [];
+        } catch (e) {
+            console.error("Outline parsing failed", text);
+            return [];
+        }
+    }, checkCancelled);
+};
+
+// AGENT 2: SCREENWRITER (Writes one chapter at a time)
 export const generateVideoScript = async (
     topic: string, 
     style: VideoStyle, 
@@ -189,7 +239,12 @@ export const generateVideoScript = async (
     channelName: string,
     lang: Language,
     checkCancelled: () => boolean,
-    chapterContext?: { currentChapter: string, prevChapter: string, chapterIndex: number, totalChapters: number }
+    chapterContext?: { 
+        currentChapterTitle: string, 
+        currentChapterSummary: string,
+        chapterIndex: number, 
+        totalChapters: number 
+    }
 ): Promise<GeneratedScriptItem[]> => {
     return withRetry(async (ai) => {
         const langName = lang === 'pt' ? 'Portuguese' : lang === 'es' ? 'Spanish' : 'English';
@@ -198,24 +253,35 @@ export const generateVideoScript = async (
         let prompt = "";
         
         if (isMovieMode) {
+             // MOVIE MODE PROMPT (Focus on depth and quantity for ONE chapter)
              prompt = `
-              You are a professional screenwriter for a ${style} movie. 
-              Write the script for Chapter ${chapterContext.chapterIndex + 1}/${chapterContext.totalChapters}: "${chapterContext.currentChapter}".
-              Context from previous chapter: "${chapterContext.prevChapter}".
-              Channel: ${channelName}.
+              You are a Screenwriter Agent working on Chapter ${chapterContext.chapterIndex + 1} of ${chapterContext.totalChapters}.
+              Movie Topic: "${topic}".
+              Current Chapter Title: "${chapterContext.currentChapterTitle}".
+              Chapter Summary: "${chapterContext.currentChapterSummary}".
+              Style: ${style}. 
               Language: ${langName}.
               
-              Format: Strictly JSON Array of objects.
-              Objects: { 
-                "speaker": "Name", 
-                "gender": "male" | "female",
-                "text": "Dialogue...", 
-                "visual_prompt": "Cinematic description...", 
-                "cameraMovement": "ZOOM_IN" 
-              }.
-              Make it detailed, engaging, and suitable for the middle of a movie.
+              Task: Write the full script for THIS CHAPTER ONLY.
+              REQUIREMENTS:
+              - Generate between 20 to 30 scenes for this chapter alone.
+              - The script must flow naturally from the summary.
+              - Be detailed and cinematic.
+              
+              Output strictly a JSON Array of objects with this schema:
+              [
+                { 
+                  "speaker": "Narrator" or Character Name,
+                  "gender": "male" | "female",
+                  "text": "The spoken content (approx 2-3 sentences per scene)...",
+                  "visual_prompt": "Highly detailed image generation prompt describing the scene...",
+                  "cameraMovement": "ZOOM_IN" | "ZOOM_OUT" | "PAN_LEFT" | "PAN_RIGHT" | "STATIC" | "HANDHELD"
+                },
+                ... (repeat for 20-30 scenes)
+              ]
              `;
         } else {
+             // STANDARD MODE PROMPT (Single pass)
              prompt = `
               Create a viral video script about "${topic}".
               Style: ${style}. Pacing: ${pacing}. Channel: ${channelName}.
@@ -233,7 +299,7 @@ export const generateVideoScript = async (
                 }
               ]
               IMPORTANT: The "gender" field is mandatory for correct voice assignment.
-              Do not include markdown code blocks. Just the raw JSON string.
+              Generate enough scenes to fill ${durationMinutes} minutes (approx 6-8 scenes per minute).
              `;
         }
 
@@ -250,23 +316,6 @@ export const generateVideoScript = async (
             const clean = text.replace(/```json/g, '').replace(/```/g, '');
             return JSON.parse(clean);
         }
-    }, checkCancelled);
-};
-
-export const generateMovieOutline = async (topic: string, channelName: string, lang: Language, checkCancelled: () => boolean): Promise<{ chapters: string[] }> => {
-    return withRetry(async (ai) => {
-        const langName = lang === 'pt' ? 'Portuguese' : lang === 'es' ? 'Spanish' : 'English';
-        const prompt = `
-            Create a movie outline for a documentary/film about "${topic}".
-            Language: ${langName}.
-            Output JSON: { "chapters": ["Chapter 1 Title", "Chapter 2 Title", ... up to 8 chapters] }
-        `;
-        const response = await generateWithFallback(ai, 'gemini-2.5-flash', {
-            contents: prompt,
-            config: { responseMimeType: "application/json" }
-        }, 'gemini-1.5-flash');
-
-        return JSON.parse(response.text || '{"chapters": []}');
     }, checkCancelled);
 };
 

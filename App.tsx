@@ -16,7 +16,7 @@ import VideoPlayer, { VideoPlayerRef } from './components/VideoPlayer';
 import { 
   initKeys, getManualKeys, saveManualKeys, getApiKeyCount, 
   getPexelsKey, savePexelsKey, getPollinationsToken, savePollinationsToken,
-  generateVideoScript, generateSpeech, generateSceneImage, generateMetadata, generateThumbnails, generateVisualVariations
+  generateVideoScript, generateMovieOutline, generateSpeech, generateSceneImage, generateMetadata, generateThumbnails, generateVisualVariations
 } from './services/geminiService';
 import { decodeBase64, decodeAudioData, audioBufferToWav, base64ToBlobUrl } from './services/audioUtils';
 import { triggerBrowserDownload } from './services/fileSystem';
@@ -29,6 +29,17 @@ const calculateShotCount = (duration: number, intensity: VisualIntensity): numbe
         case VisualIntensity.MEDIUM: return Math.max(1, Math.ceil(duration / 5)); // A cada 5s
         case VisualIntensity.HIGH: return Math.max(1, Math.ceil(duration / 2.5)); // A cada 2.5s
         case VisualIntensity.HYPER: return Math.max(1, Math.ceil(duration / 1.5)); // A cada 1.5s
+        default: return 1;
+    }
+};
+
+// Helper to convert Duration Enum to Minutes Number
+const getDurationInMinutes = (d: VideoDuration): number => {
+    switch (d) {
+        case VideoDuration.SHORT: return 1; // ~60s
+        case VideoDuration.MEDIUM: return 4; // ~4 min
+        case VideoDuration.LONG: return 12; // ~12 min
+        case VideoDuration.MOVIE: return 25; // ~25 min (Force High Scene Count)
         default: return 1;
     }
 };
@@ -198,15 +209,56 @@ const App: React.FC = () => {
         e.target.value = '';
     };
 
-  // --- PHASE 1: SCRIPT GENERATION ---
+  // --- PHASE 1: SCRIPT GENERATION (AGENT PIPELINE) ---
   const handleGenerateScript = async () => {
     setGenerationPhase('scripting');
     setProgress(translations[lang].initializing);
+    
     try {
-        setProgress(translations[lang].writingScript);
-        
-        // 1. Script
-        const scriptItems = await generateVideoScript(topic, style, 1, pacing, channelName, contentLang, () => false); // Disable cancel check for stability
+        let scriptItems: any[] = [];
+
+        // MOVIE MODE: AGENT PIPELINE
+        if (duration === VideoDuration.MOVIE) {
+            setProgress("🤖 Agente Arquiteto: Criando Outline do Filme...");
+            
+            // 1. Generate Chapter Outline (Architect Agent)
+            const chapters = await generateMovieOutline(topic, channelName, contentLang, () => false);
+            
+            if (!chapters || chapters.length === 0) throw new Error("Falha ao gerar outline do filme.");
+
+            // 2. Loop through chapters (Screenwriter Agent)
+            for (let i = 0; i < chapters.length; i++) {
+                const chapter = chapters[i];
+                setProgress(`✍️ Agente Roteirista: Escrevendo Capítulo ${i + 1}/${chapters.length} - "${chapter.title}"...`);
+                
+                // Add delay to avoid immediate rate limits
+                await delay(1000);
+
+                const chapterScenes = await generateVideoScript(
+                    topic, 
+                    style, 
+                    0, // Ignored in movie mode logic
+                    pacing, 
+                    channelName, 
+                    contentLang, 
+                    () => false,
+                    {
+                        currentChapterTitle: chapter.title,
+                        currentChapterSummary: chapter.summary,
+                        chapterIndex: i,
+                        totalChapters: chapters.length
+                    }
+                );
+                
+                scriptItems = [...scriptItems, ...chapterScenes];
+            }
+
+        } else {
+            // STANDARD MODE: Single Pass
+            setProgress(translations[lang].writingScript);
+            const durationMins = getDurationInMinutes(duration);
+            scriptItems = await generateVideoScript(topic, style, durationMins, pacing, channelName, contentLang, () => false);
+        }
         
         // Filter Voices based on Gender for Auto Casting
         const maleVoices = ALL_GEMINI_VOICES.filter(v => v.gender === 'male');
@@ -215,7 +267,7 @@ const App: React.FC = () => {
         // Character Cache to ensure consistency across scenes
         const characterVoiceMap: Record<string, string> = {};
 
-        // 2. Setup Scenes (INITIAL STATE)
+        // 3. Setup Scenes (INITIAL STATE)
         const newScenes: Scene[] = scriptItems.map((item, idx) => {
             let assignedVoice = 'Fenrir'; // Fallback Default
 
@@ -266,7 +318,8 @@ const App: React.FC = () => {
         setActiveTab('preview');
 
     } catch (e) { 
-        alert((e as any).message); 
+        console.error(e);
+        alert("Erro na geração do roteiro: " + (e as any).message); 
         setGenerationPhase('idle');
     }
   };
@@ -358,7 +411,7 @@ const App: React.FC = () => {
                 }
 
                 // Generate images for all prompts (Sequential internal loop to be safe)
-                const images = [];
+                const images: { imageUrl: string; mediaType: 'image' | 'video'; base64?: string; videoUrl?: string }[] = [];
                 for (let k = 0; k < prompts.length; k++) {
                     if (k > 0) await delay(1000); // Wait between variations too
                     const p = prompts[k];
