@@ -1,7 +1,7 @@
 
 
 export type Language = 'pt' | 'en' | 'es';
-export type Theme = 'light' | 'dark';
+export type Theme = 'dark' | 'clean' | 'creator';
 
 // POLLINATIONS MODELS
 // Public: Image models

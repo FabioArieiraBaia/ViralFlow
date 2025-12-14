@@ -146,9 +146,21 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (theme === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
+    // Remove all theme classes first
+    document.documentElement.classList.remove('dark', 'clean', 'creator');
+    // Add the current theme class
+    document.documentElement.classList.add(theme);
+    // Save to localStorage
+    localStorage.setItem('viralflow_theme', theme);
   }, [theme]);
+
+  // Load saved theme on mount
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('viralflow_theme') as Theme | null;
+    if (savedTheme && ['dark', 'clean', 'creator'].includes(savedTheme)) {
+      setTheme(savedTheme);
+    }
+  }, []);
 
   const handleImportScript = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];

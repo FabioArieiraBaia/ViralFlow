@@ -1,10 +1,9 @@
 
-
-import React from 'react';
+import React, { useState } from 'react';
 import { 
-  Globe, Smartphone, Monitor, Youtube, Lock, AlertCircle, CheckCircle2, 
-  Loader2, Wand2, FolderOpen, TriangleAlert, Clapperboard, ChevronRight, Edit2, Zap, Mic,
-  Video, Image, Save, Play
+  Globe, Smartphone, Monitor, Youtube, Lock, CheckCircle2, 
+  Loader2, Wand2, FolderOpen, Clapperboard, Edit2, Zap, Mic,
+  Image, Save, ChevronDown, Sparkles, Clock, Palette, Layers
 } from 'lucide-react';
 import { Language, VideoStyle, VideoPacing, VideoDuration, VideoFormat, ImageProvider, UserTier, VideoTransition, VisualIntensity, GeminiTTSModel, PollinationsModel, ALL_GEMINI_VOICES, GenerationPhase } from '../../types';
 import { translations } from '../../services/translations';
@@ -45,17 +44,13 @@ interface CreateTabProps {
   setActiveTab: (v: any) => void;
   importClick: () => void;
   handleCreateManualProject: () => void;
-  // NEW TTS PROPS
   ttsModel: GeminiTTSModel;
   setTtsModel: (v: GeminiTTSModel) => void;
   globalTtsStyle: string;
   setGlobalTtsStyle: (v: string) => void;
-  // Pollinations Model State
   pollinationsModel?: PollinationsModel;
   setPollinationsModel?: (v: PollinationsModel) => void;
   isAdmin?: boolean;
-  
-  // NEW SEQUENTIAL FLOW PROPS
   generationPhase: GenerationPhase;
   runVisualPhase: () => void;
   handleExportScript: () => void;
@@ -65,448 +60,419 @@ export const CreateTab: React.FC<CreateTabProps> = ({
   lang, topic, setTopic, contentLang, setContentLang, style, setStyle,
   pacing, setPacing, visualIntensity, setVisualIntensity, format, setFormat, duration, setDuration,
   channelName, setChannelName, voice, setVoice, customVoice, setCustomVoice,
-  imageProvider, setImageProvider, globalTransition, setGlobalTransition,
+  imageProvider, setImageProvider,
   userTier, isGenerating, progress, handleGenerateVideo, setShowUpgradeModal,
-  setActiveTab, importClick, handleCreateManualProject,
+  importClick, handleCreateManualProject,
   ttsModel, setTtsModel, globalTtsStyle, setGlobalTtsStyle,
-  pollinationsModel, setPollinationsModel, isAdmin,
+  pollinationsModel, setPollinationsModel,
   generationPhase, runVisualPhase, handleExportScript
 }) => {
   const t = translations[lang];
-
-  // If props are missing, use local state fallback
-  const [localPollinationsModel, setLocalPollinationsModel] = React.useState<PollinationsModel>('flux');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [localPollinationsModel, setLocalPollinationsModel] = useState<PollinationsModel>('flux');
   const activeModel = pollinationsModel || localPollinationsModel;
   const setActiveModel = setPollinationsModel || setLocalPollinationsModel;
 
   return (
-    <div className="flex-1 overflow-y-auto custom-scrollbar p-8 animate-in fade-in duration-500">
-      <div className="max-w-4xl mx-auto space-y-8">
-        
+    <div className="flex-1 overflow-y-auto hide-scrollbar">
+      {/* Generation Modal */}
+      {(isGenerating || generationPhase === 'ready_for_visuals') && generationPhase !== 'script_approval' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.9)', backdropFilter: 'blur(20px)' }}>
+          <div className="card gradient-border max-w-md w-full p-8 text-center space-y-6">
+            {(generationPhase === 'scripting' || generationPhase === 'audio_processing') && (
+              <div className="space-y-4">
+                <div className="mx-auto w-20 h-20 relative">
+                  <div className="absolute inset-0 rounded-full animate-spin" style={{ border: '3px solid var(--accent)', borderTopColor: 'transparent' }} />
+                  <Mic className="absolute inset-0 m-auto w-8 h-8 animate-pulse" style={{ color: 'var(--accent)' }} />
+                </div>
+                <h3 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t.creatingScriptVoices}</h3>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{progress}</p>
+                <div className="h-1 rounded-full overflow-hidden" style={{ background: 'var(--bg-muted)' }}>
+                  <div className="h-full w-1/2 animate-pulse rounded-full" style={{ background: 'var(--accent)' }} />
+                </div>
+              </div>
+            )}
+
+            {generationPhase === 'ready_for_visuals' && (
+              <div className="space-y-6 animate-in zoom-in duration-300">
+                <div className="mx-auto w-20 h-20 rounded-full flex items-center justify-center" style={{ background: 'rgba(16, 185, 129, 0.2)', border: '2px solid #10b981' }}>
+                  <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>{t.audiosGenerated}</h3>
+                  <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{t.scriptVoicesReady}</p>
+                </div>
+                <div className="flex flex-col gap-3">
+                  <button onClick={runVisualPhase} className="btn-primary py-4 flex items-center justify-center gap-2 touch-target">
+                    <Image className="w-5 h-5" /> {t.generateImages}
+                  </button>
+                  <button onClick={handleExportScript} className="btn-secondary py-3 flex items-center justify-center gap-2 touch-target">
+                    <Save className="w-4 h-4" /> {t.saveProjectBackup}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {generationPhase === 'visual_processing' && (
+              <div className="space-y-4">
+                <div className="mx-auto w-20 h-20 relative">
+                  <div className="absolute inset-0 rounded-full animate-spin" style={{ border: '3px solid #ec4899', borderTopColor: 'transparent' }} />
+                  <Image className="absolute inset-0 m-auto w-8 h-8 animate-pulse text-pink-400" />
+                </div>
+                <h3 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t.generatingVisuals}</h3>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{progress}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-5xl mx-auto px-4 md:px-8 py-6 md:py-10 space-y-8">
         {/* Hero Section */}
-        <div className="flex justify-between items-center py-8">
-            <div className="text-left space-y-4">
-            <h2 className="text-4xl font-black text-zinc-900 dark:text-white tracking-tight">{t.whatCreate}</h2>
-            <p className="text-zinc-500 dark:text-zinc-400 text-lg">{t.appDesc}</p>
+        <div className="relative text-center py-8 md:py-12">
+          <div className="absolute inset-0 flex items-center justify-center opacity-20 pointer-events-none">
+            <div className="reactor">
+              <div className="reactor-ring" />
+              <div className="reactor-ring" />
+              <div className="reactor-ring" />
+              <div className="reactor-core" />
             </div>
-            <button onClick={importClick} className="px-4 py-2 rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 text-sm font-bold transition-colors flex items-center gap-2">
-                <FolderOpen className="w-4 h-4" /> Carregar JSON
-            </button>
+          </div>
+          
+          <div className="relative z-10 space-y-4">
+            <h1 className="text-3xl md:text-5xl font-black tracking-tight" style={{ color: 'var(--text-primary)' }}>
+              {t.heroTagline} <span className="text-gradient">✨</span>
+            </h1>
+            <p className="text-base md:text-lg max-w-xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
+              {t.heroSubtitle}
+            </p>
+          </div>
         </div>
 
-        {/* --- SEQUENTIAL GENERATION FEEDBACK UI --- */}
-        {(isGenerating || generationPhase === 'ready_for_visuals') && generationPhase !== 'script_approval' && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-6">
-                <div className="bg-zinc-900 border border-zinc-700 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center space-y-6">
-                    
-                    {/* AUDIO / SCRIPT PHASE */}
-                    {(generationPhase === 'scripting' || generationPhase === 'audio_processing') && (
-                        <div className="space-y-4">
-                            <div className="mx-auto w-16 h-16 relative">
-                                <div className="absolute inset-0 border-4 border-indigo-500/30 rounded-full"></div>
-                                <div className="absolute inset-0 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                                <Mic className="absolute inset-0 m-auto w-6 h-6 text-indigo-400 animate-pulse" />
-                            </div>
-                            <h3 className="text-xl font-bold text-white">Criando Roteiro & Vozes</h3>
-                            <p className="text-zinc-400 text-sm">{progress}</p>
-                            <div className="w-full bg-zinc-800 h-2 rounded-full overflow-hidden">
-                                <div className="h-full bg-indigo-500 animate-pulse w-full origin-left scale-x-50 transition-transform"></div>
-                            </div>
-                            <p className="text-[10px] text-zinc-500">Respeitando limite de API (1s delay)...</p>
-                        </div>
-                    )}
-
-                    {/* READY FOR VISUALS (CHECKPOINT) */}
-                    {generationPhase === 'ready_for_visuals' && (
-                        <div className="space-y-6 animate-in zoom-in duration-300">
-                            <div className="mx-auto w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center border border-emerald-500">
-                                <CheckCircle2 className="w-8 h-8 text-emerald-500" />
-                            </div>
-                            <div>
-                                <h3 className="text-2xl font-bold text-white mb-2">Áudios Gerados!</h3>
-                                <p className="text-zinc-400 text-sm">O roteiro e as vozes estão prontos. Você pode salvar o projeto agora (backup) ou continuar para gerar as imagens.</p>
-                            </div>
-                            
-                            <div className="flex flex-col gap-3">
-                                <button 
-                                    onClick={runVisualPhase} 
-                                    className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 transform hover:scale-[1.02] transition-all"
-                                >
-                                    <Image className="w-5 h-5" /> Gerar Imagens (Cena 1 em diante)
-                                </button>
-                                <button 
-                                    onClick={handleExportScript} 
-                                    className="w-full py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold rounded-xl flex items-center justify-center gap-2"
-                                >
-                                    <Save className="w-4 h-4" /> Salvar Projeto JSON (Backup)
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* VISUAL PHASE */}
-                    {generationPhase === 'visual_processing' && (
-                        <div className="space-y-4">
-                            <div className="mx-auto w-16 h-16 relative">
-                                <div className="absolute inset-0 border-4 border-pink-500/30 rounded-full"></div>
-                                <div className="absolute inset-0 border-4 border-pink-500 border-t-transparent rounded-full animate-spin"></div>
-                                <Image className="absolute inset-0 m-auto w-6 h-6 text-pink-400 animate-pulse" />
-                            </div>
-                            <h3 className="text-xl font-bold text-white">Gerando Visuais</h3>
-                            <p className="text-zinc-400 text-sm">{progress}</p>
-                            <p className="text-[10px] text-zinc-500">Renderizando cenas sequencialmente (2s delay)...</p>
-                        </div>
-                    )}
-
-                </div>
-            </div>
-        )}
-
-        {/* Quick Actions (Cards) */}
+        {/* Quick Actions */}
         {!isGenerating && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                 <div className="group cursor-pointer bg-white dark:bg-zinc-900 border-2 border-indigo-500/20 hover:border-indigo-500 p-6 rounded-2xl shadow-sm hover:shadow-xl transition-all flex flex-col items-center text-center space-y-3 relative overflow-hidden">
-                    <Wand2 className="w-8 h-8 text-indigo-500 mb-2 group-hover:scale-110 transition-transform"/>
-                    <h3 className="text-lg font-bold text-zinc-900 dark:text-white">Criar com IA</h3>
-                    <p className="text-xs text-zinc-500">Automático: Roteiro, Voz e Vídeo.</p>
-                 </div>
-                 <div onClick={handleCreateManualProject} className="group cursor-pointer bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-emerald-500 p-6 rounded-2xl shadow-sm hover:shadow-xl transition-all flex flex-col items-center text-center space-y-3">
-                    <Edit2 className="w-8 h-8 text-emerald-500 mb-2 group-hover:scale-110 transition-transform"/>
-                    <h3 className="text-lg font-bold text-zinc-900 dark:text-white">Editor Manual</h3>
-                    <p className="text-xs text-zinc-500">Comece do zero, cena a cena.</p>
-                 </div>
-                 <div onClick={importClick} className="group cursor-pointer bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-amber-500 p-6 rounded-2xl shadow-sm hover:shadow-xl transition-all flex flex-col items-center text-center space-y-3">
-                    <FolderOpen className="w-8 h-8 text-amber-500 mb-2 group-hover:scale-110 transition-transform"/>
-                    <h3 className="text-lg font-bold text-zinc-900 dark:text-white">Importar</h3>
-                    <p className="text-xs text-zinc-500">Carregar projeto .json existente.</p>
-                 </div>
+          <div className="grid grid-cols-3 gap-3 md:gap-4">
+            <div className="card card-glow gradient-border p-4 md:p-6 flex flex-col items-center text-center gap-3 cursor-pointer group">
+              <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform" style={{ background: 'linear-gradient(135deg, var(--accent), var(--accent-light))' }}>
+                <Wand2 className="w-6 h-6 md:w-7 md:h-7 text-white" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm md:text-base" style={{ color: 'var(--text-primary)' }}>{t.createWithAI}</h3>
+                <p className="text-xs hidden md:block" style={{ color: 'var(--text-muted)' }}>{t.createWithAIDesc}</p>
+              </div>
             </div>
+            
+            <div onClick={handleCreateManualProject} className="card card-glow p-4 md:p-6 flex flex-col items-center text-center gap-3 cursor-pointer group">
+              <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl flex items-center justify-center bg-emerald-500/20 group-hover:scale-110 transition-transform">
+                <Edit2 className="w-6 h-6 md:w-7 md:h-7 text-emerald-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm md:text-base" style={{ color: 'var(--text-primary)' }}>{t.manualEditor}</h3>
+                <p className="text-xs hidden md:block" style={{ color: 'var(--text-muted)' }}>{t.manualEditorDesc}</p>
+              </div>
+            </div>
+            
+            <div onClick={importClick} className="card card-glow p-4 md:p-6 flex flex-col items-center text-center gap-3 cursor-pointer group">
+              <div className="w-12 h-12 md:w-14 md:h-14 rounded-xl flex items-center justify-center bg-amber-500/20 group-hover:scale-110 transition-transform">
+                <FolderOpen className="w-6 h-6 md:w-7 md:h-7 text-amber-500" />
+              </div>
+              <div>
+                <h3 className="font-bold text-sm md:text-base" style={{ color: 'var(--text-primary)' }}>{t.importProject}</h3>
+                <p className="text-xs hidden md:block" style={{ color: 'var(--text-muted)' }}>{t.importProjectDesc}</p>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Main Form */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-6">
+        <div className="card p-6 md:p-8 space-y-6">
+          {/* Topic */}
+          <div className="space-y-2">
+            <label className="label flex items-center gap-2">
+              <Sparkles className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+              {t.videoTopic}
+            </label>
+            <textarea
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              className="input-field resize-none"
+              placeholder={t.topicPlaceholder}
+              rows={3}
+            />
+          </div>
+
+          {/* Language & Format Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Language */}
             <div className="space-y-2">
-              <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider">{t.videoTopic}</label>
-              <textarea
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-                className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 text-lg text-zinc-900 dark:text-white placeholder-zinc-400 dark:placeholder-zinc-600 focus:ring-2 focus:ring-indigo-500 outline-none transition-all resize-none shadow-sm dark:shadow-inner"
-                placeholder={t.topicPlaceholder}
-                rows={3}
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-                <Globe className="w-3 h-3" /> {t.videoLang}
+              <label className="label flex items-center gap-2">
+                <Globe className="w-4 h-4" />
+                {t.videoLang}
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="flex gap-2">
                 {[
-                  { id: 'pt', label: '🇧🇷 Português' },
-                  { id: 'en', label: '🇺🇸 English' },
-                  { id: 'es', label: '🇪🇸 Español' }
+                  { id: 'pt', flag: '🇧🇷' },
+                  { id: 'en', flag: '🇺🇸' },
+                  { id: 'es', flag: '🇪🇸' }
                 ].map((l) => (
                   <button
                     key={l.id}
                     onClick={() => setContentLang(l.id as any)}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all ${
-                      contentLang === l.id
-                        ? 'bg-indigo-600 text-white border-indigo-500'
-                        : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400'
+                    className={`flex-1 py-2 rounded-lg text-lg transition-all touch-target ${
+                      contentLang === l.id ? 'btn-primary' : 'btn-secondary'
                     }`}
                   >
-                    {l.label}
+                    {l.flag}
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4">
-              <div className="space-y-2">
-                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider">{t.visualStyle}</label>
-                <select
-                  value={style}
-                  onChange={(e) => setStyle(e.target.value as VideoStyle)}
-                  className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
+            {/* Format */}
+            <div className="space-y-2">
+              <label className="label">{t.format}</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setFormat(VideoFormat.PORTRAIT)}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-lg transition-all touch-target ${
+                    format === VideoFormat.PORTRAIT ? 'btn-primary' : 'btn-secondary'
+                  }`}
                 >
-                  {Object.values(VideoStyle).map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
+                  <Smartphone className="w-5 h-5" />
+                  <span className="text-xs font-semibold">9:16</span>
+                </button>
+                <button
+                  onClick={() => setFormat(VideoFormat.LANDSCAPE)}
+                  className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-lg transition-all touch-target ${
+                    format === VideoFormat.LANDSCAPE ? 'btn-primary' : 'btn-secondary'
+                  }`}
+                >
+                  <Monitor className="w-5 h-5" />
+                  <span className="text-xs font-semibold">16:9</span>
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider">{t.pacing}</label>
-                  <select
-                    value={pacing}
-                    onChange={(e) => setPacing(e.target.value as VideoPacing)}
-                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
-                  >
-                    {Object.values(VideoPacing).map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-1"><Zap className="w-3 h-3 text-indigo-500" /> Intensidade Visual</label>
-                  <select
-                    value={visualIntensity}
-                    onChange={(e) => setVisualIntensity(e.target.value as VisualIntensity)}
-                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
-                  >
-                    {Object.values(VisualIntensity).map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </div>
-              </div>
+            </div>
+
+            {/* Duration */}
+            <div className="space-y-2">
+              <label className="label flex items-center gap-2">
+                <Clock className="w-4 h-4" />
+                {t.duration}
+              </label>
+              <select
+                value={duration}
+                onChange={(e) => {
+                  if (e.target.value === VideoDuration.MOVIE && userTier === UserTier.FREE) {
+                    setShowUpgradeModal(true);
+                  } else {
+                    setDuration(e.target.value as VideoDuration);
+                  }
+                }}
+                className="input-field"
+              >
+                {Object.values(VideoDuration).map(s => (
+                  <option key={s} value={s} disabled={s === VideoDuration.MOVIE && userTier === UserTier.FREE}>
+                    {s} {s === VideoDuration.MOVIE && userTier === UserTier.FREE ? '🔒' : ''}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 content-start">
-            <div className="col-span-2 grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider">{t.format}</label>
-                <div className="grid grid-cols-2 gap-2 bg-zinc-100 dark:bg-zinc-900 p-1 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                    <button
-                    onClick={() => setFormat(VideoFormat.PORTRAIT)}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-md transition-all ${
-                        format === VideoFormat.PORTRAIT
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                    }`}
-                    >
-                    <Smartphone className="w-4 h-4" /> <span className="text-xs font-bold">Shorts</span>
-                    </button>
-                    <button
-                    onClick={() => setFormat(VideoFormat.LANDSCAPE)}
-                    className={`flex flex-col items-center gap-1 p-2 rounded-md transition-all ${
-                        format === VideoFormat.LANDSCAPE
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                    }`}
-                    >
-                    <Monitor className="w-4 h-4" /> <span className="text-xs font-bold">Vídeo</span>
-                    </button>
-                </div>
-                </div>
-                <div className="space-y-2">
-                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider">{t.duration}</label>
-                <select
-                    value={duration}
-                    onChange={(e) => {
-                    if (e.target.value === VideoDuration.MOVIE && userTier === UserTier.FREE) {
-                        setShowUpgradeModal(true);
-                    } else {
-                        setDuration(e.target.value as VideoDuration);
-                    }
-                    }}
-                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 text-sm text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
-                >
-                    {Object.values(VideoDuration).map(s => (
-                    <option key={s} value={s} disabled={s === VideoDuration.MOVIE && userTier === UserTier.FREE}>
-                        {s} {s === VideoDuration.MOVIE && userTier === UserTier.FREE ? '(PRO)' : ''}
-                    </option>
-                    ))}
-                </select>
-                </div>
+          {/* Style & Pacing Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <label className="label flex items-center gap-2">
+                <Palette className="w-4 h-4" />
+                {t.visualStyle}
+              </label>
+              <select value={style} onChange={(e) => setStyle(e.target.value as VideoStyle)} className="input-field">
+                {Object.values(VideoStyle).map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
-
-            <div className="col-span-2 space-y-2">
-                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider">{t.channelName}</label>
-                <div className="relative">
-                    <Youtube className="absolute left-3 top-3 w-5 h-5 text-zinc-500" />
-                    <input
-                        value={channelName}
-                        onChange={(e) => setChannelName(e.target.value)}
-                        className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg pl-10 pr-4 py-3 text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
-                    />
-                </div>
-            </div>
-          </div>
-        </div>
-
-        {/* TTS & Advanced Settings */}
-        <div className="space-y-6">
-            <div className="space-y-4 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4">
-                <h3 className="font-bold text-sm text-indigo-600 dark:text-indigo-400 flex items-center gap-2"><Mic className="w-4 h-4" /> Configurações de Voz Avançadas (TTS)</h3>
-                
-                <div className="space-y-2">
-                    <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-2">
-                        {t.narrator} {userTier === UserTier.FREE && <Lock className="w-3 h-3" />}
-                    </label>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar">
-                        <button
-                            onClick={() => setVoice('Auto')}
-                            className={`text-left px-3 py-2 rounded-lg text-xs border transition-all ${
-                            voice === 'Auto'
-                                ? 'bg-indigo-50 dark:bg-indigo-600/20 border-indigo-500 text-indigo-700 dark:text-white'
-                                : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
-                            }`}
-                        >
-                            🤖 Elenco Automático
-                        </button>
-                        
-                        {ALL_GEMINI_VOICES.map(v => (
-                        <button
-                            key={v.id}
-                            onClick={() => {
-                            if (userTier === UserTier.PRO || v.id === 'Fenrir') setVoice(v.id);
-                            else setShowUpgradeModal(true);
-                            }}
-                            className={`text-left px-3 py-2 rounded-lg text-xs border transition-all ${
-                            voice === v.id
-                                ? 'bg-indigo-5 dark:bg-indigo-600/20 border-indigo-500 text-indigo-700 dark:text-white'
-                                : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-600'
-                            } ${userTier === UserTier.FREE && v.id !== 'Fenrir' ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        >
-                            {v.label}
-                        </button>
-                        ))}
-                    </div>
-                    <button
-                        onClick={() => {
-                           if (userTier === UserTier.PRO) setVoice('Custom');
-                           else setShowUpgradeModal(true);
-                        }}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-xs border mt-2 ${
-                            voice === 'Custom' 
-                                ? 'bg-indigo-5 dark:bg-indigo-600/20 border-indigo-500' 
-                                : 'bg-zinc-50 dark:bg-black/30 border-zinc-200 dark:border-zinc-800'
-                        } ${userTier === UserTier.FREE ? 'opacity-50' : ''}`}
-                    >
-                        ✏️ Personalizada (Outra)...
-                    </button>
-                    {voice === 'Custom' && userTier === UserTier.PRO && (
-                        <input type="text" value={customVoice} onChange={(e) => setCustomVoice(e.target.value)} placeholder="Nome da voz (ex: en-US-Studio-M)" className="w-full mt-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none" />
-                    )}
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                    <div>
-                        <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider mb-2 block">Modelo TTS</label>
-                        <select
-                            value={ttsModel}
-                            onChange={(e) => setTtsModel(e.target.value as GeminiTTSModel)}
-                            className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
-                        >
-                            <option value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash (Rápido)</option>
-                            <option value="gemini-2.5-pro-tts">Gemini 2.5 Pro (Qualidade Máxima - Preview)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider mb-2 block">Estilo de Fala Global (Acting Prompt)</label>
-                        <input
-                            type="text"
-                            value={globalTtsStyle}
-                            onChange={(e) => setGlobalTtsStyle(e.target.value)}
-                            placeholder="Ex: Como um repórter animado com sotaque mineiro..."
-                            className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs text-zinc-900 dark:text-white focus:ring-indigo-500 outline-none"
-                        />
-                    </div>
-                </div>
+            
+            <div className="space-y-2">
+              <label className="label">{t.pacing}</label>
+              <select value={pacing} onChange={(e) => setPacing(e.target.value as VideoPacing)} className="input-field">
+                {Object.values(VideoPacing).map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
             </div>
 
             <div className="space-y-2">
-                <label className="text-xs font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-wider flex items-center justify-between">
-                    <span>{t.imageProvider}</span>
+              <label className="label flex items-center gap-2">
+                <Layers className="w-4 h-4" />
+                {t.visualIntensity}
+              </label>
+              <select value={visualIntensity} onChange={(e) => setVisualIntensity(e.target.value as VisualIntensity)} className="input-field">
+                {Object.values(VisualIntensity).map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Channel Name */}
+          <div className="space-y-2">
+            <label className="label">{t.channelName}</label>
+            <div className="relative">
+              <Youtube className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5" style={{ color: 'var(--text-muted)' }} />
+              <input
+                value={channelName}
+                onChange={(e) => setChannelName(e.target.value)}
+                className="input-field pl-12"
+                placeholder="@YourChannel"
+              />
+            </div>
+          </div>
+
+          {/* Advanced Settings Toggle */}
+          <button
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="w-full flex items-center justify-between p-4 rounded-xl transition-all touch-target"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
+          >
+            <span className="flex items-center gap-2 font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+              <Zap className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+              {t.advancedVoiceSettings}
+            </span>
+            <ChevronDown className={`w-5 h-5 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
+          </button>
+
+          {/* Advanced Settings Content */}
+          {showAdvanced && (
+            <div className="space-y-6 animate-in slide-in-from-top-2 duration-200 p-4 rounded-xl" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+              {/* Voice Selection */}
+              <div className="space-y-3">
+                <label className="label flex items-center gap-2">
+                  <Mic className="w-4 h-4" />
+                  {t.narrator}
+                  {userTier === UserTier.FREE && <Lock className="w-3 h-3" />}
                 </label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {[
-                    { id: ImageProvider.POLLINATIONS, label: '🎨 Pollinations.ai', sub: 'Models: Flux, Turbo, Veo (Admin)' },
-                    { id: ImageProvider.STOCK_VIDEO, label: '📹 Stock Video', sub: 'Real Footage (Pexels)' },
-                    { id: ImageProvider.NONE, label: t.providerNone, sub: t.providerNoneSub }
-                    ].map(p => (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 max-h-40 overflow-y-auto hide-scrollbar">
+                  <button
+                    onClick={() => setVoice('Auto')}
+                    className={`chip ${voice === 'Auto' ? 'active' : ''}`}
+                  >
+                    🤖 {t.autoCast}
+                  </button>
+                  {ALL_GEMINI_VOICES.slice(0, 8).map(v => (
                     <button
-                        key={p.id}
-                        onClick={() => setImageProvider(p.id as any)}
-                        className={`flex items-center justify-between px-4 py-3 rounded-xl border transition-all ${
-                        imageProvider === p.id
-                            ? 'bg-indigo-600 border-indigo-500 shadow-lg shadow-indigo-500/20'
-                            : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-                        }`}
+                      key={v.id}
+                      onClick={() => {
+                        if (userTier === UserTier.PRO || v.id === 'Fenrir') setVoice(v.id);
+                        else setShowUpgradeModal(true);
+                      }}
+                      className={`chip ${voice === v.id ? 'active' : ''} ${userTier === UserTier.FREE && v.id !== 'Fenrir' ? 'opacity-50' : ''}`}
                     >
-                        <div className="text-left">
-                        <div className={`font-bold text-sm ${imageProvider === p.id ? 'text-white' : 'text-zinc-700 dark:text-zinc-300'}`}>{p.label}</div>
-                        <div className={`text-xs ${imageProvider === p.id ? 'text-indigo-200' : 'text-zinc-500'}`}>{p.sub}</div>
-                        </div>
-                        {imageProvider === p.id && <CheckCircle2 className="w-5 h-5 text-white" />}
+                      {v.label.split('(')[0].trim()}
                     </button>
-                    ))}
+                  ))}
+                </div>
+              </div>
+
+              {/* TTS Model & Style */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="label">{t.ttsModel}</label>
+                  <select value={ttsModel} onChange={(e) => setTtsModel(e.target.value as GeminiTTSModel)} className="input-field">
+                    <option value="gemini-2.5-flash-preview-tts">{t.ttsModelFast}</option>
+                    <option value="gemini-2.5-pro-tts">{t.ttsModelQuality}</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="label">{t.globalSpeechStyle}</label>
+                  <input
+                    type="text"
+                    value={globalTtsStyle}
+                    onChange={(e) => setGlobalTtsStyle(e.target.value)}
+                    placeholder={t.speechStylePlaceholder}
+                    className="input-field"
+                  />
+                </div>
+              </div>
+
+              {/* Image Provider */}
+              <div className="space-y-3">
+                <label className="label">{t.imageProvider}</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  {[
+                    { id: ImageProvider.POLLINATIONS, icon: '🎨', label: 'Pollinations.ai' },
+                    { id: ImageProvider.STOCK_VIDEO, icon: '📹', label: 'Stock Video' },
+                    { id: ImageProvider.NONE, icon: '⛔', label: t.providerNone }
+                  ].map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => setImageProvider(p.id as any)}
+                      className={`flex items-center gap-3 p-3 rounded-xl transition-all touch-target ${
+                        imageProvider === p.id ? 'btn-primary' : 'btn-secondary'
+                      }`}
+                    >
+                      <span className="text-xl">{p.icon}</span>
+                      <span className="font-semibold text-sm">{p.label}</span>
+                    </button>
+                  ))}
                 </div>
 
-                {/* Pollinations Model Selector (Only if Pollinations selected) */}
                 {imageProvider === ImageProvider.POLLINATIONS && (
-                    <div className="mt-4 p-4 bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-3 animate-in slide-in-from-top-2">
-                         <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase flex items-center gap-2">
-                             <Zap className="w-3 h-3"/> Modelos Pollinations
-                         </h4>
-                         
-                         <div className="space-y-3">
-                            <div>
-                                <label className="text-[10px] font-bold text-zinc-500 mb-1 block flex items-center gap-1"><Image className="w-3 h-3"/> Modelo de Geração</label>
-                                <select 
-                                    value={activeModel} 
-                                    onChange={(e) => {
-                                        if(e.target.value) {
-                                            const newModel = e.target.value as PollinationsModel;
-                                            // Prevent video models for FREE users
-                                            if (userTier !== UserTier.PRO && isVideoModel(newModel)) {
-                                                setActiveModel('flux' as PollinationsModel);
-                                                return;
-                                            }
-                                            setActiveModel(newModel);
-                                        }
-                                    }}
-                                    className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs outline-none focus:border-indigo-500"
-                                >
-                                    <optgroup label="Modelos de Imagem (Público)">
-                                        <option value="flux">Flux (Padrão - Alta Qualidade)</option>
-                                        <option value="flux-realism">Flux Realism</option>
-                                        <option value="flux-3d">Flux 3D (Pixar Style)</option>
-                                        <option value="flux-anime">Flux Anime</option>
-                                        <option value="flux-cne">Flux Cinematic</option>
-                                        <option value="midjourney">Midjourney Style</option>
-                                        <option value="any-dark">Any Dark</option>
-                                        <option value="turbo">Turbo (Super Rápido)</option>
-                                    </optgroup>
-                                </select>
-                            </div>
-                         </div>
-                         <p className="text-[10px] text-zinc-500 italic">
-                             Nota: Modelos de vídeo estão disponíveis apenas na edição manual de cenas (para usuários PRO).
-                         </p>
-                    </div>
+                  <div className="mt-3 p-4 rounded-xl space-y-3" style={{ background: 'var(--bg-muted)' }}>
+                    <label className="label">{t.generationModel}</label>
+                    <select 
+                      value={activeModel} 
+                      onChange={(e) => {
+                        const newModel = e.target.value as PollinationsModel;
+                        if (userTier !== UserTier.PRO && isVideoModel(newModel)) {
+                          setActiveModel('flux' as PollinationsModel);
+                          return;
+                        }
+                        setActiveModel(newModel);
+                      }}
+                      className="input-field"
+                    >
+                      <optgroup label={t.imageModelsPublic}>
+                        <option value="flux">Flux (Default)</option>
+                        <option value="flux-realism">Flux Realism</option>
+                        <option value="flux-3d">Flux 3D</option>
+                        <option value="flux-anime">Flux Anime</option>
+                        <option value="turbo">Turbo (Fast)</option>
+                      </optgroup>
+                    </select>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t.videoModelsNote}</p>
+                  </div>
                 )}
+              </div>
             </div>
+          )}
         </div>
 
-        <div className="pt-8 flex flex-col items-center gap-4">
+        {/* Generate Button */}
+        <div className="flex flex-col items-center gap-4 pb-8">
           <button
             onClick={handleGenerateVideo}
             disabled={isGenerating}
-            className={`w-full md:w-auto group relative px-8 py-4 rounded-full font-black text-lg shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:hover:scale-100 ${
-              duration === VideoDuration.MOVIE
-                ? 'bg-gradient-to-r from-amber-600 to-yellow-500 text-black'
-                : 'bg-zinc-900 dark:bg-white text-white dark:text-black'
-            }`}
+            className="w-full md:w-auto px-10 py-5 rounded-2xl font-black text-lg transition-all disabled:opacity-50 touch-target"
+            style={{
+              background: duration === VideoDuration.MOVIE 
+                ? 'linear-gradient(135deg, #f59e0b, #eab308)' 
+                : 'linear-gradient(135deg, var(--accent), var(--accent-light))',
+              color: duration === VideoDuration.MOVIE ? 'black' : 'white',
+              boxShadow: `0 8px 40px ${duration === VideoDuration.MOVIE ? 'rgba(245, 158, 11, 0.4)' : 'var(--accent-glow)'}`
+            }}
           >
             {isGenerating ? (
-              <span className="flex items-center gap-3 justify-center">
+              <span className="flex items-center gap-3">
                 <Loader2 className="w-6 h-6 animate-spin" /> {progress || t.generating}
               </span>
             ) : (
-              <span className="flex items-center gap-3 justify-center">
-                {duration === VideoDuration.MOVIE ? 'GERAR FILME (PRO)' : t.generateVideo}
-                {duration === VideoDuration.MOVIE ? <Clapperboard className="w-6 h-6" /> : <Wand2 className="w-6 h-6 text-indigo-400 dark:text-indigo-600" />}
+              <span className="flex items-center gap-3">
+                {duration === VideoDuration.MOVIE ? t.generateMovie : t.generateVideo}
+                {duration === VideoDuration.MOVIE ? <Clapperboard className="w-6 h-6" /> : <Wand2 className="w-6 h-6" />}
               </span>
             )}
           </button>
           
-          <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-            <span>ou</span>
-            <button onClick={importClick} className="text-indigo-600 dark:text-indigo-400 hover:underline font-bold flex items-center gap-1">
-                <FolderOpen className="w-4 h-4" /> Carregar Roteiro (JSON)
-            </button>
-          </div>
+          <button onClick={importClick} className="flex items-center gap-2 text-sm font-semibold touch-target" style={{ color: 'var(--accent)' }}>
+            <FolderOpen className="w-4 h-4" /> {t.loadScriptJson}
+          </button>
         </div>
-
       </div>
     </div>
   );
-}
+};
