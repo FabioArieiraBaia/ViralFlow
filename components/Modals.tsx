@@ -8,22 +8,25 @@ import { fileToBase64 } from '../services/audioUtils';
 export const WelcomeModal: React.FC<{ onClose: () => void, lang: Language, t: any }> = ({ onClose, lang, t }) => {
     const WEBSITE_LINK = "https://fabioarieira.com";
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-lg p-6 animate-in fade-in duration-500">
-            <div className="bg-gradient-to-br from-zinc-900 to-black border border-zinc-800 rounded-2xl p-8 max-w-lg w-full shadow-2xl relative overflow-hidden text-center">
-                <div className="mx-auto w-16 h-16 bg-indigo-600/20 rounded-full flex items-center justify-center mb-6 border border-indigo-500/30">
-                    <ShieldCheck className="w-8 h-8 text-indigo-400" />
+        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black/90 backdrop-blur-lg p-0 md:p-6 animate-in fade-in duration-500">
+            <div className="bg-[var(--bg-secondary)] border themed-border rounded-t-3xl md:rounded-2xl p-6 md:p-8 max-w-lg w-full shadow-2xl relative overflow-hidden text-center animate-in slide-in-from-bottom-4 md:slide-in-from-bottom-0 duration-300">
+                {/* Bottom sheet handle for mobile */}
+                <div className="md:hidden w-10 h-1 bg-[var(--bg-elevated)] rounded-full mx-auto mb-4"></div>
+                
+                <div className="mx-auto w-14 h-14 md:w-16 md:h-16 bg-[var(--accent-primary)]/20 rounded-full flex items-center justify-center mb-4 md:mb-6 border border-[var(--accent-primary)]/30">
+                    <ShieldCheck className="w-7 h-7 md:w-8 md:h-8 themed-accent" />
                 </div>
-                <h2 className="text-3xl font-black text-white mb-4 tracking-tight">{t[lang].welcomeTitle}</h2>
-                <div className="space-y-4 text-zinc-400 text-sm leading-relaxed">
-                    <p><strong className="text-indigo-300">{t[lang].privacyNote}</strong> {t[lang].privacyDesc}</p>
-                    <p>All processing happens <strong className="text-white">{t[lang].privacyLocal}</strong>.</p>
+                <h2 className="text-2xl md:text-3xl font-black themed-text mb-3 md:mb-4 tracking-tight">{t[lang].welcomeTitle}</h2>
+                <div className="space-y-3 md:space-y-4 themed-text-secondary text-sm leading-relaxed">
+                    <p><strong className="themed-accent">{t[lang].privacyNote}</strong> {t[lang].privacyDesc}</p>
+                    <p>{lang === 'pt' ? 'Todo o processamento acontece' : lang === 'es' ? 'Todo el procesamiento ocurre' : 'All processing happens'} <strong className="themed-text">{t[lang].privacyLocal}</strong>.</p>
                 </div>
-                <div className="mt-8 pt-6 border-t border-zinc-800/50">
-                    <p className="text-xs text-zinc-500 mb-1">{t[lang].devBy}</p>
-                    <a href={WEBSITE_LINK} target="_blank" rel="noopener noreferrer" className="text-lg font-bold text-white hover:text-indigo-400 transition-colors">Fabio Arieira</a>
-                    <p className="text-[10px] text-zinc-600 mt-1">Full Stack Developer</p>
+                <div className="mt-6 md:mt-8 pt-4 md:pt-6 border-t themed-border">
+                    <p className="text-xs themed-text-secondary mb-1">{t[lang].devBy}</p>
+                    <a href={WEBSITE_LINK} target="_blank" rel="noopener noreferrer" className="text-lg font-bold themed-text hover:themed-accent transition-colors">Fabio Arieira</a>
+                    <p className="text-[10px] themed-text-secondary mt-1">Full Stack Developer</p>
                 </div>
-                <button onClick={onClose} className="mt-8 w-full py-3 bg-white text-black hover:bg-zinc-200 font-bold rounded-xl transition-all transform hover:scale-[1.02]">{t[lang].understand}</button>
+                <button onClick={onClose} className="mt-6 md:mt-8 w-full py-3 md:py-4 themed-btn font-bold rounded-xl transition-all transform hover:scale-[1.02] touch-target">{t[lang].understand}</button>
             </div>
         </div>
     );
@@ -51,35 +54,38 @@ export const UpgradeModal: React.FC<{ onClose: () => void, onUpgrade: (key: stri
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
-            <div className="bg-gradient-to-b from-zinc-900 to-black border border-amber-500/30 rounded-2xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/90 backdrop-blur-md p-0 md:p-4">
+            <div className="bg-[var(--bg-secondary)] border border-amber-500/30 rounded-t-3xl md:rounded-2xl p-6 md:p-8 max-w-md w-full shadow-2xl relative overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-bottom-0 duration-300">
+                {/* Bottom sheet handle for mobile */}
+                <div className="md:hidden w-10 h-1 bg-[var(--bg-elevated)] rounded-full mx-auto mb-4"></div>
+                
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500"></div>
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/50">
-                        <Crown className="w-8 h-8 text-amber-500" />
+                <div className="text-center mb-6 md:mb-8 mt-2 md:mt-0">
+                    <div className="w-14 h-14 md:w-16 md:h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-3 md:mb-4 border border-amber-500/50">
+                        <Crown className="w-7 h-7 md:w-8 md:h-8 text-amber-500" />
                     </div>
-                    <h2 className="text-2xl font-black text-white mb-2">{t[lang].upgradeTitle}</h2>
-                    <p className="text-zinc-400 text-sm">{t[lang].upgradeDesc}</p>
+                    <h2 className="text-xl md:text-2xl font-black themed-text mb-2">{t[lang].upgradeTitle}</h2>
+                    <p className="themed-text-secondary text-sm">{t[lang].upgradeDesc}</p>
                 </div>
-                <div className="mt-8">
-                    <div className="grid grid-cols-2 gap-2 mb-4">
-                        <a href="https://fabioarise.gumroad.com/l/viralflow" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg transition-colors text-center text-xs"><Crown className="w-4 h-4"/> Site</a>
-                        <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors text-center text-xs"><Loader2 className="w-4 h-4"/> Pix / WhatsApp</a>
+                <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                        <a href="https://fabioarise.gumroad.com/l/viralflow" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg transition-colors text-center text-xs touch-target"><Crown className="w-4 h-4"/> Site</a>
+                        <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors text-center text-xs touch-target"><Loader2 className="w-4 h-4"/> Pix / WhatsApp</a>
                     </div>
                     {!success ? (
-                        <div className="flex gap-2">
+                        <div className="flex flex-col sm:flex-row gap-2">
                             <div className="relative flex-1">
-                                <Key className="absolute left-3 top-3 w-4 h-4 text-zinc-500" />
-                                <input type="text" placeholder={t[lang].pasteKey} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:ring-1 focus:ring-amber-500 outline-none" value={key} onChange={(e) => setKey(e.target.value)} />
+                                <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 themed-text-secondary" />
+                                <input type="text" placeholder={t[lang].pasteKey} className="w-full bg-[var(--bg-primary)] border themed-border rounded-lg pl-9 pr-3 py-3 text-sm themed-text focus:ring-1 focus:ring-amber-500 outline-none touch-target" value={key} onChange={(e) => setKey(e.target.value)} />
                             </div>
-                            <button onClick={handleVerify} disabled={isValidating || !key} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 rounded-lg font-medium text-sm transition-colors disabled:opacity-50">{isValidating ? <Loader2 className="w-4 h-4 animate-spin" /> : t[lang].activate}</button>
+                            <button onClick={handleVerify} disabled={isValidating || !key} className="bg-[var(--bg-tertiary)] hover:bg-[var(--bg-elevated)] themed-text px-4 py-3 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 touch-target">{isValidating ? <Loader2 className="w-4 h-4 animate-spin" /> : t[lang].activate}</button>
                         </div>
                     ) : (
-                        <div className="bg-emerald-500/20 border border-emerald-500/50 p-3 rounded-lg text-emerald-400 text-sm font-medium text-center">{t[lang].licenseActive}</div>
+                        <div className="bg-[var(--success)]/20 border border-[var(--success)]/50 p-3 rounded-lg text-[var(--success)] text-sm font-medium text-center">{t[lang].licenseActive}</div>
                     )}
-                    {error && <p className="text-red-400 text-xs mt-2 text-center">{error}</p>}
+                    {error && <p className="text-[var(--error)] text-xs mt-2 text-center">{error}</p>}
                 </div>
-                <button onClick={onClose} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 themed-text-secondary hover:themed-text touch-target p-2"><X className="w-5 h-5" /></button>
             </div>
         </div>
     );
@@ -312,15 +318,25 @@ export const EditSceneModal: React.FC<{
             const isVideo = file.type.startsWith('video/');
             const base64 = await fileToBase64(file);
             
-            setLocalScene(prev => ({
-                ...prev,
-                imageUrl: isVideo ? "https://placehold.co/1280x720/000000/FFFFFF.png?text=VIDEO+READY" : url,
-                imageBase64: isVideo ? undefined : base64, // If image, save base64
-                videoUrl: isVideo ? url : undefined,
-                videoBase64: isVideo ? base64 : undefined, // If video, save base64
-                mediaType: isVideo ? 'video' : 'image',
-                isGeneratingImage: false
-            }));
+            setLocalScene(prev => {
+                // CRITICAL FIX: Update or remove existing background layers to prevent conflicts
+                // Remove all background layers with startTime 0 (they would override the new base image)
+                const existingLayers = prev.layers || [];
+                const nonConflictingLayers = existingLayers.filter(l => 
+                    !l.isBackground || (l.startTime !== undefined && l.startTime > 0)
+                );
+                
+                return {
+                    ...prev,
+                    imageUrl: isVideo ? "https://placehold.co/1280x720/000000/FFFFFF.png?text=VIDEO+READY" : url,
+                    imageBase64: isVideo ? undefined : base64, // If image, save base64
+                    videoUrl: isVideo ? url : undefined,
+                    videoBase64: isVideo ? base64 : undefined, // If video, save base64
+                    mediaType: isVideo ? 'video' : 'image',
+                    isGeneratingImage: false,
+                    layers: nonConflictingLayers // Remove conflicting background layers
+                };
+            });
         }
     };
 
@@ -403,55 +419,64 @@ export const EditSceneModal: React.FC<{
             const audioToUse = isVideoModel(modelToUse) && modelToUse === 'veo' ? videoAudio : undefined;
             const result = await onRegenerateAsset(tempScene, ImageProvider.POLLINATIONS, modelToUse, undefined, durationToUse, audioToUse);
             
-            if (result.success && (result.imageUrl || result.videoUrl)) {
-                // Determine sensible start time (e.g., halfway through or end of last cut)
-                let startTime = localScene.durationEstimate / 2;
-                const backgroundLayers = localScene.layers?.filter(l => l.isBackground) || [];
-                if (backgroundLayers.length > 0) {
-                     const last = backgroundLayers[backgroundLayers.length - 1];
-                     if (last.startTime !== undefined) startTime = Math.min(last.startTime + 2, localScene.durationEstimate - 1);
-                }
-
-                const newLayer: LayerConfig = {
-                    id: `seq-cut-${Date.now()}`,
-                    type: result.mediaType,
-                    url: result.videoUrl || result.imageUrl,
-                    base64: result.base64, // CRITICAL: Save base64 for persistence
-                    name: `Corte ${backgroundLayers.length + 2}`, // +2 because index 0 is main + current
-                    x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1,
-                    startTime: startTime,
-                    isBackground: true // MAGIC FLAG
-                };
-                
-                setLocalScene(prev => ({ ...prev, layers: [...(prev.layers || []), newLayer] }));
+            // CRITICAL FIX: generateSceneImage does NOT return 'success' property
+            // Check for imageUrl or videoUrl directly
+            if (result && (result.imageUrl || result.videoUrl)) {
+                setLocalScene(prev => {
+                    const bgLayers = (prev.layers || []).filter(l => l.isBackground);
+                    const otherLayers = (prev.layers || []).filter(l => !l.isBackground);
+                    
+                    const newLayer: LayerConfig = {
+                        id: `seq-cut-${Date.now()}`,
+                        type: result.mediaType,
+                        url: result.videoUrl || result.imageUrl,
+                        base64: result.base64, // CRITICAL: Save base64 for persistence
+                        name: `Corte ${bgLayers.length + 2}`, // +2 because index 0 is main + current
+                        x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1,
+                        startTime: 0, // Will be recalculated
+                        isBackground: true // MAGIC FLAG
+                    };
+                    
+                    // Add to end and recalculate all times
+                    const allBgLayers = [...bgLayers, newLayer];
+                    const recalculated = recalculateBackgroundTimes([...otherLayers, ...allBgLayers], prev.durationEstimate);
+                    
+                    return { ...prev, layers: recalculated };
+                });
                 setCutPrompt(""); // Clear prompt
             }
         } catch (e) { console.error(e); }
         setIsGeneratingCut(false);
     };
 
-    const handleAddUploadCut = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleAddUploadCut = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
             const url = URL.createObjectURL(file);
             const isVideo = file.type.startsWith('video/');
-            let startTime = localScene.durationEstimate / 2;
-            const backgroundLayers = localScene.layers?.filter(l => l.isBackground) || [];
-            if (backgroundLayers.length > 0) {
-                 const last = backgroundLayers[backgroundLayers.length - 1];
-                 if (last.startTime !== undefined) startTime = Math.min(last.startTime + 2, localScene.durationEstimate - 1);
-            }
-
-            const newLayer: LayerConfig = {
-                id: `seq-upload-${Date.now()}`,
-                type: isVideo ? 'video' : 'image',
-                url,
-                name: file.name.substring(0, 10),
-                x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1,
-                startTime: startTime,
-                isBackground: true
-            };
-             setLocalScene(prev => ({ ...prev, layers: [...(prev.layers || []), newLayer] }));
+            const base64 = await fileToBase64(file);
+            
+            setLocalScene(prev => {
+                const bgLayers = (prev.layers || []).filter(l => l.isBackground);
+                const otherLayers = (prev.layers || []).filter(l => !l.isBackground);
+                
+                const newLayer: LayerConfig = {
+                    id: `seq-upload-${Date.now()}`,
+                    type: isVideo ? 'video' : 'image',
+                    url,
+                    base64: base64, // Save base64 for persistence
+                    name: file.name.substring(0, 15),
+                    x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1,
+                    startTime: 0, // Will be recalculated
+                    isBackground: true
+                };
+                
+                // Add to end and recalculate all times
+                const allBgLayers = [...bgLayers, newLayer];
+                const recalculated = recalculateBackgroundTimes([...otherLayers, ...allBgLayers], prev.durationEstimate);
+                
+                return { ...prev, layers: recalculated };
+            });
         }
     };
 
@@ -470,6 +495,8 @@ export const EditSceneModal: React.FC<{
             const audioToUse = isVideoModel(modelToUse) && modelToUse === 'veo' ? videoAudio : undefined;
             const result = await onRegenerateAsset(tempScene, ImageProvider.POLLINATIONS, modelToUse, undefined, durationToUse, audioToUse);
             
+            // CRITICAL FIX: generateSceneImage does NOT return 'success' property
+            // Check for imageUrl or videoUrl directly
             if (result && (result.imageUrl || result.videoUrl)) {
                 updateLayer(layerId, {
                     url: result.videoUrl || result.imageUrl,
@@ -489,7 +516,11 @@ export const EditSceneModal: React.FC<{
     };
 
     const removeLayer = (id: string) => {
-        setLocalScene(prev => ({ ...prev, layers: prev.layers?.filter(l => l.id !== id) }));
+        setLocalScene(prev => {
+            const newLayers = prev.layers?.filter(l => l.id !== id) || [];
+            // After removing, recalculate times for remaining background layers
+            return { ...prev, layers: recalculateBackgroundTimes(newLayers, prev.durationEstimate) };
+        });
         if (selectedLayerId === id) setSelectedLayerId(null);
     };
 
@@ -502,6 +533,84 @@ export const EditSceneModal: React.FC<{
             [newLayers[index], newLayers[index - 1]] = [newLayers[index - 1], newLayers[index]];
         }
         setLocalScene(prev => ({ ...prev, layers: newLayers }));
+    };
+
+    // CRITICAL: Recalculate background layer times to distribute evenly
+    const recalculateBackgroundTimes = (layers: LayerConfig[], totalDuration: number): LayerConfig[] => {
+        const bgLayers = layers.filter(l => l.isBackground).sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0));
+        const otherLayers = layers.filter(l => !l.isBackground);
+        
+        if (bgLayers.length === 0) return layers;
+        
+        // Distribute evenly across total duration
+        const segmentDuration = totalDuration / bgLayers.length;
+        
+        const recalculatedBg = bgLayers.map((layer, idx) => ({
+            ...layer,
+            startTime: idx * segmentDuration
+        }));
+        
+        return [...otherLayers, ...recalculatedBg];
+    };
+
+    // Distribute times evenly button handler
+    const handleDistributeEvenly = () => {
+        setLocalScene(prev => ({
+            ...prev,
+            layers: recalculateBackgroundTimes(prev.layers || [], prev.durationEstimate)
+        }));
+    };
+
+    // Insert a new layer at a specific position (between existing layers)
+    const handleInsertLayerAt = async (afterLayerId: string | null) => {
+        if (!cutPrompt) return alert("Digite um prompt para o novo corte.");
+        setIsGeneratingCut(true);
+        
+        try {
+            const tempScene = { ...localScene, visualPrompt: cutPrompt };
+            const modelToUse = pollinationsModel || 'flux';
+            const durationToUse = isVideoModel(modelToUse) ? videoDuration : undefined;
+            const audioToUse = isVideoModel(modelToUse) && modelToUse === 'veo' ? videoAudio : undefined;
+            const result = await onRegenerateAsset(tempScene, ImageProvider.POLLINATIONS, modelToUse, undefined, durationToUse, audioToUse);
+            
+            if (result && (result.imageUrl || result.videoUrl)) {
+                setLocalScene(prev => {
+                    const bgLayers = (prev.layers || []).filter(l => l.isBackground).sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0));
+                    const otherLayers = (prev.layers || []).filter(l => !l.isBackground);
+                    
+                    // Find insertion index
+                    let insertIdx = bgLayers.length; // Default: add at end
+                    if (afterLayerId) {
+                        const foundIdx = bgLayers.findIndex(l => l.id === afterLayerId);
+                        if (foundIdx >= 0) insertIdx = foundIdx + 1;
+                    }
+                    
+                    // Create new layer
+                    const newLayer: LayerConfig = {
+                        id: `seq-cut-${Date.now()}`,
+                        type: result.mediaType,
+                        url: result.videoUrl || result.imageUrl,
+                        base64: result.base64,
+                        name: `Corte ${insertIdx + 1}`,
+                        x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1,
+                        startTime: 0, // Will be recalculated
+                        isBackground: true
+                    };
+                    
+                    // Insert at position
+                    bgLayers.splice(insertIdx, 0, newLayer);
+                    
+                    // Recalculate times
+                    const allLayers = recalculateBackgroundTimes([...otherLayers, ...bgLayers], prev.durationEstimate);
+                    
+                    return { ...prev, layers: allLayers };
+                });
+                setCutPrompt("");
+            }
+        } catch (e) { 
+            console.error(e); 
+        }
+        setIsGeneratingCut(false);
     };
 
     const handleAddKeyframe = () => {
@@ -552,14 +661,23 @@ export const EditSceneModal: React.FC<{
             const audioToUse = isVideoModel(modelToUse) && modelToUse === 'veo' ? videoAudio : undefined;
             const result = await onRegenerateAsset(localScene, ImageProvider.POLLINATIONS, modelToUse, undefined, durationToUse, audioToUse);
             if(result && (result.imageUrl || result.videoUrl)) {
-                setLocalScene(prev => ({ 
-                    ...prev, 
-                    imageUrl: result.imageUrl, 
-                    videoUrl: result.videoUrl, 
-                    mediaType: result.mediaType || 'image',
-                    imageBase64: result.base64, // Save base64 for export
-                    videoBase64: result.base64 // Save base64 for video too
-                }));
+                setLocalScene(prev => {
+                    // CRITICAL FIX: Remove conflicting background layers with startTime 0
+                    const existingLayers = prev.layers || [];
+                    const nonConflictingLayers = existingLayers.filter(l => 
+                        !l.isBackground || (l.startTime !== undefined && l.startTime > 0)
+                    );
+                    
+                    return { 
+                        ...prev, 
+                        imageUrl: result.imageUrl, 
+                        videoUrl: result.videoUrl, 
+                        mediaType: result.mediaType || 'image',
+                        imageBase64: result.base64, // Save base64 for export
+                        videoBase64: result.mediaType === 'video' ? result.base64 : undefined, // Only save video base64 for videos
+                        layers: nonConflictingLayers // Remove conflicting background layers
+                    };
+                });
             }
         } catch(e) { 
             console.error("Regenerate visual error:", e); 
@@ -1077,77 +1195,141 @@ export const EditSceneModal: React.FC<{
 
                              {/* 2. SEQUÊNCIA VISUAL (MULTI-SHOT) */}
                              <div className="space-y-3">
-                                 <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-2"><Clapperboard className="w-4 h-4" /> Sequência Visual (Timeline)</h4>
-                                 <div className="bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 space-y-3">
+                                 <div className="flex items-center justify-between">
+                                     <h4 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-2"><Clapperboard className="w-4 h-4" /> Sequência Visual (Timeline)</h4>
+                                     <div className="flex items-center gap-2">
+                                         <span className="text-[10px] text-zinc-500">Duração: {localScene.durationEstimate.toFixed(1)}s</span>
+                                         <span className="text-[10px] text-zinc-400">|</span>
+                                         <span className="text-[10px] text-zinc-500">{(localScene.layers?.filter(l => l.isBackground).length || 0) + 1} cortes</span>
+                                         <button 
+                                             onClick={handleDistributeEvenly}
+                                             className="text-[9px] px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold flex items-center gap-1"
+                                             title="Distribuir tempos uniformemente"
+                                         >
+                                             <Timer className="w-3 h-3" /> Auto
+                                         </button>
+                                     </div>
+                                 </div>
+                                 <div className="bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 space-y-2">
                                      
-                                     {/* Base Image (Shot 1) */}
-                                     <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                                         <div className="w-12 h-12 bg-black rounded shrink-0 overflow-hidden relative">
+                                     {/* Base Image (Shot 1) - Always at 0s */}
+                                     <div className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-900 rounded-lg border-2 border-indigo-500/30">
+                                         <div className="w-14 h-14 bg-black rounded shrink-0 overflow-hidden relative">
                                             {localScene.mediaType === 'video' ? <video src={localScene.videoUrl} className="w-full h-full object-cover" muted loop autoPlay /> : <img src={localScene.imageUrl} className="w-full h-full object-cover" />}
                                             {localScene.mediaType === 'video' && <div className="absolute top-0 right-0 p-0.5 bg-black/50"><Video className="w-3 h-3 text-white"/></div>}
+                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
+                                                <span className="text-[8px] text-white font-bold">0s</span>
+                                            </div>
                                          </div>
-                                         <div className="flex-1">
-                                             <div className="flex justify-between items-center mb-1">
-                                                <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Base Visual (0s)</span>
+                                         <div className="flex-1 min-w-0">
+                                             <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">Base Visual</span>
+                                                <span className="text-[9px] px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded font-bold">SHOT 1</span>
                                              </div>
-                                             <textarea value={localScene.visualPrompt} onChange={(e) => setLocalScene({...localScene, visualPrompt: e.target.value})} className="w-full text-[10px] bg-transparent border-b border-zinc-200 dark:border-zinc-800 focus:border-indigo-500 outline-none resize-none h-8 text-zinc-500" placeholder="Prompt da imagem base..." />
+                                             <textarea value={localScene.visualPrompt} onChange={(e) => setLocalScene({...localScene, visualPrompt: e.target.value})} className="w-full text-[10px] bg-transparent border-b border-zinc-200 dark:border-zinc-800 focus:border-indigo-500 outline-none resize-none h-6 text-zinc-500" placeholder="Prompt da imagem base..." />
                                          </div>
-                                         <div className="flex gap-1">
-                                            <button onClick={handleRegenerateVisual} disabled={isRegeneratingVisual} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-indigo-500" title="Regenerar Base">{isRegeneratingVisual ? <Loader2 className="w-4 h-4 animate-spin"/> : <RefreshCcw className="w-4 h-4"/>}</button>
-                                            <button onClick={() => baseVisualUploadRef.current?.click()} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full text-zinc-500 hover:text-indigo-500" title="Upload Mídia Própria"><Upload className="w-4 h-4"/></button>
+                                         <div className="flex flex-col gap-1">
+                                            <button onClick={handleRegenerateVisual} disabled={isRegeneratingVisual} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-indigo-500" title="Regenerar Base">{isRegeneratingVisual ? <Loader2 className="w-3 h-3 animate-spin"/> : <RefreshCcw className="w-3 h-3"/>}</button>
+                                            <button onClick={() => baseVisualUploadRef.current?.click()} className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-500 hover:text-indigo-500" title="Upload Mídia"><Upload className="w-3 h-3"/></button>
                                          </div>
                                          <input type="file" ref={baseVisualUploadRef} onChange={handleBaseVisualUpload} className="hidden" accept="image/*,video/*" />
                                      </div>
 
-                                     {/* Additional Shots */}
-                                     {localScene.layers?.filter(l => l.isBackground).map(layer => (
-                                         <div key={layer.id} className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 animate-in fade-in slide-in-from-left-4">
-                                            <div className="w-12 h-12 bg-black rounded shrink-0 overflow-hidden relative">
-                                                {layer.url ? (layer.type === 'video' ? <video src={layer.url} className="w-full h-full object-cover"/> : <img src={layer.url} className="w-full h-full object-cover"/>) : null}
-                                                <div className="absolute bottom-0 right-0 bg-indigo-600 text-white text-[8px] px-1 font-bold">SEQ</div>
+                                     {/* Additional Shots - Sorted by startTime */}
+                                     {localScene.layers?.filter(l => l.isBackground).sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0)).map((layer, idx) => (
+                                         <div key={layer.id} className="flex items-center gap-3 p-2 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600 transition-colors group">
+                                            <div className="w-14 h-14 bg-black rounded shrink-0 overflow-hidden relative">
+                                                {layer.url ? (layer.type === 'video' ? <video src={layer.url} className="w-full h-full object-cover"/> : <img src={layer.url} className="w-full h-full object-cover"/>) : <div className="w-full h-full flex items-center justify-center text-zinc-600"><Image className="w-6 h-6"/></div>}
+                                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-1">
+                                                    <span className="text-[8px] text-white font-bold">{(layer.startTime || 0).toFixed(1)}s</span>
+                                                </div>
+                                                {layer.type === 'video' && <div className="absolute top-0 right-0 p-0.5 bg-indigo-600"><Video className="w-2 h-2 text-white"/></div>}
                                             </div>
-                                            <div className="flex-1">
-                                                <div className="flex justify-between items-center mb-1">
-                                                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Corte Adicional</span>
-                                                    <div className="flex gap-1">
-                                                        <button 
-                                                            onClick={() => handleRegenerateSequenceLayer(layer.id)}
-                                                            disabled={regeneratingLayerIds.has(layer.id)}
-                                                            className="text-zinc-400 hover:text-indigo-500 p-1"
-                                                            title="Regenerar este corte"
-                                                        >
-                                                            {regeneratingLayerIds.has(layer.id) ? <Loader2 className="w-3 h-3 animate-spin"/> : <RefreshCcw className="w-3 h-3"/>}
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => triggerLayerReplacement(layer.id)}
-                                                            className="text-zinc-400 hover:text-indigo-500 p-1"
-                                                            title="Substituir por Upload"
-                                                        >
-                                                            <Upload className="w-3 h-3"/>
-                                                        </button>
-                                                        <button onClick={() => removeLayer(layer.id)} className="text-red-500 hover:text-red-600 p-1"><Trash2 className="w-3 h-3"/></button>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{layer.name || `Corte ${idx + 2}`}</span>
+                                                    <span className="text-[9px] px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-500 rounded font-bold">SHOT {idx + 2}</span>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <div className="flex items-center gap-1">
+                                                        <Clock className="w-3 h-3 text-zinc-400"/>
+                                                        <input 
+                                                            type="number" 
+                                                            min="0" 
+                                                            max={localScene.durationEstimate} 
+                                                            step="0.5" 
+                                                            value={layer.startTime || 0} 
+                                                            onChange={(e) => updateLayer(layer.id, { startTime: parseFloat(e.target.value) })} 
+                                                            className="w-14 bg-zinc-100 dark:bg-zinc-800 border-none rounded p-1 text-[10px] font-bold text-center"
+                                                        />
+                                                        <span className="text-[9px] text-zinc-400">s</span>
                                                     </div>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <Clock className="w-3 h-3 text-zinc-400"/>
-                                                    <label className="text-[10px] text-zinc-500">Início (s):</label>
-                                                    <input type="number" min="0" max={localScene.durationEstimate} step="0.5" value={layer.startTime || 0} onChange={(e) => updateLayer(layer.id, { startTime: parseFloat(e.target.value) })} className="w-16 bg-zinc-100 dark:bg-zinc-800 border-none rounded p-1 text-xs font-bold text-center" />
-                                                </div>
+                                            </div>
+                                            <div className="flex gap-1 opacity-50 group-hover:opacity-100 transition-opacity">
+                                                <button 
+                                                    onClick={() => handleRegenerateSequenceLayer(layer.id)}
+                                                    disabled={regeneratingLayerIds.has(layer.id)}
+                                                    className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-400 hover:text-indigo-500"
+                                                    title="Regenerar"
+                                                >
+                                                    {regeneratingLayerIds.has(layer.id) ? <Loader2 className="w-3 h-3 animate-spin"/> : <RefreshCcw className="w-3 h-3"/>}
+                                                </button>
+                                                <button 
+                                                    onClick={() => triggerLayerReplacement(layer.id)}
+                                                    className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded text-zinc-400 hover:text-indigo-500"
+                                                    title="Upload"
+                                                >
+                                                    <Upload className="w-3 h-3"/>
+                                                </button>
+                                                <button 
+                                                    onClick={() => removeLayer(layer.id)} 
+                                                    className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 rounded text-zinc-400 hover:text-red-500"
+                                                    title="Remover"
+                                                >
+                                                    <Trash2 className="w-3 h-3"/>
+                                                </button>
                                             </div>
                                          </div>
                                      ))}
 
                                      <input type="file" ref={layerReplacementUploadRef} onChange={handleLayerReplacementUpload} className="hidden" accept="image/*,video/*" />
 
-                                     {/* Add New Shot UI */}
-                                     <div className="pt-2 border-t border-dashed border-zinc-300 dark:border-zinc-700">
-                                         <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block">Adicionar Corte Visual (Sequência)</label>
+                                     {/* Add New Shot UI - Improved */}
+                                     <div className="pt-3 mt-2 border-t border-dashed border-zinc-300 dark:border-zinc-700">
+                                         <div className="flex items-center justify-between mb-2">
+                                             <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1">
+                                                 <Plus className="w-3 h-3"/> Adicionar Corte
+                                             </label>
+                                         </div>
                                          <div className="flex gap-2">
-                                             <input value={cutPrompt} onChange={(e) => setCutPrompt(e.target.value)} placeholder="Prompt para o novo corte..." className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs outline-none" />
-                                             <button onClick={handleGenerateVisualCut} disabled={isGeneratingCut || !cutPrompt} className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 transition-colors disabled:opacity-50">{isGeneratingCut ? <Loader2 className="w-4 h-4 animate-spin"/> : "Gerar"}</button>
-                                             <button onClick={() => cutInputRef.current?.click()} className="px-3 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-lg text-xs font-bold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors" title="Upload"><Upload className="w-4 h-4"/></button>
+                                             <input 
+                                                 value={cutPrompt} 
+                                                 onChange={(e) => setCutPrompt(e.target.value)} 
+                                                 placeholder="Descreva a nova imagem..." 
+                                                 className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-xs outline-none focus:border-indigo-500 transition-colors" 
+                                                 onKeyDown={(e) => { if (e.key === 'Enter' && cutPrompt) handleGenerateVisualCut(); }}
+                                             />
+                                             <button 
+                                                 onClick={handleGenerateVisualCut} 
+                                                 disabled={isGeneratingCut || !cutPrompt} 
+                                                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-500 transition-colors disabled:opacity-50 flex items-center gap-1"
+                                             >
+                                                 {isGeneratingCut ? <Loader2 className="w-3 h-3 animate-spin"/> : <Wand2 className="w-3 h-3"/>}
+                                                 {isGeneratingCut ? "..." : "IA"}
+                                             </button>
+                                             <button 
+                                                 onClick={() => cutInputRef.current?.click()} 
+                                                 className="px-3 py-2 bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 rounded-lg text-xs font-bold hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors flex items-center gap-1" 
+                                                 title="Upload"
+                                             >
+                                                 <Upload className="w-3 h-3"/>
+                                             </button>
                                              <input type="file" ref={cutInputRef} onChange={handleAddUploadCut} className="hidden" accept="image/*,video/*" />
                                          </div>
+                                         <p className="text-[9px] text-zinc-400 mt-2 italic">
+                                             💡 Dica: Use "Auto" para distribuir os cortes uniformemente pela duração da cena.
+                                         </p>
                                      </div>
                                  </div>
                              </div>

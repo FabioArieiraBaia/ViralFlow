@@ -58,8 +58,13 @@ export const savePollinationsToken = (token: string) => {
     localStorage.setItem(POLLINATIONS_STORAGE_KEY, token.trim());
 };
 
+// Public fallback token for Pollinations API (used when no private key is set)
+const POLLINATIONS_PUBLIC_TOKEN = 'plln_pk_wlN7XsTcd2lZOhnzhlvpQdw8A7EwWnwo';
+
 export const getPollinationsToken = (): string => {
-    return localStorage.getItem(POLLINATIONS_STORAGE_KEY) || "";
+    const userToken = localStorage.getItem(POLLINATIONS_STORAGE_KEY) || "";
+    // If user has no token set, use the public fallback token
+    return userToken.trim() || POLLINATIONS_PUBLIC_TOKEN;
 };
 
 export const getApiKeyCount = () => {
@@ -490,7 +495,8 @@ export const generateSpeech = async (
     topic: string,
     checkCancelled?: () => boolean,
     ttsStyle?: string,
-    model: GeminiTTSModel = 'gemini-2.5-flash-preview-tts'
+    model: GeminiTTSModel = 'gemini-2.5-flash-preview-tts',
+    contentLanguage?: string // Language code: 'pt' for Portuguese (Brazil), 'en' for English, etc.
 ): Promise<{ success: boolean; url?: string; buffer?: AudioBuffer; base64?: string }> => {
     try {
         return await withRetry(async (ai) => {
@@ -499,7 +505,18 @@ export const generateSpeech = async (
             }
 
             const stylePrompt = ttsStyle ? ` Style: ${ttsStyle}.` : '';
-            const prompt = `Generate natural speech for: "${text}". Speaker: ${speaker}.${stylePrompt}`;
+            
+            // CRITICAL: Add language reinforcement to prevent PT-PT accent when PT-BR is expected
+            let languageInstruction = '';
+            if (contentLanguage === 'pt') {
+                languageInstruction = ' CRITICAL LANGUAGE REQUIREMENT: Speak in Brazilian Portuguese (pt-BR) with a natural Brazilian accent. Do NOT use European Portuguese (pt-PT) pronunciation or expressions. Use Brazilian vocabulary and intonation patterns typical of São Paulo or Rio de Janeiro.';
+            } else if (contentLanguage === 'en') {
+                languageInstruction = ' Speak in American English with clear pronunciation.';
+            } else if (contentLanguage === 'es') {
+                languageInstruction = ' Speak in Latin American Spanish (not Castilian Spanish from Spain).';
+            }
+            
+            const prompt = `Generate natural speech for: "${text}". Speaker: ${speaker}.${stylePrompt}${languageInstruction}`;
 
             // CRITICAL FIX: Use correct API structure for TTS voice configuration
             // The API expects speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName, not audioConfig.voice

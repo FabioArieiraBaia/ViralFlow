@@ -738,26 +738,43 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
       }
       
       // Check for active layer in timeline
+      // CRITICAL FIX: Sort background layers by startTime and find the one that should be active
       if (scene.layers && scene.layers.length > 0) {
           const currentSec = elapsedTimeMs / 1000;
-          const activeLayer = scene.layers.find(l => 
-              l.isBackground && 
-              (l.startTime ?? 0) <= currentSec && 
-              (l.endTime ?? 9999) > currentSec
-          );
-          if (activeLayer) {
-              // Use URL if available, otherwise use base64
-              if (activeLayer.url) {
-                  bgUrl = activeLayer.url;
-              } else if (activeLayer.base64) {
-                  // Convert base64 to blob URL for rendering
-                  const mimeType = activeLayer.type === 'video' ? 'video/mp4' : 
-                                   (activeLayer.base64.startsWith('/9j/') ? 'image/jpeg' : 'image/png');
-                  bgUrl = base64ToBlobUrl(activeLayer.base64, mimeType);
+          
+          // Get all background layers sorted by startTime
+          const bgLayers = scene.layers
+              .filter(l => l.isBackground)
+              .sort((a, b) => (a.startTime ?? 0) - (b.startTime ?? 0));
+          
+          if (bgLayers.length > 0) {
+              // Find the active layer: the last one whose startTime <= currentSec
+              // This ensures we show the correct image based on timeline position
+              let activeLayer = bgLayers[0]; // Default to first
+              
+              for (let i = bgLayers.length - 1; i >= 0; i--) {
+                  const layer = bgLayers[i];
+                  const layerStart = layer.startTime ?? 0;
+                  if (layerStart <= currentSec) {
+                      activeLayer = layer;
+                      break;
+                  }
               }
-              if (bgUrl) {
-                  bgType = activeLayer.type as 'image' | 'video';
-                  bgIsVideo = activeLayer.type === 'video';
+              
+              if (activeLayer) {
+                  // Use URL if available, otherwise use base64
+                  if (activeLayer.url) {
+                      bgUrl = activeLayer.url;
+                  } else if (activeLayer.base64) {
+                      // Convert base64 to blob URL for rendering
+                      const mimeType = activeLayer.type === 'video' ? 'video/mp4' : 
+                                       (activeLayer.base64.startsWith('/9j/') ? 'image/jpeg' : 'image/png');
+                      bgUrl = base64ToBlobUrl(activeLayer.base64, mimeType);
+                  }
+                  if (bgUrl) {
+                      bgType = activeLayer.type as 'image' | 'video';
+                      bgIsVideo = activeLayer.type === 'video';
+                  }
               }
           }
       }
@@ -1145,7 +1162,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({
           if (rafRef.current) cancelAnimationFrame(rafRef.current);
       };
       
-  }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format, bgMusicPlaylist]); 
+  }, [isPlaying, currentSceneIndex, renderScale, bgMusicUrl, format, bgMusicPlaylist, scenes, scrubProgress]); 
 
   // --- RENDER COMPONENT ---
   return (

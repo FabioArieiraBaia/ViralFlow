@@ -134,7 +134,13 @@ const App: React.FC = () => {
     const seenWelcome = localStorage.getItem('viralflow_welcome_seen');
     if (!seenWelcome) setShowWelcomeModal(true);
     
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    // Load saved theme or detect preference
+    const savedTheme = localStorage.getItem('viralflow_theme') as Theme | null;
+    if (savedTheme && ['dark', 'clean', 'creator'].includes(savedTheme)) {
+        setTheme(savedTheme);
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        setTheme('clean');
+    } else {
         setTheme('dark');
     }
     
@@ -146,8 +152,27 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (theme === 'dark') document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
+    // Update HTML class for theme
+    document.documentElement.classList.remove('theme-dark', 'theme-clean', 'theme-creator', 'dark');
+    document.documentElement.classList.add(`theme-${theme}`);
+    
+    // Also add 'dark' class for Tailwind dark mode compat on dark/creator themes
+    if (theme === 'dark' || theme === 'creator') {
+      document.documentElement.classList.add('dark');
+    }
+    
+    // Toggle creator glow effect
+    const glowEl = document.querySelector('.hero-glow');
+    if (glowEl) {
+      if (theme === 'creator') {
+        glowEl.classList.remove('hidden');
+      } else {
+        glowEl.classList.add('hidden');
+      }
+    }
+    
+    // Persist theme choice
+    localStorage.setItem('viralflow_theme', theme);
   }, [theme]);
 
   const handleImportScript = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -454,7 +479,8 @@ const App: React.FC = () => {
                     topic, 
                     () => false, 
                     globalTtsStyle, 
-                    ttsModel
+                    ttsModel,
+                    contentLang // Pass content language for accent reinforcement
                 );
 
                 if (audioRes.success && audioRes.url && audioRes.buffer && audioRes.base64) {
@@ -865,7 +891,8 @@ const App: React.FC = () => {
                         topic, 
                         () => false, 
                         globalTtsStyle, 
-                        ttsModel
+                        ttsModel,
+                        contentLang // Pass content language for accent reinforcement
                     );
 
                     if (audioRes.success && audioRes.url && audioRes.buffer && audioRes.base64) {
@@ -962,7 +989,7 @@ const App: React.FC = () => {
       return generateSceneImage(scene.visualPrompt, format, 0, topic, ImageProvider.POLLINATIONS, style, modelToUse as PollinationsModel, undefined, undefined, duration, audio);
   };
   const onRegenerateAudio = async (scene: Scene, model?: GeminiTTSModel, style?: string) => {
-      return generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', 0, topic, undefined, style, model);
+      return generateSpeech(scene.text, scene.speaker, scene.assignedVoice || 'Fenrir', 0, topic, undefined, style, model, contentLang);
   };
   const handleForceRegenerateAll = () => { /* Logic */ };
 
