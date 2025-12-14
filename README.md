@@ -18,6 +18,8 @@
 **Developed by Full Stack Developer Fábio Arieira.**
 
 *   **Website:** [fabioarieira.com](https://fabioarieira.com)
+*   **GitHub:** [@FabioArieiraBaia](https://github.com/FabioArieiraBaia)
+*   **Discord:** `fabioarieira8850`
 *   **Tech Stack:** React 19, TypeScript, Vite, TailwindCSS, Electron, Google GenAI SDK.
 
 **© 2025 Fábio Arieira. All Rights Reserved.**
