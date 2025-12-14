@@ -8,25 +8,22 @@ import { fileToBase64 } from '../services/audioUtils';
 export const WelcomeModal: React.FC<{ onClose: () => void, lang: Language, t: any }> = ({ onClose, lang, t }) => {
     const WEBSITE_LINK = "https://fabioarieira.com";
     return (
-        <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black/90 backdrop-blur-lg p-0 md:p-6 animate-in fade-in duration-500">
-            <div className="bg-[var(--bg-secondary)] border themed-border rounded-t-3xl md:rounded-2xl p-6 md:p-8 max-w-lg w-full shadow-2xl relative overflow-hidden text-center animate-in slide-in-from-bottom-4 md:slide-in-from-bottom-0 duration-300">
-                {/* Bottom sheet handle for mobile */}
-                <div className="md:hidden w-10 h-1 bg-[var(--bg-elevated)] rounded-full mx-auto mb-4"></div>
-                
-                <div className="mx-auto w-14 h-14 md:w-16 md:h-16 bg-[var(--accent-primary)]/20 rounded-full flex items-center justify-center mb-4 md:mb-6 border border-[var(--accent-primary)]/30">
-                    <ShieldCheck className="w-7 h-7 md:w-8 md:h-8 themed-accent" />
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur-lg p-6 animate-in fade-in duration-500">
+            <div className="bg-gradient-to-br from-zinc-900 to-black border border-zinc-800 rounded-2xl p-8 max-w-lg w-full shadow-2xl relative overflow-hidden text-center">
+                <div className="mx-auto w-16 h-16 bg-indigo-600/20 rounded-full flex items-center justify-center mb-6 border border-indigo-500/30">
+                    <ShieldCheck className="w-8 h-8 text-indigo-400" />
                 </div>
-                <h2 className="text-2xl md:text-3xl font-black themed-text mb-3 md:mb-4 tracking-tight">{t[lang].welcomeTitle}</h2>
-                <div className="space-y-3 md:space-y-4 themed-text-secondary text-sm leading-relaxed">
-                    <p><strong className="themed-accent">{t[lang].privacyNote}</strong> {t[lang].privacyDesc}</p>
-                    <p>{lang === 'pt' ? 'Todo o processamento acontece' : lang === 'es' ? 'Todo el procesamiento ocurre' : 'All processing happens'} <strong className="themed-text">{t[lang].privacyLocal}</strong>.</p>
+                <h2 className="text-3xl font-black text-white mb-4 tracking-tight">{t[lang].welcomeTitle}</h2>
+                <div className="space-y-4 text-zinc-400 text-sm leading-relaxed">
+                    <p><strong className="text-indigo-300">{t[lang].privacyNote}</strong> {t[lang].privacyDesc}</p>
+                    <p>All processing happens <strong className="text-white">{t[lang].privacyLocal}</strong>.</p>
                 </div>
-                <div className="mt-6 md:mt-8 pt-4 md:pt-6 border-t themed-border">
-                    <p className="text-xs themed-text-secondary mb-1">{t[lang].devBy}</p>
-                    <a href={WEBSITE_LINK} target="_blank" rel="noopener noreferrer" className="text-lg font-bold themed-text hover:themed-accent transition-colors">Fabio Arieira</a>
-                    <p className="text-[10px] themed-text-secondary mt-1">Full Stack Developer</p>
+                <div className="mt-8 pt-6 border-t border-zinc-800/50">
+                    <p className="text-xs text-zinc-500 mb-1">{t[lang].devBy}</p>
+                    <a href={WEBSITE_LINK} target="_blank" rel="noopener noreferrer" className="text-lg font-bold text-white hover:text-indigo-400 transition-colors">Fabio Arieira</a>
+                    <p className="text-[10px] text-zinc-600 mt-1">Full Stack Developer</p>
                 </div>
-                <button onClick={onClose} className="mt-6 md:mt-8 w-full py-3 md:py-4 themed-btn font-bold rounded-xl transition-all transform hover:scale-[1.02] touch-target">{t[lang].understand}</button>
+                <button onClick={onClose} className="mt-8 w-full py-3 bg-white text-black hover:bg-zinc-200 font-bold rounded-xl transition-all transform hover:scale-[1.02]">{t[lang].understand}</button>
             </div>
         </div>
     );
@@ -54,38 +51,35 @@ export const UpgradeModal: React.FC<{ onClose: () => void, onUpgrade: (key: stri
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/90 backdrop-blur-md p-0 md:p-4">
-            <div className="bg-[var(--bg-secondary)] border border-amber-500/30 rounded-t-3xl md:rounded-2xl p-6 md:p-8 max-w-md w-full shadow-2xl relative overflow-hidden animate-in slide-in-from-bottom-4 md:slide-in-from-bottom-0 duration-300">
-                {/* Bottom sheet handle for mobile */}
-                <div className="md:hidden w-10 h-1 bg-[var(--bg-elevated)] rounded-full mx-auto mb-4"></div>
-                
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-md p-4">
+            <div className="bg-gradient-to-b from-zinc-900 to-black border border-amber-500/30 rounded-2xl p-8 max-w-md w-full shadow-2xl relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-500"></div>
-                <div className="text-center mb-6 md:mb-8 mt-2 md:mt-0">
-                    <div className="w-14 h-14 md:w-16 md:h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-3 md:mb-4 border border-amber-500/50">
-                        <Crown className="w-7 h-7 md:w-8 md:h-8 text-amber-500" />
+                <div className="text-center mb-8">
+                    <div className="w-16 h-16 bg-amber-500/10 rounded-full flex items-center justify-center mx-auto mb-4 border border-amber-500/50">
+                        <Crown className="w-8 h-8 text-amber-500" />
                     </div>
-                    <h2 className="text-xl md:text-2xl font-black themed-text mb-2">{t[lang].upgradeTitle}</h2>
-                    <p className="themed-text-secondary text-sm">{t[lang].upgradeDesc}</p>
+                    <h2 className="text-2xl font-black text-white mb-2">{t[lang].upgradeTitle}</h2>
+                    <p className="text-zinc-400 text-sm">{t[lang].upgradeDesc}</p>
                 </div>
-                <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-2">
-                        <a href="https://fabioarise.gumroad.com/l/viralflow" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg transition-colors text-center text-xs touch-target"><Crown className="w-4 h-4"/> Site</a>
-                        <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors text-center text-xs touch-target"><Loader2 className="w-4 h-4"/> Pix / WhatsApp</a>
+                <div className="mt-8">
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                        <a href="https://fabioarise.gumroad.com/l/viralflow" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded-lg transition-colors text-center text-xs"><Crown className="w-4 h-4"/> Site</a>
+                        <a href={WHATSAPP_LINK} target="_blank" rel="noopener noreferrer" className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors text-center text-xs"><Loader2 className="w-4 h-4"/> Pix / WhatsApp</a>
                     </div>
                     {!success ? (
-                        <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex gap-2">
                             <div className="relative flex-1">
-                                <Key className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 themed-text-secondary" />
-                                <input type="text" placeholder={t[lang].pasteKey} className="w-full bg-[var(--bg-primary)] border themed-border rounded-lg pl-9 pr-3 py-3 text-sm themed-text focus:ring-1 focus:ring-amber-500 outline-none touch-target" value={key} onChange={(e) => setKey(e.target.value)} />
+                                <Key className="absolute left-3 top-3 w-4 h-4 text-zinc-500" />
+                                <input type="text" placeholder={t[lang].pasteKey} className="w-full bg-zinc-950 border border-zinc-800 rounded-lg pl-9 pr-3 py-2 text-sm text-white focus:ring-1 focus:ring-amber-500 outline-none" value={key} onChange={(e) => setKey(e.target.value)} />
                             </div>
-                            <button onClick={handleVerify} disabled={isValidating || !key} className="bg-[var(--bg-tertiary)] hover:bg-[var(--bg-elevated)] themed-text px-4 py-3 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 touch-target">{isValidating ? <Loader2 className="w-4 h-4 animate-spin" /> : t[lang].activate}</button>
+                            <button onClick={handleVerify} disabled={isValidating || !key} className="bg-zinc-800 hover:bg-zinc-700 text-white px-4 rounded-lg font-medium text-sm transition-colors disabled:opacity-50">{isValidating ? <Loader2 className="w-4 h-4 animate-spin" /> : t[lang].activate}</button>
                         </div>
                     ) : (
-                        <div className="bg-[var(--success)]/20 border border-[var(--success)]/50 p-3 rounded-lg text-[var(--success)] text-sm font-medium text-center">{t[lang].licenseActive}</div>
+                        <div className="bg-emerald-500/20 border border-emerald-500/50 p-3 rounded-lg text-emerald-400 text-sm font-medium text-center">{t[lang].licenseActive}</div>
                     )}
-                    {error && <p className="text-[var(--error)] text-xs mt-2 text-center">{error}</p>}
+                    {error && <p className="text-red-400 text-xs mt-2 text-center">{error}</p>}
                 </div>
-                <button onClick={onClose} className="absolute top-4 right-4 themed-text-secondary hover:themed-text touch-target p-2"><X className="w-5 h-5" /></button>
+                <button onClick={onClose} className="absolute top-4 right-4 text-zinc-500 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
         </div>
     );
@@ -1421,5 +1415,4 @@ export const EditSceneModal: React.FC<{
                 </div>
             </div>
         </div>
-    );
-};
+    );};

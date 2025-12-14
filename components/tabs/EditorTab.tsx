@@ -10,7 +10,7 @@ import {
   Palette, Music, Zap, Download, Smartphone, Monitor, Music2, ImagePlus, 
   RefreshCcw, Layers, ImagePlus as ImageIcon, Volume2, Trash2, CheckSquare, 
   Square as SquareIcon, MicOff, Edit2, Plus, Crown, Lock, Save, Film, ListMusic, User, Users,
-  ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, ThumbsUp, X, Image, Mic, ChevronLeft, ChevronRight
+  ClipboardCheck, AlertTriangle, CheckCircle2, XCircle, ThumbsUp, X, Image, Mic
 } from 'lucide-react';
 import { translations } from '../../services/translations';
 import { Loader2, AlertCircle } from 'lucide-react';
@@ -80,7 +80,6 @@ interface EditorTabProps {
 export const EditorTab: React.FC<EditorTabProps> = (props) => {
   const t = translations[props.lang];
   const [activeStudioTab, setActiveStudioTab] = useState<'visual'|'audio'|'brand'|'export'|'cast'>('visual');
-  const [mobileView, setMobileView] = useState<'player' | 'timeline'>('player');
   const musicInputRef = useRef<HTMLInputElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -95,53 +94,59 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
 
   // Initialize Cast List when scenes change
   useEffect(() => {
-    const uniqueSpeakers = new Set(props.scenes.map(s => s.speaker));
-    const cast = Array.from(uniqueSpeakers).map(speaker => {
-      const scene = props.scenes.find(s => s.speaker === speaker);
-      return {
-        original: speaker,
-        newName: speaker,
-        voice: scene?.assignedVoice || 'Fenrir'
-      };
-    });
-    setCastList(cast);
-  }, [props.scenes.length]);
+      const uniqueSpeakers = new Set(props.scenes.map(s => s.speaker));
+      const cast = Array.from(uniqueSpeakers).map(speaker => {
+          // Find first occurrence to get current assigned voice
+          const scene = props.scenes.find(s => s.speaker === speaker);
+          return {
+              original: speaker,
+              newName: speaker,
+              voice: scene?.assignedVoice || 'Fenrir'
+          };
+      });
+      setCastList(cast);
+  }, [props.scenes.length]); // Only reset if scene count changes or initial load
 
   const handleUpdateCast = () => {
-    props.setScenes(prev => prev.map(scene => {
-      const castMember = castList.find(c => c.original === scene.speaker);
-      if (castMember) {
-        return {
-          ...scene,
-          speaker: castMember.newName,
-          assignedVoice: castMember.voice
-        };
-      }
-      return scene;
-    }));
-    setCastList(prev => prev.map(c => ({...c, original: c.newName})));
-    alert(t.castUpdated);
+      props.setScenes(prev => prev.map(scene => {
+          const castMember = castList.find(c => c.original === scene.speaker);
+          if (castMember) {
+              return {
+                  ...scene,
+                  speaker: castMember.newName, // Update displayed name
+                  assignedVoice: castMember.voice // Update assigned voice for future regens
+              };
+          }
+          return scene;
+      }));
+      // Update original keys to match new names so subsequent edits work
+      setCastList(prev => prev.map(c => ({...c, original: c.newName})));
+      alert("Elenco atualizado! (Regenere o áudio se mudou a voz)");
   };
 
+  // Handle single or multiple files
   const handleMusicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      const newUrls = Array.from(files).map((f: any) => URL.createObjectURL(f));
-      if (props.bgMusicPlaylist.length === 0 && newUrls.length > 0) {
-        props.setBgMusicUrl(newUrls[0]);
-      }
-      props.setBgMusicPlaylist([...props.bgMusicPlaylist, ...newUrls]);
+        const newUrls = Array.from(files).map((f: any) => URL.createObjectURL(f));
+        
+        // If playlist is empty, first file is main url (legacy compat)
+        if (props.bgMusicPlaylist.length === 0 && newUrls.length > 0) {
+            props.setBgMusicUrl(newUrls[0]);
+        }
+        
+        props.setBgMusicPlaylist([...props.bgMusicPlaylist, ...newUrls]);
     }
   };
 
   const removeTrack = (index: number) => {
-    const newList = props.bgMusicPlaylist.filter((_, i) => i !== index);
-    props.setBgMusicPlaylist(newList);
-    if (newList.length > 0) {
-      props.setBgMusicUrl(newList[0]);
-    } else {
-      props.setBgMusicUrl("");
-    }
+      const newList = props.bgMusicPlaylist.filter((_, i) => i !== index);
+      props.setBgMusicPlaylist(newList);
+      if (newList.length > 0) {
+          props.setBgMusicUrl(newList[0]);
+      } else {
+          props.setBgMusicUrl("");
+      }
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,520 +155,433 @@ export const EditorTab: React.FC<EditorTabProps> = (props) => {
   };
 
   if (props.scenes.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[var(--bg-tertiary)]">
-        <div className="themed-text-secondary">{t.noScenesAvailable}</div>
-      </div>
-    );
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-zinc-50 dark:bg-black/50">
+           <div className="text-zinc-500">Nenhuma cena disponível. Crie ou importe um projeto.</div>
+        </div>
+      );
   }
 
-  const studioTabs = [
-    { id: 'visual', label: 'Visual', icon: Palette },
-    { id: 'audio', label: props.lang === 'pt' ? 'Áudio' : 'Audio', icon: Music },
-    { id: 'cast', label: props.lang === 'pt' ? 'Elenco' : 'Cast', icon: Users },
-    { id: 'brand', label: 'Brand', icon: Zap },
-    { id: 'export', label: props.lang === 'pt' ? 'Baixar' : 'Export', icon: Download }
-  ];
-
   return (
-    <div className="flex-1 flex flex-col lg:flex-row h-full items-start overflow-hidden relative animate-in fade-in duration-500">
-      
-      {/* === MOBILE VIEW TOGGLE === */}
-      <div className="lg:hidden w-full flex border-b themed-border bg-[var(--bg-secondary)]">
-        <button 
-          onClick={() => setMobileView('player')}
-          className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors touch-target ${
-            mobileView === 'player' ? 'themed-accent bg-[var(--accent-primary)]/10' : 'themed-text-secondary'
-          }`}
-        >
-          <Film className="w-4 h-4" /> Player
-        </button>
-        <button 
-          onClick={() => setMobileView('timeline')}
-          className={`flex-1 py-3 text-sm font-bold flex items-center justify-center gap-2 transition-colors touch-target ${
-            mobileView === 'timeline' ? 'themed-accent bg-[var(--accent-primary)]/10' : 'themed-text-secondary'
-          }`}
-        >
-          <Layers className="w-4 h-4" /> Timeline ({props.scenes.length})
-        </button>
-      </div>
-
-      {/* === LEFT COLUMN: PLAYER & CONTROLS === */}
-      <div className={`w-full lg:w-1/2 xl:w-2/5 bg-[var(--bg-primary)] flex flex-col items-center border-r themed-border z-10 lg:h-full overflow-y-auto custom-scrollbar hide-scrollbar-mobile ${mobileView === 'timeline' ? 'hidden lg:flex' : 'flex'}`}>
+    <div className="flex-1 flex flex-col md:flex-row h-full items-start overflow-hidden relative animate-in fade-in duration-500">
         
-        {/* PLAYER */}
-        <div className="w-full p-4 md:p-6 pb-0">
-          <div className="w-full max-w-[400px] mx-auto shadow-2xl rounded-lg overflow-hidden border themed-border">
-            <VideoPlayer 
-              ref={props.playerRef}
-              scenes={props.scenes}
-              currentSceneIndex={props.currentSceneIndex}
-              setCurrentSceneIndex={props.setCurrentSceneIndex}
-              isPlaying={props.isPlaying}
-              setIsPlaying={props.setIsPlaying}
-              format={props.format}
-              bgMusicUrl={props.bgMusicUrl}
-              bgMusicPlaylist={props.bgMusicPlaylist}
-              bgMusicVolume={props.bgMusicVolume}
-              showSubtitles={props.showSubtitles}
-              subtitleStyle={props.subtitleStyle}
-              subtitleSettings={props.subtitleSettings}
-              activeFilter={props.activeFilter}
-              globalTransition={props.globalTransition}
-              globalVfx={props.globalVfx}
-              userTier={props.userTier}
-              onPlaybackComplete={() => props.setIsPlaying(false)}
-              channelLogo={props.channelLogo}
-              showSpeakerTags={props.showSpeakerTags}
-              speakerTagStyle={props.speakerTagStyle}
-              onUpdateChannelLogo={props.setChannelLogo}
-              onUpdateSceneOverlay={(id, cfg) => {
-                props.setScenes(prev => prev.map(s => s.id === id ? { ...s, overlay: cfg } : s));
-              }}
-            />
-          </div>
-        </div>
-
-        {/* STUDIO TABS */}
-        <div className="w-full p-4 md:p-6 pt-4 md:pt-6 pb-20 lg:pb-6">
-          <div className="bg-[var(--bg-secondary)] border themed-border rounded-xl shadow-sm overflow-hidden">
-            <div className="flex border-b themed-border bg-[var(--bg-tertiary)] overflow-x-auto hide-scrollbar-mobile">
-              {studioTabs.map(tab => (
-                <button 
-                  key={tab.id} 
-                  onClick={() => setActiveStudioTab(tab.id as any)} 
-                  className={`flex-1 min-w-[60px] py-3 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 touch-target ${
-                    activeStudioTab === tab.id 
-                      ? 'bg-[var(--bg-secondary)] themed-accent border-b-2 border-[var(--accent-primary)]' 
-                      : 'themed-text-secondary hover:bg-[var(--bg-elevated)]'
-                  }`}
-                >
-                  <tab.icon className="w-3 h-3" /> <span className="hidden sm:inline">{tab.label}</span>
-                </button>
-              ))}
+        {/* LEFT COLUMN: PLAYER & CONTROLS */}
+        <div className="w-full md:w-1/2 lg:w-2/5 bg-zinc-100 dark:bg-black flex flex-col items-center border-r border-zinc-200 dark:border-zinc-800 z-10 md:h-full overflow-y-auto custom-scrollbar">
+            
+            {/* PLAYER */}
+            <div className="w-full p-6 pb-0">
+                <div className="w-full max-w-[400px] mx-auto shadow-2xl rounded-lg overflow-hidden border border-zinc-800">
+                    <VideoPlayer 
+                        ref={props.playerRef}
+                        scenes={props.scenes}
+                        currentSceneIndex={props.currentSceneIndex}
+                        setCurrentSceneIndex={props.setCurrentSceneIndex}
+                        isPlaying={props.isPlaying}
+                        setIsPlaying={props.setIsPlaying}
+                        format={props.format}
+                        bgMusicUrl={props.bgMusicUrl}
+                        bgMusicPlaylist={props.bgMusicPlaylist}
+                        bgMusicVolume={props.bgMusicVolume}
+                        showSubtitles={props.showSubtitles}
+                        subtitleStyle={props.subtitleStyle}
+                        subtitleSettings={props.subtitleSettings}
+                        activeFilter={props.activeFilter}
+                        globalTransition={props.globalTransition}
+                        globalVfx={props.globalVfx}
+                        userTier={props.userTier}
+                        onPlaybackComplete={() => props.setIsPlaying(false)}
+                        channelLogo={props.channelLogo}
+                        showSpeakerTags={props.showSpeakerTags}
+                        speakerTagStyle={props.speakerTagStyle}
+                        onUpdateChannelLogo={props.setChannelLogo}
+                        onUpdateSceneOverlay={(id, cfg) => {
+                            props.setScenes(prev => prev.map(s => s.id === id ? { ...s, overlay: cfg } : s));
+                        }}
+                    />
+                </div>
             </div>
 
-            <div className="p-4 md:p-5 space-y-4 md:space-y-5 min-h-[250px]">
-              
-              {/* CAST (ELENCO) */}
-              {activeStudioTab === 'cast' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
-                  <h4 className="text-xs font-bold themed-text-secondary uppercase flex items-center gap-2">
-                    <Users className="w-4 h-4"/> {t.editCastBulk}
-                  </h4>
-                  <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar p-1">
-                    {castList.map((member, idx) => (
-                      <div key={idx} className="bg-[var(--bg-tertiary)] p-3 rounded-lg border themed-border space-y-2">
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[9px] font-bold themed-text-secondary uppercase">{t.nameAllScenes}</label>
-                          <input 
-                            value={member.newName} 
-                            onChange={(e) => {
-                              const newVal = e.target.value;
-                              setCastList(prev => prev.map((c, i) => i === idx ? {...c, newName: newVal} : c));
-                            }}
-                            className="w-full bg-[var(--bg-primary)] border themed-border rounded p-1.5 text-xs font-bold themed-text touch-target"
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-[9px] font-bold themed-text-secondary uppercase">{t.assignedVoice}</label>
-                          <select 
-                            value={member.voice}
-                            onChange={(e) => {
-                              const newVal = e.target.value;
-                              setCastList(prev => prev.map((c, i) => i === idx ? {...c, voice: newVal} : c));
-                            }}
-                            className="w-full bg-[var(--bg-primary)] border themed-border rounded p-1.5 text-[10px] themed-text touch-target"
-                          >
-                            {ALL_GEMINI_VOICES.map(v => (
-                              <option key={v.id} value={v.id}>{v.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <button onClick={handleUpdateCast} className="w-full py-2 themed-btn rounded-lg text-xs font-bold shadow-md transition-colors touch-target">
-                    {t.applyChanges}
-                  </button>
-                  <p className="text-[9px] themed-text-secondary text-center">{t.castNote}</p>
-                </div>
-              )}
-
-              {/* VISUAL */}
-              {activeStudioTab === 'visual' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
-                  <div>
-                    <label className="text-[10px] font-bold themed-text-secondary uppercase mb-2 block">{t.screenFormat}</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button onClick={() => props.setFormat(VideoFormat.PORTRAIT)} className={`flex items-center justify-center gap-2 py-2 rounded-lg border transition-all touch-target ${props.format === VideoFormat.PORTRAIT ? 'themed-btn' : 'bg-[var(--bg-tertiary)] themed-text-secondary themed-border'}`}>
-                        <Smartphone className="w-4 h-4" /> <span className="text-xs font-bold">{t.vertical}</span>
-                      </button>
-                      <button onClick={() => props.setFormat(VideoFormat.LANDSCAPE)} className={`flex items-center justify-center gap-2 py-2 rounded-lg border transition-all touch-target ${props.format === VideoFormat.LANDSCAPE ? 'themed-btn' : 'bg-[var(--bg-tertiary)] themed-text-secondary themed-border'}`}>
-                        <Monitor className="w-4 h-4" /> <span className="text-xs font-bold">{t.horizontal}</span>
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-bold themed-text-secondary uppercase mb-2 block">{t.globalFilter}</label>
-                      <select value={props.activeFilter} onChange={(e) => props.setActiveFilter(e.target.value as VideoFilter)} className="w-full bg-[var(--bg-tertiary)] border themed-border rounded-lg p-2 text-xs themed-text outline-none touch-target">
-                        {Object.values(VideoFilter).map(f => <option key={f} value={f}>{f}</option>)}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold themed-text-secondary uppercase mb-2 block">{t.defaultTransition}</label>
-                      <select value={props.globalTransition} onChange={(e) => props.setGlobalTransition(e.target.value as VideoTransition)} className="w-full bg-[var(--bg-tertiary)] border themed-border rounded-lg p-2 text-xs themed-text outline-none touch-target">
-                        {Object.values(VideoTransition).map(vt => <option key={vt} value={vt}>{vt}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                  
-                  {/* Speaker Tag Control */}
-                  <div className="p-3 bg-[var(--bg-tertiary)] rounded-lg border themed-border space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold themed-text-secondary uppercase flex items-center gap-1"><User className="w-3 h-3"/> {t.showSpeaker}</label>
-                      <button onClick={() => props.setShowSpeakerTags(!props.showSpeakerTags)} className={`w-10 h-5 rounded-full transition-colors relative touch-target ${props.showSpeakerTags ? 'bg-[var(--accent-primary)]' : 'bg-[var(--bg-elevated)]'}`}>
-                        <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow ${props.showSpeakerTags ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                      </button>
-                    </div>
-                    {props.showSpeakerTags && (
-                      <div className="animate-in slide-in-from-top-2">
-                        <label className="text-[9px] font-bold themed-text-secondary mb-1 block">{t.speakerStyle}</label>
-                        <select value={props.speakerTagStyle} onChange={(e) => props.setSpeakerTagStyle(e.target.value as SpeakerTagStyle)} className="w-full bg-[var(--bg-primary)] border themed-border rounded p-1 text-xs themed-text touch-target">
-                          {Object.values(SpeakerTagStyle).map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-[10px] font-bold themed-text-secondary uppercase">{t.globalSubtitles}</label>
-                      <button onClick={() => props.setShowSubtitles(!props.showSubtitles)} className={`w-10 h-5 rounded-full transition-colors relative touch-target ${props.showSubtitles ? 'bg-[var(--accent-primary)]' : 'bg-[var(--bg-elevated)]'}`}>
-                        <div className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform shadow ${props.showSubtitles ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                      </button>
-                    </div>
-                    {props.showSubtitles && (
-                      <div className="space-y-3">
-                        <select value={props.subtitleStyle} onChange={(e) => props.setSubtitleStyle(e.target.value as SubtitleStyle)} className="w-full bg-[var(--bg-tertiary)] border themed-border rounded-lg p-2 text-xs themed-text outline-none touch-target">
-                          {Object.values(SubtitleStyle).map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                        
-                        {props.subtitleSettings && props.setSubtitleSettings && (
-                          <div className="p-3 bg-[var(--bg-tertiary)] rounded-lg border themed-border space-y-3">
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <div className="flex justify-between text-[10px] themed-text-secondary mb-1">
-                                  <span>{t.fontSize}</span>
-                                  <span>{Math.round(props.subtitleSettings.fontSizeMultiplier * 100)}%</span>
-                                </div>
-                                <input type="range" min="0.5" max="2.0" step="0.1" value={props.subtitleSettings.fontSizeMultiplier} onChange={(e) => props.setSubtitleSettings!({...props.subtitleSettings!, fontSizeMultiplier: parseFloat(e.target.value)})} className="w-full h-1 bg-[var(--bg-elevated)] rounded appearance-none accent-[var(--accent-primary)]" />
-                              </div>
-                              <div>
-                                <div className="flex justify-between text-[10px] themed-text-secondary mb-1">
-                                  <span>{t.verticalPosition}</span>
-                                  <span>{Math.round(props.subtitleSettings.yPosition * 100)}%</span>
-                                </div>
-                                <input type="range" min="0.1" max="0.95" step="0.01" value={props.subtitleSettings.yPosition} onChange={(e) => props.setSubtitleSettings!({...props.subtitleSettings!, yPosition: parseFloat(e.target.value)})} className="w-full h-1 bg-[var(--bg-elevated)] rounded appearance-none accent-[var(--accent-primary)]" />
-                              </div>
-                            </div>
-                            <div>
-                              <label className="text-[10px] font-bold themed-text-secondary mb-1 block">{t.fontFamily}</label>
-                              <select value={props.subtitleSettings.fontFamily} onChange={(e) => props.setSubtitleSettings!({...props.subtitleSettings!, fontFamily: e.target.value})} className="w-full bg-[var(--bg-primary)] border themed-border rounded p-1 text-xs themed-text touch-target">
-                                <option value="Inter">{t.fontInter}</option>
-                                <option value="Montserrat">{t.fontMontserrat}</option>
-                                <option value="Oswald">{t.fontOswald}</option>
-                                <option value="Playfair Display">{t.fontPlayfair}</option>
-                                <option value="JetBrains Mono">{t.fontJetBrains}</option>
-                                <option value="Comic Neue">{t.fontComic}</option>
-                              </select>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  <div className="pt-2 border-t themed-border">
-                    <label className="text-[10px] font-bold themed-text-secondary uppercase mb-3 block flex items-center gap-1"><Film className="w-3 h-3"/> {t.globalVfx}</label>
-                    <div className="space-y-3">
-                      <div>
-                        <div className="flex justify-between text-[10px] themed-text-secondary mb-1">
-                          <span>{t.vignette}</span>
-                          <span>{Math.round(props.globalVfx.vignetteIntensity * 100)}%</span>
-                        </div>
-                        <input type="range" min="0" max="1" step="0.1" value={props.globalVfx.vignetteIntensity} onChange={(e) => props.setGlobalVfx({...props.globalVfx, vignetteIntensity: parseFloat(e.target.value)})} className="w-full h-1 bg-[var(--bg-elevated)] rounded appearance-none accent-[var(--accent-primary)]" />
-                      </div>
-                      <div>
-                        <div className="flex justify-between text-[10px] themed-text-secondary mb-1">
-                          <span>{t.filmGrain}</span>
-                          <span>{Math.round(props.globalVfx.filmGrain * 100)}%</span>
-                        </div>
-                        <input type="range" min="0" max="0.5" step="0.05" value={props.globalVfx.filmGrain} onChange={(e) => props.setGlobalVfx({...props.globalVfx, filmGrain: parseFloat(e.target.value)})} className="w-full h-1 bg-[var(--bg-elevated)] rounded appearance-none accent-[var(--accent-primary)]" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* AUDIO */}
-              {activeStudioTab === 'audio' && (
-                <div className="space-y-5 animate-in fade-in slide-in-from-right-2 duration-300">
-                  <div className="bg-[var(--bg-tertiary)] p-4 rounded-lg border themed-border text-center cursor-pointer hover:bg-[var(--bg-elevated)] transition-colors touch-target" onClick={() => musicInputRef.current?.click()}>
-                    <Music2 className="w-6 h-6 themed-accent mx-auto mb-2" />
-                    <p className="text-xs font-bold themed-text">{t.addMusicPlaylist}</p>
-                    <p className="text-[10px] themed-text-secondary mt-1">{t.mp3WavMultiple}</p>
-                    <input type="file" multiple ref={musicInputRef} onChange={handleMusicUpload} className="hidden" accept="audio/*" />
-                  </div>
-                  
-                  {props.bgMusicPlaylist.length > 0 && (
-                    <div className="space-y-4">
-                      <div className="bg-[var(--bg-tertiary)] border themed-border rounded-lg p-2 max-h-40 overflow-y-auto custom-scrollbar">
-                        <h4 className="text-[10px] font-bold themed-text-secondary uppercase mb-2 flex items-center gap-1 px-2"><ListMusic className="w-3 h-3"/> {t.playlist} ({props.bgMusicPlaylist.length})</h4>
-                        {props.bgMusicPlaylist.map((url, idx) => (
-                          <div key={idx} className="flex items-center justify-between p-2 rounded bg-[var(--bg-primary)] mb-1 border themed-border">
-                            <span className="text-xs themed-text font-mono truncate w-40">{t.track} {idx + 1}</span>
-                            <button onClick={() => removeTrack(idx)} className="text-[var(--error)] hover:bg-[var(--error)]/10 p-1 rounded touch-target"><Trash2 className="w-3 h-3"/></button>
-                          </div>
+            {/* STUDIO TABS */}
+            <div className="w-full p-6 pt-6 pb-20 md:pb-6"> {/* Added padding bottom for mobile if approval bar exists */}
+                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm overflow-hidden">
+                    <div className="flex border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950 overflow-x-auto">
+                        {[
+                            { id: 'visual', label: 'Visual', icon: Palette },
+                            { id: 'audio', label: 'Áudio', icon: Music },
+                            { id: 'cast', label: 'Elenco', icon: Users },
+                            { id: 'brand', label: 'Brand', icon: Zap },
+                            { id: 'export', label: 'Baixar', icon: Download }
+                        ].map(tab => (
+                            <button key={tab.id} onClick={() => setActiveStudioTab(tab.id as any)} className={`flex-1 min-w-[70px] py-3 text-[10px] font-bold uppercase tracking-wider flex items-center justify-center gap-1 ${activeStudioTab === tab.id ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 border-b-2 border-indigo-600' : 'text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}>
+                                <tab.icon className="w-3 h-3" /> {tab.label}
+                            </button>
                         ))}
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between text-xs mb-2 font-medium themed-text"><span>{t.overallVolume}</span><span>{Math.round(props.bgMusicVolume * 100)}%</span></div>
-                        <input type="range" min="0" max="0.5" step="0.01" value={props.bgMusicVolume} onChange={(e) => props.setBgMusicVolume(parseFloat(e.target.value))} className="w-full h-2 bg-[var(--bg-elevated)] rounded-lg appearance-none cursor-pointer accent-[var(--accent-primary)]" />
-                      </div>
                     </div>
-                  )}
+
+                    <div className="p-5 space-y-5 min-h-[250px]">
+                        
+                        {/* CAST (ELENCO) */}
+                        {activeStudioTab === 'cast' && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
+                                <h4 className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-2"><Users className="w-4 h-4"/> Editar Personagens em Massa</h4>
+                                <div className="space-y-3 max-h-[300px] overflow-y-auto custom-scrollbar p-1">
+                                    {castList.map((member, idx) => (
+                                        <div key={idx} className="bg-zinc-50 dark:bg-zinc-950 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800 space-y-2">
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[9px] font-bold text-zinc-400 uppercase">Nome (Todas as Cenas)</label>
+                                                <input 
+                                                    value={member.newName} 
+                                                    onChange={(e) => {
+                                                        const newVal = e.target.value;
+                                                        setCastList(prev => prev.map((c, i) => i === idx ? {...c, newName: newVal} : c));
+                                                    }}
+                                                    className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1.5 text-xs font-bold"
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-[9px] font-bold text-zinc-400 uppercase">Voz Atribuída</label>
+                                                <select 
+                                                    value={member.voice}
+                                                    onChange={(e) => {
+                                                        const newVal = e.target.value;
+                                                        setCastList(prev => prev.map((c, i) => i === idx ? {...c, voice: newVal} : c));
+                                                    }}
+                                                    className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1.5 text-[10px]"
+                                                >
+                                                    {ALL_GEMINI_VOICES.map(v => (
+                                                        <option key={v.id} value={v.id}>{v.label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={handleUpdateCast} className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold shadow-md transition-colors">Aplicar Mudanças</button>
+                                <p className="text-[9px] text-zinc-400 text-center">Nota: Mudar o nome não afeta áudio. Mudar a voz requer "Regenerar Tudo".</p>
+                            </div>
+                        )}
+
+                        {/* VISUAL */}
+                        {activeStudioTab === 'visual' && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
+                                <div>
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block">Formato de Tela</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button onClick={() => props.setFormat(VideoFormat.PORTRAIT)} className={`flex items-center justify-center gap-2 py-2 rounded-lg border transition-all ${props.format === VideoFormat.PORTRAIT ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-500 border-zinc-200 dark:border-zinc-800'}`}><Smartphone className="w-4 h-4" /> <span className="text-xs font-bold">Vertical</span></button>
+                                        <button onClick={() => props.setFormat(VideoFormat.LANDSCAPE)} className={`flex items-center justify-center gap-2 py-2 rounded-lg border transition-all ${props.format === VideoFormat.LANDSCAPE ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-zinc-50 dark:bg-zinc-950 text-zinc-500 border-zinc-200 dark:border-zinc-800'}`}><Monitor className="w-4 h-4" /> <span className="text-xs font-bold">Horizontal</span></button>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block">Filtro Global</label>
+                                        <select value={props.activeFilter} onChange={(e) => props.setActiveFilter(e.target.value as VideoFilter)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs outline-none">
+                                            {Object.values(VideoFilter).map(f => <option key={f} value={f}>{f}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase mb-2 block">Transição Padrão</label>
+                                        <select value={props.globalTransition} onChange={(e) => props.setGlobalTransition(e.target.value as VideoTransition)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs outline-none">
+                                            {Object.values(VideoTransition).map(t => <option key={t} value={t}>{t}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                {/* Speaker Tag Control */}
+                                <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800 space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1"><User className="w-3 h-3"/> {t.showSpeaker}</label>
+                                        <button onClick={() => props.setShowSpeakerTags(!props.showSpeakerTags)} className={`w-8 h-4 rounded-full transition-colors relative ${props.showSpeakerTags ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'}`}><div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${props.showSpeakerTags ? 'translate-x-4' : 'translate-x-0'}`}></div></button>
+                                    </div>
+                                    {props.showSpeakerTags && (
+                                        <div className="animate-in slide-in-from-top-2">
+                                            <label className="text-[9px] font-bold text-zinc-400 mb-1 block">{t.speakerStyle}</label>
+                                            <select value={props.speakerTagStyle} onChange={(e) => props.setSpeakerTagStyle(e.target.value as SpeakerTagStyle)} className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs">
+                                                {Object.values(SpeakerTagStyle).map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="text-[10px] font-bold text-zinc-500 uppercase">Legendas Globais</label>
+                                        <button onClick={() => props.setShowSubtitles(!props.showSubtitles)} className={`w-8 h-4 rounded-full transition-colors relative ${props.showSubtitles ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'}`}><div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform ${props.showSubtitles ? 'translate-x-4' : 'translate-x-0'}`}></div></button>
+                                    </div>
+                                    {props.showSubtitles && (
+                                        <div className="space-y-3">
+                                            <select value={props.subtitleStyle} onChange={(e) => props.setSubtitleStyle(e.target.value as SubtitleStyle)} className="w-full bg-zinc-50 dark:bg-black border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 text-xs outline-none">
+                                                {Object.values(SubtitleStyle).map(s => <option key={s} value={s}>{s}</option>)}
+                                            </select>
+                                            
+                                            {/* Subtitle Customization Sliders */}
+                                            {props.subtitleSettings && props.setSubtitleSettings && (
+                                                <div className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-lg border border-zinc-100 dark:border-zinc-800 space-y-3">
+                                                    <div className="grid grid-cols-2 gap-4">
+                                                        <div>
+                                                            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                                                <span>Tamanho Fonte</span>
+                                                                <span>{Math.round(props.subtitleSettings.fontSizeMultiplier * 100)}%</span>
+                                                            </div>
+                                                            <input 
+                                                                type="range" min="0.5" max="2.0" step="0.1" 
+                                                                value={props.subtitleSettings.fontSizeMultiplier} 
+                                                                onChange={(e) => props.setSubtitleSettings!({...props.subtitleSettings!, fontSizeMultiplier: parseFloat(e.target.value)})} 
+                                                                className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" 
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                                                <span>Posição Vertical</span>
+                                                                <span>{Math.round(props.subtitleSettings.yPosition * 100)}%</span>
+                                                            </div>
+                                                            <input 
+                                                                type="range" min="0.1" max="0.95" step="0.01" 
+                                                                value={props.subtitleSettings.yPosition} 
+                                                                onChange={(e) => props.setSubtitleSettings!({...props.subtitleSettings!, yPosition: parseFloat(e.target.value)})} 
+                                                                className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" 
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] font-bold text-zinc-500 mb-1 block">Família da Fonte</label>
+                                                        <select 
+                                                            value={props.subtitleSettings.fontFamily} 
+                                                            onChange={(e) => props.setSubtitleSettings!({...props.subtitleSettings!, fontFamily: e.target.value})}
+                                                            className="w-full bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded p-1 text-xs"
+                                                        >
+                                                            <option value="Inter">Inter (Padrão)</option>
+                                                            <option value="Montserrat">Montserrat (Moderno)</option>
+                                                            <option value="Oswald">Oswald (Impacto/Bold)</option>
+                                                            <option value="Playfair Display">Playfair (Clássico/Serifa)</option>
+                                                            <option value="JetBrains Mono">JetBrains Mono (Tech/Code)</option>
+                                                            <option value="Comic Neue">Comic Neue (Quadrinhos)</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800">
+                                    <label className="text-[10px] font-bold text-zinc-500 uppercase mb-3 block flex items-center gap-1"><Film className="w-3 h-3"/> Global VFX (Efeitos de Filme)</label>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                                <span>Vinheta (Borda Escura)</span>
+                                                <span>{Math.round(props.globalVfx.vignetteIntensity * 100)}%</span>
+                                            </div>
+                                            <input type="range" min="0" max="1" step="0.1" value={props.globalVfx.vignetteIntensity} onChange={(e) => props.setGlobalVfx({...props.globalVfx, vignetteIntensity: parseFloat(e.target.value)})} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                        </div>
+                                        <div>
+                                            <div className="flex justify-between text-[10px] text-zinc-500 mb-1">
+                                                <span>Granulação de Filme (Film Grain)</span>
+                                                <span>{Math.round(props.globalVfx.filmGrain * 100)}%</span>
+                                            </div>
+                                            <input type="range" min="0" max="0.5" step="0.05" value={props.globalVfx.filmGrain} onChange={(e) => props.setGlobalVfx({...props.globalVfx, filmGrain: parseFloat(e.target.value)})} className="w-full h-1 bg-zinc-300 dark:bg-zinc-700 rounded appearance-none" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* AUDIO */}
+                        {activeStudioTab === 'audio' && (
+                             <div className="space-y-5 animate-in fade-in slide-in-from-right-2 duration-300">
+                                <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-lg border border-zinc-200 dark:border-zinc-800 text-center cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors" onClick={() => musicInputRef.current?.click()}>
+                                    <Music2 className="w-6 h-6 text-indigo-500 mx-auto mb-2" />
+                                    <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Adicionar Música à Playlist</p>
+                                    <p className="text-[10px] text-zinc-400 mt-1">MP3 ou WAV (Múltiplos arquivos)</p>
+                                    <input type="file" multiple ref={musicInputRef} onChange={handleMusicUpload} className="hidden" accept="audio/*" />
+                                </div>
+                                
+                                {props.bgMusicPlaylist.length > 0 && (
+                                    <div className="space-y-4">
+                                        <div className="bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-2 max-h-40 overflow-y-auto custom-scrollbar">
+                                            <h4 className="text-[10px] font-bold text-zinc-500 uppercase mb-2 flex items-center gap-1 px-2"><ListMusic className="w-3 h-3"/> Playlist ({props.bgMusicPlaylist.length})</h4>
+                                            {props.bgMusicPlaylist.map((url, idx) => (
+                                                <div key={idx} className="flex items-center justify-between p-2 rounded bg-white dark:bg-black mb-1 border border-zinc-100 dark:border-zinc-900">
+                                                    <span className="text-xs text-zinc-700 dark:text-zinc-300 font-mono truncate w-40">Faixa {idx + 1}</span>
+                                                    <button onClick={() => removeTrack(idx)} className="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded"><Trash2 className="w-3 h-3"/></button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div>
+                                            <div className="flex justify-between text-xs mb-2 font-medium"><span>Volume Geral</span><span>{Math.round(props.bgMusicVolume * 100)}%</span></div>
+                                            <input type="range" min="0" max="0.5" step="0.01" value={props.bgMusicVolume} onChange={(e) => props.setBgMusicVolume(parseFloat(e.target.value))} className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
+                                        </div>
+                                    </div>
+                                )}
+                             </div>
+                        )}
+
+                        {/* BRAND */}
+                        {activeStudioTab === 'brand' && (
+                             <div className="space-y-5 animate-in fade-in slide-in-from-right-2 duration-300">
+                                <div className="bg-zinc-50 dark:bg-zinc-950 p-4 rounded-lg border border-zinc-200 dark:border-zinc-800 text-center cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors" onClick={() => logoInputRef.current?.click()}>
+                                    {props.channelLogo ? <img src={props.channelLogo.url} className="h-10 mx-auto object-contain mb-2" /> : <ImagePlus className="w-6 h-6 text-indigo-500 mx-auto mb-2" />}
+                                    <p className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{props.channelLogo ? "Alterar Logo" : "Upload Logo do Canal"}</p>
+                                    <input type="file" ref={logoInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" />
+                                </div>
+                                {props.channelLogo && (
+                                    <div className="space-y-3">
+                                        <div>
+                                            <label className="text-[10px] font-bold text-zinc-500 uppercase mb-1 block">Posição X</label>
+                                            <input type="range" min="0" max="1" step="0.01" value={props.channelLogo.x} onChange={(e) => props.setChannelLogo({...props.channelLogo!, x: parseFloat(e.target.value)})} className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-zinc-500 uppercase mb-1 block">Posição Y</label>
+                                            <input type="range" min="0" max="1" step="0.01" value={props.channelLogo.y} onChange={(e) => props.setChannelLogo({...props.channelLogo!, y: parseFloat(e.target.value)})} className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] font-bold text-zinc-500 uppercase mb-1 block">Tamanho (Escala)</label>
+                                            <input type="range" min="0.1" max="2" step="0.1" value={props.channelLogo.scale} onChange={(e) => props.setChannelLogo({...props.channelLogo!, scale: parseFloat(e.target.value)})} className="w-full h-2 bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" />
+                                        </div>
+                                        <button onClick={() => props.setChannelLogo(undefined)} className="w-full py-2 text-xs font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors mt-2">Remover Logo</button>
+                                    </div>
+                                )}
+                             </div>
+                        )}
+
+                        {/* EXPORT */}
+                        {activeStudioTab === 'export' && (
+                            <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
+                                
+                                {/* REVISOR FINAL */}
+                                <div className={`p-4 rounded-xl border ${isReady ? 'bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800' : 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800'} space-y-3`}>
+                                    <div className="flex items-center gap-2 border-b border-black/5 dark:border-white/5 pb-2">
+                                        <ClipboardCheck className={`w-4 h-4 ${isReady ? 'text-emerald-600' : 'text-amber-600'}`} />
+                                        <h4 className={`text-xs font-bold uppercase ${isReady ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'}`}>Revisor Final de Qualidade</h4>
+                                    </div>
+                                    <ul className="space-y-1">
+                                        <li className="flex items-center justify-between text-xs">
+                                            <span className="text-zinc-600 dark:text-zinc-400">Total de Cenas:</span>
+                                            <span className="font-bold">{props.scenes.length}</span>
+                                        </li>
+                                        <li className="flex items-center justify-between text-xs">
+                                            <span className="text-zinc-600 dark:text-zinc-400">Duração Estimada:</span>
+                                            <span className="font-bold">{totalDuration.toFixed(1)}s</span>
+                                        </li>
+                                        <li className="flex items-center justify-between text-xs">
+                                            <span className="text-zinc-600 dark:text-zinc-400">Status do Áudio:</span>
+                                            <span className={`font-bold flex items-center gap-1 ${missingAudioCount === 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                {missingAudioCount === 0 ? <CheckCircle2 className="w-3 h-3"/> : <AlertTriangle className="w-3 h-3"/>}
+                                                {missingAudioCount === 0 ? "Completo" : `${missingAudioCount} faltando`}
+                                            </span>
+                                        </li>
+                                        <li className="flex items-center justify-between text-xs">
+                                            <span className="text-zinc-600 dark:text-zinc-400">Status Visual:</span>
+                                            <span className={`font-bold flex items-center gap-1 ${missingVisualCount === 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                {missingVisualCount === 0 ? <CheckCircle2 className="w-3 h-3"/> : <AlertTriangle className="w-3 h-3"/>}
+                                                {missingVisualCount === 0 ? "Completo" : `${missingVisualCount} faltando`}
+                                            </span>
+                                        </li>
+                                    </ul>
+                                </div>
+
+                                <button onClick={() => props.playerRef.current?.startRecording(false)} disabled={props.isGenerating || props.isPlaying || props.isReviewing} className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-white font-bold transition-all text-sm disabled:opacity-50 shadow-lg"><Download className="w-5 h-5" /> Exportar HD (720p)</button>
+                                <button onClick={() => { if(props.userTier === UserTier.FREE) { props.setShowUpgradeModal(true); } else { props.playerRef.current?.startRecording(true); } }} disabled={props.isGenerating || props.isPlaying || props.isReviewing} className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-black font-bold transition-all text-sm relative overflow-hidden group disabled:opacity-50 shadow-lg hover:shadow-amber-500/20"><Crown className="w-5 h-5" /> Exportar 4K Ultra HD {props.userTier === UserTier.FREE && ( <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity"><Lock className="w-5 h-5 text-white" /></div> )}</button>
+                                <div className="pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                                    <button onClick={props.handleExportScript} className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white text-xs font-medium transition-colors"><Save className="w-4 h-4" /> Salvar Projeto (JSON)</button>
+                                </div>
+                                <div className="mt-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/30 rounded-lg p-3">
+                                        <div onClick={props.handleForceRegenerateAll} className="cursor-pointer flex items-center justify-between text-xs font-bold text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-white transition-colors">
+                                            <span className="flex items-center gap-2"><RefreshCcw className="w-3 h-3"/> Regenerar Tudo</span>
+                                            <span>{props.isGenerating ? "..." : "Iniciar"}</span>
+                                        </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
-              )}
-
-              {/* BRAND */}
-              {activeStudioTab === 'brand' && (
-                <div className="space-y-5 animate-in fade-in slide-in-from-right-2 duration-300">
-                  <div className="bg-[var(--bg-tertiary)] p-4 rounded-lg border themed-border text-center cursor-pointer hover:bg-[var(--bg-elevated)] transition-colors touch-target" onClick={() => logoInputRef.current?.click()}>
-                    {props.channelLogo ? <img src={props.channelLogo.url} className="h-10 mx-auto object-contain mb-2" /> : <ImagePlus className="w-6 h-6 themed-accent mx-auto mb-2" />}
-                    <p className="text-xs font-bold themed-text">{props.channelLogo ? t.changeLogo : t.uploadChannelLogo}</p>
-                    <input type="file" ref={logoInputRef} onChange={handleLogoUpload} className="hidden" accept="image/*" />
-                  </div>
-                  {props.channelLogo && (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-[10px] font-bold themed-text-secondary uppercase mb-1 block">{t.positionX}</label>
-                        <input type="range" min="0" max="1" step="0.01" value={props.channelLogo.x} onChange={(e) => props.setChannelLogo({...props.channelLogo!, x: parseFloat(e.target.value)})} className="w-full h-2 bg-[var(--bg-elevated)] rounded-lg appearance-none cursor-pointer accent-[var(--accent-primary)]" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold themed-text-secondary uppercase mb-1 block">{t.positionY}</label>
-                        <input type="range" min="0" max="1" step="0.01" value={props.channelLogo.y} onChange={(e) => props.setChannelLogo({...props.channelLogo!, y: parseFloat(e.target.value)})} className="w-full h-2 bg-[var(--bg-elevated)] rounded-lg appearance-none cursor-pointer accent-[var(--accent-primary)]" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold themed-text-secondary uppercase mb-1 block">{t.sizeScale}</label>
-                        <input type="range" min="0.1" max="2" step="0.1" value={props.channelLogo.scale} onChange={(e) => props.setChannelLogo({...props.channelLogo!, scale: parseFloat(e.target.value)})} className="w-full h-2 bg-[var(--bg-elevated)] rounded-lg appearance-none cursor-pointer accent-[var(--accent-primary)]" />
-                      </div>
-                      <button onClick={() => props.setChannelLogo(undefined)} className="w-full py-2 text-xs font-bold text-[var(--error)] hover:bg-[var(--error)]/10 rounded transition-colors mt-2 touch-target">{t.removeLogo}</button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* EXPORT */}
-              {activeStudioTab === 'export' && (
-                <div className="space-y-4 animate-in fade-in slide-in-from-right-2 duration-300">
-                  
-                  {/* REVISOR FINAL */}
-                  <div className={`p-4 rounded-xl border ${isReady ? 'bg-[var(--success)]/5 border-[var(--success)]/30' : 'bg-[var(--warning)]/5 border-[var(--warning)]/30'} space-y-3`}>
-                    <div className="flex items-center gap-2 border-b border-black/5 dark:border-white/5 pb-2">
-                      <ClipboardCheck className={`w-4 h-4 ${isReady ? 'text-[var(--success)]' : 'text-[var(--warning)]'}`} />
-                      <h4 className={`text-xs font-bold uppercase ${isReady ? 'text-[var(--success)]' : 'text-[var(--warning)]'}`}>{t.finalQualityReviewer}</h4>
-                    </div>
-                    <ul className="space-y-1">
-                      <li className="flex items-center justify-between text-xs">
-                        <span className="themed-text-secondary">{t.totalScenes}:</span>
-                        <span className="font-bold themed-text">{props.scenes.length}</span>
-                      </li>
-                      <li className="flex items-center justify-between text-xs">
-                        <span className="themed-text-secondary">{t.estimatedDuration}:</span>
-                        <span className="font-bold themed-text">{totalDuration.toFixed(1)}s</span>
-                      </li>
-                      <li className="flex items-center justify-between text-xs">
-                        <span className="themed-text-secondary">{t.audioStatus}:</span>
-                        <span className={`font-bold flex items-center gap-1 ${missingAudioCount === 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
-                          {missingAudioCount === 0 ? <CheckCircle2 className="w-3 h-3"/> : <AlertTriangle className="w-3 h-3"/>}
-                          {missingAudioCount === 0 ? t.complete : `${missingAudioCount} ${t.missing}`}
-                        </span>
-                      </li>
-                      <li className="flex items-center justify-between text-xs">
-                        <span className="themed-text-secondary">{t.visualStatus}:</span>
-                        <span className={`font-bold flex items-center gap-1 ${missingVisualCount === 0 ? 'text-[var(--success)]' : 'text-[var(--error)]'}`}>
-                          {missingVisualCount === 0 ? <CheckCircle2 className="w-3 h-3"/> : <AlertTriangle className="w-3 h-3"/>}
-                          {missingVisualCount === 0 ? t.complete : `${missingVisualCount} ${t.missing}`}
-                        </span>
-                      </li>
-                    </ul>
-                  </div>
-
-                  <button onClick={() => props.playerRef.current?.startRecording(false)} disabled={props.isGenerating || props.isPlaying || props.isReviewing} className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-[var(--bg-tertiary)] hover:bg-[var(--bg-elevated)] themed-text font-bold transition-all text-sm disabled:opacity-50 shadow-lg touch-target">
-                    <Download className="w-5 h-5" /> {t.exportHD}
-                  </button>
-                  <button onClick={() => { if(props.userTier === UserTier.FREE) { props.setShowUpgradeModal(true); } else { props.playerRef.current?.startRecording(true); } }} disabled={props.isGenerating || props.isPlaying || props.isReviewing} className="w-full flex items-center justify-center gap-3 py-4 rounded-xl bg-gradient-to-r from-amber-600 to-yellow-500 hover:from-amber-500 hover:to-yellow-400 text-black font-bold transition-all text-sm relative overflow-hidden group disabled:opacity-50 shadow-lg hover:shadow-amber-500/20 touch-target">
-                    <Crown className="w-5 h-5" /> {t.export4kUltra} 
-                    {props.userTier === UserTier.FREE && ( <div className="absolute inset-0 bg-black/50 flex items-center justify-center backdrop-blur-[1px] opacity-0 group-hover:opacity-100 transition-opacity"><Lock className="w-5 h-5 text-white" /></div> )}
-                  </button>
-                  <div className="pt-4 border-t themed-border">
-                    <button onClick={props.handleExportScript} className="w-full flex items-center justify-center gap-2 py-3 rounded-lg border themed-border themed-text-secondary hover:themed-text text-xs font-medium transition-colors touch-target">
-                      <Save className="w-4 h-4" /> {t.saveProjectJson}
-                    </button>
-                  </div>
-                  <div className="mt-4 bg-[var(--accent-primary)]/5 border border-[var(--accent-primary)]/20 rounded-lg p-3">
-                    <div onClick={props.handleForceRegenerateAll} className="cursor-pointer flex items-center justify-between text-xs font-bold themed-accent hover:opacity-80 transition-colors touch-target">
-                      <span className="flex items-center gap-2"><RefreshCcw className="w-3 h-3"/> {t.regenerateAll}</span>
-                      <span>{props.isGenerating ? "..." : t.start}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
-          </div>
         </div>
-      </div>
 
-      {/* === RIGHT COLUMN: TIMELINE === */}
-      <div className={`flex-1 h-full bg-[var(--bg-secondary)] flex flex-col overflow-y-auto custom-scrollbar hide-scrollbar-mobile relative ${mobileView === 'player' ? 'hidden lg:flex' : 'flex'}`} id="timeline-container">
-        <div className="p-3 md:p-4 border-b themed-border bg-[var(--bg-tertiary)] space-y-3 sticky top-0 z-20 backdrop-blur-md">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 md:gap-3">
-              <h3 className="font-bold themed-text flex items-center gap-2 text-sm md:text-base"><Layers className="w-4 h-4" /> {t.timeline}</h3>
-              <button onClick={props.handleSelectAll} className="text-[10px] px-2 py-1 rounded bg-[var(--bg-elevated)] themed-text-secondary hover:bg-[var(--accent-primary)] hover:text-white transition-colors touch-target">
-                {props.selectedSceneIds.size === props.scenes.length ? t.deselectAll : t.selectAll}
-              </button>
-            </div>
-            <div className="flex gap-2 text-xs">
-              <div className="bg-[var(--bg-elevated)] px-3 py-1 rounded-full themed-text-secondary font-medium">{t.scenes}: {props.scenes.length}</div>
-            </div>
-          </div>
-          
-          {props.selectedSceneIds.size > 0 && (
-            <div className="flex items-center gap-2 animate-in slide-in-from-top-2">
-              <button onClick={() => props.handleBulkRegenerate('images')} className="flex-1 py-2 bg-[var(--bg-primary)] border themed-border rounded text-[10px] font-bold hover:bg-[var(--bg-tertiary)] transition-colors flex items-center justify-center gap-1 touch-target">
-                <ImageIcon className="w-3 h-3"/> {t.reImagine} ({props.selectedSceneIds.size})
-              </button>
-              <button onClick={() => props.handleBulkRegenerate('audio')} className="flex-1 py-2 bg-[var(--bg-primary)] border themed-border rounded text-[10px] font-bold hover:bg-[var(--bg-tertiary)] transition-colors flex items-center justify-center gap-1 touch-target">
-                <Volume2 className="w-3 h-3"/> {t.reDub} ({props.selectedSceneIds.size})
-              </button>
-              <button onClick={props.handleBulkDelete} className="px-3 py-2 bg-[var(--error)]/10 text-[var(--error)] rounded hover:bg-[var(--error)]/20 transition-colors touch-target"><Trash2 className="w-4 h-4"/></button>
-            </div>
-          )}
-        </div>
-
-        <div className="p-3 md:p-4 space-y-3 md:space-y-4 pb-32">
-          {props.scenes.map((scene, index) => (
-            <div 
-              key={scene.id} 
-              onClick={() => props.setCurrentSceneIndex(index)} 
-              className={`group relative flex gap-3 md:gap-4 p-3 md:p-4 rounded-xl border transition-all cursor-pointer touch-target ${
-                props.currentSceneIndex === index 
-                  ? 'bg-[var(--accent-primary)]/5 border-[var(--accent-primary)] ring-1 ring-[var(--accent-primary)]' 
-                  : 'bg-[var(--bg-primary)] themed-border hover:border-[var(--border-accent)]'
-              } ${props.selectedSceneIds.has(scene.id) ? 'bg-[var(--accent-primary)]/10' : ''}`}
-            >
-              <div 
-                onClick={(e) => { e.stopPropagation(); props.handleToggleSelectScene(scene.id); }} 
-                className="absolute -left-1 -top-1 md:-left-2 md:-top-2 z-30 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity p-1 md:p-2 cursor-pointer touch-target" 
-                style={{ opacity: props.selectedSceneIds.has(scene.id) ? 1 : undefined }}
-              >
-                {props.selectedSceneIds.has(scene.id) ? (
-                  <div className="w-5 h-5 md:w-6 md:h-6 bg-[var(--accent-primary)] rounded-full flex items-center justify-center shadow-md">
-                    <CheckSquare className="w-3 h-3 md:w-4 md:h-4 text-white" />
-                  </div>
-                ) : (
-                  <div className="w-5 h-5 md:w-6 md:h-6 bg-[var(--bg-primary)] border themed-border rounded-full flex items-center justify-center shadow-md">
-                    <SquareIcon className="w-3 h-3 md:w-4 md:h-4 themed-text-secondary" />
-                  </div>
+        {/* RIGHT COLUMN: TIMELINE */}
+        <div className="flex-1 h-full bg-white dark:bg-zinc-950 flex flex-col overflow-y-auto custom-scrollbar relative" id="timeline-container">
+            <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 space-y-3 sticky top-0 z-20 backdrop-blur-md">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <h3 className="font-bold text-zinc-900 dark:text-white flex items-center gap-2"><Layers className="w-4 h-4" /> {t.timeline}</h3>
+                        <button onClick={props.handleSelectAll} className="text-[10px] px-2 py-1 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-indigo-500 hover:text-white transition-colors">{props.selectedSceneIds.size === props.scenes.length ? "Desmarcar Todos" : "Selecionar Todos"}</button>
+                    </div>
+                    <div className="flex gap-2 text-xs">
+                        <div className="bg-zinc-200 dark:bg-zinc-800 px-3 py-1 rounded-full text-zinc-600 dark:text-zinc-400 font-medium">Cenas: {props.scenes.length}</div>
+                    </div>
+                </div>
+                
+                {props.selectedSceneIds.size > 0 && (
+                    <div className="flex items-center gap-2 animate-in slide-in-from-top-2">
+                        <button onClick={() => props.handleBulkRegenerate('images')} className="flex-1 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded text-[10px] font-bold hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center gap-1"><ImageIcon className="w-3 h-3"/> Re-Imaginar ({props.selectedSceneIds.size})</button>
+                        <button onClick={() => props.handleBulkRegenerate('audio')} className="flex-1 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded text-[10px] font-bold hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors flex items-center justify-center gap-1"><Volume2 className="w-3 h-3"/> Re-Dublar ({props.selectedSceneIds.size})</button>
+                        <button onClick={props.handleBulkDelete} className="px-3 py-2 bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 rounded hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors"><Trash2 className="w-4 h-4"/></button>
+                    </div>
                 )}
-              </div>
-              <div className="w-20 h-20 md:w-32 md:h-32 rounded-lg bg-black shrink-0 overflow-hidden relative border themed-border">
-                {scene.isGeneratingImage ? (
-                  <div className="absolute inset-0 flex items-center justify-center bg-[var(--bg-tertiary)]"><Loader2 className="w-6 h-6 themed-accent animate-spin" /></div>
-                ) : scene.mediaType === 'video' && scene.videoUrl ? (
-                  <video src={scene.videoUrl} className="w-full h-full object-cover" muted />
-                ) : (
-                  <img src={scene.imageUrl} className="w-full h-full object-cover" loading="lazy" />
-                )}
-                <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1.5 rounded font-mono">{index + 1}</div>
-              </div>
-              <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5 md:py-1">
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex flex-col">
-                      <span className="text-[11px] md:text-xs font-bold themed-accent uppercase tracking-wide truncate max-w-[100px] md:max-w-none">{scene.speaker}</span>
-                      <span className="text-[9px] themed-text-secondary">{scene.assignedVoice || 'Fenrir'}</span>
-                    </div>
-                    <div className="flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                      <button onClick={(e) => { e.stopPropagation(); props.regenerateSceneAsset(index, 'image'); }} className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded themed-text-secondary touch-target" title={t.regenerateImage}>
-                        <RefreshCcw className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={(e) => { e.stopPropagation(); props.setEditingScene(scene); }} className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded themed-text-secondary touch-target" title={t.editSceneBtn}>
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  <p className="text-xs md:text-sm themed-text-secondary line-clamp-2 md:line-clamp-3 leading-relaxed">{scene.text}</p>
-                </div>
-                <div className="flex items-center gap-2 md:gap-3 mt-2">
-                  {scene.audioError ? (
-                    <span className="text-[10px] text-[var(--error)] flex items-center gap-1 font-medium"><AlertCircle className="w-3 h-3" /> {t.errorAudio}</span>
-                  ) : scene.isGeneratingAudio ? (
-                    <span className="text-[10px] themed-text-secondary flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> {t.generatingVoice}</span>
-                  ) : scene.audioUrl ? (
-                    <span className="text-[10px] text-[var(--success)] flex items-center gap-1 font-medium"><Volume2 className="w-3 h-3" /> {t.audioOk}</span>
-                  ) : (
-                    <span className="text-[10px] themed-text-secondary flex items-center gap-1 font-medium opacity-60"><MicOff className="w-3 h-3" /> {t.noAudio}</span>
-                  )}
-                  {scene.layers && scene.layers.length > 0 && (
-                    <span className="text-[10px] text-[var(--warning)] flex items-center gap-1 font-medium"><Layers className="w-3 h-3" /> {scene.layers.length} {t.layers}</span>
-                  )}
-                </div>
-              </div>
             </div>
-          ))}
-          <button onClick={props.handleAddScene} className="w-full py-4 border-2 border-dashed themed-border rounded-xl flex items-center justify-center gap-2 themed-text-secondary hover:themed-accent hover:border-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/5 transition-all group touch-target">
-            <Plus className="w-6 h-6 group-hover:scale-110 transition-transform" />
-            <span className="font-bold text-sm">{t.addNewScene}</span>
-          </button>
-        </div>
-      </div>
 
-      {/* === APPROVAL BAR (Sticky Footer) === */}
-      {props.generationPhase === 'script_approval' && (
-        <div className="fixed bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-500 w-[95%] md:w-[90%] max-w-2xl">
-          <div className="bg-[var(--bg-secondary)]/95 backdrop-blur-md border border-[var(--accent-primary)]/50 shadow-2xl rounded-2xl p-4 flex flex-col md:flex-row items-center gap-4">
-            <div className="flex-1 text-center md:text-left">
-              <h3 className="themed-text font-bold text-base md:text-lg flex items-center justify-center md:justify-start gap-2">
-                <CheckCircle2 className="w-5 h-5 themed-accent" /> {t.scriptApproval}
-              </h3>
-              <p className="themed-text-secondary text-[11px] md:text-xs mt-1">
-                {t.reviewSceneText}
-              </p>
+            <div className="p-4 space-y-4 pb-32">
+                {props.scenes.map((scene, index) => (
+                    <div key={scene.id} onClick={() => props.setCurrentSceneIndex(index)} className={`group relative flex gap-4 p-4 rounded-xl border transition-all cursor-pointer ${props.currentSceneIndex === index ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-500 ring-1 ring-indigo-500' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600'} ${props.selectedSceneIds.has(scene.id) ? 'bg-indigo-50/50 dark:bg-indigo-900/30' : ''}`}>
+                        <div onClick={(e) => { e.stopPropagation(); props.handleToggleSelectScene(scene.id); }} className="absolute -left-2 -top-2 z-30 opacity-0 group-hover:opacity-100 transition-opacity p-2 cursor-pointer" style={{ opacity: props.selectedSceneIds.has(scene.id) ? 1 : undefined }}>{props.selectedSceneIds.has(scene.id) ? ( <div className="w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center shadow-md"><CheckSquare className="w-4 h-4 text-white" /></div> ) : ( <div className="w-6 h-6 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-600 rounded-full flex items-center justify-center shadow-md"><SquareIcon className="w-4 h-4 text-zinc-400" /></div> )}</div>
+                        <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-lg bg-black shrink-0 overflow-hidden relative border border-zinc-200 dark:border-zinc-800">
+                            {scene.isGeneratingImage ? ( <div className="absolute inset-0 flex items-center justify-center bg-zinc-900"><Loader2 className="w-6 h-6 text-indigo-500 animate-spin" /></div> ) : scene.mediaType === 'video' && scene.videoUrl ? ( <video src={scene.videoUrl} className="w-full h-full object-cover" muted /> ) : ( <img src={scene.imageUrl} className="w-full h-full object-cover" loading="lazy" /> )}
+                            <div className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1.5 rounded font-mono">{index + 1}</div>
+                        </div>
+                        <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
+                            <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <div className="flex flex-col"><span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wide">{scene.speaker}</span><span className="text-[9px] text-zinc-400">{scene.assignedVoice || 'Fenrir'}</span></div>
+                                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={(e) => { e.stopPropagation(); props.regenerateSceneAsset(index, 'image'); }} className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded text-zinc-500 dark:text-zinc-400" title="Regenerar Imagem"><RefreshCcw className="w-3.5 h-3.5" /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); props.setEditingScene(scene); }} className="p-1.5 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded text-zinc-500 dark:text-zinc-400" title="Editar Cena"><Edit2 className="w-3.5 h-3.5" /></button>
+                                    </div>
+                                </div>
+                                <p className="text-sm text-zinc-600 dark:text-zinc-300 line-clamp-3 leading-relaxed">{scene.text}</p>
+                            </div>
+                            <div className="flex items-center gap-3 mt-2">
+                                {scene.audioError ? ( <span className="text-[10px] text-red-500 flex items-center gap-1 font-medium"><AlertCircle className="w-3 h-3" /> Erro Áudio</span> ) : scene.isGeneratingAudio ? ( <span className="text-[10px] text-zinc-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Gerando voz...</span> ) : scene.audioUrl ? ( <span className="text-[10px] text-emerald-500 flex items-center gap-1 font-medium"><Volume2 className="w-3 h-3" /> Áudio OK</span> ) : ( <span className="text-[10px] text-zinc-400 flex items-center gap-1 font-medium opacity-60"><MicOff className="w-3 h-3" /> Sem Áudio</span> )}
+                                {scene.layers && scene.layers.length > 0 && ( <span className="text-[10px] text-amber-500 flex items-center gap-1 font-medium"><Layers className="w-3 h-3" /> {scene.layers.length} Camadas</span> )}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                <button onClick={props.handleAddScene} className="w-full py-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-xl flex items-center justify-center gap-2 text-zinc-400 hover:text-indigo-500 hover:border-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all group"><Plus className="w-6 h-6 group-hover:scale-110 transition-transform" /><span className="font-bold text-sm">Adicionar Nova Cena</span></button>
             </div>
-            <div className="flex flex-col gap-2 w-full md:w-auto">
-              <p className="themed-text-secondary text-[10px] md:text-xs text-center mb-1">{t.chooseGenerationOrder}</p>
-              <div className="flex gap-2 w-full">
-                <button 
-                  onClick={() => props.onApproveScript?.(false)}
-                  className="flex-1 px-3 md:px-4 py-3 themed-btn rounded-xl shadow-lg flex items-center justify-center gap-2 transition-transform hover:scale-105 touch-target text-sm"
-                >
-                  <Mic className="w-4 h-4" /> {t.audioFirst}
-                </button>
-                <button 
-                  onClick={() => props.onApproveScript?.(true)}
-                  className="flex-1 px-3 md:px-4 py-3 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-transform hover:scale-105 touch-target text-sm"
-                >
-                  <Image className="w-4 h-4" /> {t.imagesFirst}
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
-      )}
+
+        {/* --- APPROVAL BAR (Sticky Footer) --- */}
+        {props.generationPhase === 'script_approval' && (
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom-10 fade-in duration-500 w-[90%] max-w-2xl">
+                <div className="bg-zinc-900/90 backdrop-blur-md border border-indigo-500/50 shadow-2xl rounded-2xl p-4 flex flex-col md:flex-row items-center gap-4">
+                    <div className="flex-1 text-center md:text-left">
+                        <h3 className="text-white font-bold text-lg flex items-center justify-center md:justify-start gap-2">
+                            <CheckCircle2 className="w-5 h-5 text-indigo-400" /> Aprovação do Roteiro
+                        </h3>
+                        <p className="text-zinc-400 text-xs mt-1">
+                            Revise o texto de cada cena acima. Você pode editar clicando no ícone de lápis (<Edit2 className="w-3 h-3 inline"/>).
+                            <br/>Quando estiver pronto, clique em Aprovar para gerar as vozes.
+                        </p>
+                    </div>
+                    <div className="flex flex-col gap-2 w-full md:w-auto">
+                        <p className="text-zinc-500 text-xs text-center mb-1">Escolha a ordem de geração:</p>
+                        <div className="flex gap-2 w-full">
+                            <button 
+                                onClick={() => props.onApproveScript?.(false)}
+                                className="flex-1 px-4 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 transition-transform hover:scale-105"
+                            >
+                                <Mic className="w-4 h-4" /> Áudio Primeiro
+                            </button>
+                        <button 
+                                onClick={() => props.onApproveScript?.(true)}
+                                className="flex-1 px-4 py-3 bg-pink-600 hover:bg-pink-500 text-white font-bold rounded-xl shadow-lg shadow-pink-500/20 flex items-center justify-center gap-2 transition-transform hover:scale-105"
+                        >
+                                <Image className="w-4 h-4" /> Imagens Primeiro
+                        </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 };
