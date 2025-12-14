@@ -743,7 +743,21 @@ const App: React.FC = () => {
   };
 
   const handleCreateManualProject = () => {
-      setScenes([]);
+      // Create an initial empty scene so the editor opens properly
+      const initialScene: Scene = {
+          id: `manual-${Date.now()}`,
+          speaker: 'Narrator',
+          text: '',
+          visualPrompt: '',
+          mediaType: 'image',
+          durationEstimate: 5,
+          isGeneratingImage: false,
+          isGeneratingAudio: false,
+          imageUrl: undefined,
+          audioUrl: undefined
+      };
+      setScenes([initialScene]);
+      setCurrentSceneIndex(0);
       setTopic("Manual Project");
       setGenerationPhase('done');
       setActiveTab('preview');
